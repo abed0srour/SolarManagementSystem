@@ -9,6 +9,11 @@ node_modules/
 # Build output
 dist/
 build/
+.next/
+next-env.d.ts
+
+# Uploaded files
+backend/uploads/
 
 # Logs
 *.log
