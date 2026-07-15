@@ -1,0 +1,262 @@
+﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../common/audit.service';
+import { NumberingService } from '../common/numbering.service';
+import { StockService } from '../inventory/stock.service';
+import { calcDocTotals, calcLine } from '../common/calc';
+
+@Injectable()
+export class SalesOrdersService {
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private numbering: NumberingService,
+    private stock: StockService,
+  ) {}
+
+  findAll(query: { search?: string; status?: string; clientId?: string; page?: number; pageSize?: number }) {
+    const where: Prisma.SalesOrderWhereInput = { deletedAt: null };
+    if (query.status) where.status = query.status as any;
+    if (query.clientId) where.clientId = query.clientId;
+    if (query.search) {
+      where.OR = [
+        { number: { contains: query.search, mode: 'insensitive' } },
+        { client: { name: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
+    const page = Number(query.page) || 1;
+    const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    return this.prisma.salesOrder
+      .findMany({
+        where,
+        include: { client: { select: { name: true } }, items: true, invoices: { select: { id: true, number: true, status: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })
+      .then(async (items) => ({ items, total: await this.prisma.salesOrder.count({ where }), page, pageSize }));
+  }
+
+  async findOne(id: string) {
+    const so = await this.prisma.salesOrder.findUnique({
+      where: { id },
+      include: {
+        client: { include: { addresses: true } },
+        warehouse: true,
+        quotation: { select: { id: true, number: true } },
+        items: { include: { product: { select: { sku: true, name: true, trackSerials: true } } } },
+        invoices: { select: { id: true, number: true, status: true, total: true, paidAmount: true } },
+        serviceJobs: { select: { id: true, number: true, status: true, type: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+    return so;
+  }
+
+  private buildItems(items: any[]) {
+    return items.map((i) => {
+      const t = calcLine(i);
+      return {
+        productId: i.productId,
+        description: i.description,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        discountType: i.discountType ?? null,
+        discountValue: i.discountValue ?? 0,
+        taxRatePct: i.taxRatePct ?? 0,
+        lineTotal: t.lineTotal,
+        _totals: t,
+      };
+    });
+  }
+
+  async create(userId: string, dto: any) {
+    // Credit limit warning check
+    const client = await this.prisma.client.findUnique({ where: { id: dto.clientId } });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const built = this.buildItems(dto.items);
+    const totals = calcDocTotals(
+      built.map((b) => b._totals),
+      dto.discountType,
+      dto.discountValue,
+      dto.shippingFee ?? 0,
+    );
+    const number = await this.numbering.next('SALES_ORDER');
+    const so = await this.prisma.salesOrder.create({
+      data: {
+        number,
+        clientId: dto.clientId,
+        quotationId: dto.quotationId,
+        warehouseId: dto.warehouseId,
+        status: 'PENDING',
+        discountType: dto.discountType ?? null,
+        discountValue: dto.discountValue ?? 0,
+        shippingFee: dto.shippingFee ?? 0,
+        notes: dto.notes,
+        ...totals,
+        createdById: userId,
+        items: { create: built.map(({ _totals, ...item }) => item) },
+      },
+      include: { items: true },
+    });
+    await this.audit.log(userId, 'CREATE', 'SalesOrder', so.id, { number });
+    return so;
+  }
+
+  async update(userId: string, id: string, dto: any) {
+    const existing = await this.prisma.salesOrder.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Sales order not found');
+    if (existing.status !== 'PENDING')
+      throw new BadRequestException('Only pending orders can be edited (cancel and recreate otherwise)');
+
+    let itemsData = undefined as any;
+    let totals = {} as any;
+    if (dto.items) {
+      const built = this.buildItems(dto.items);
+      totals = calcDocTotals(
+        built.map((b) => b._totals),
+        dto.discountType ?? (existing.discountType as any),
+        dto.discountValue ?? Number(existing.discountValue),
+        dto.shippingFee ?? Number(existing.shippingFee),
+      );
+      itemsData = { deleteMany: {}, create: built.map(({ _totals, ...item }) => item) };
+    }
+    const so = await this.prisma.salesOrder.update({
+      where: { id },
+      data: {
+        clientId: dto.clientId,
+        warehouseId: dto.warehouseId,
+        discountType: dto.discountType,
+        discountValue: dto.discountValue,
+        shippingFee: dto.shippingFee,
+        notes: dto.notes,
+        ...totals,
+        ...(itemsData ? { items: itemsData } : {}),
+      },
+      include: { items: true },
+    });
+    await this.audit.log(userId, 'UPDATE', 'SalesOrder', id);
+    return so;
+  }
+
+  /**
+   * Confirm order: deducts stock for each line and optionally marks serial numbers as SOLD.
+   * serialAssignments: [{ productId, serialNumbers: string[] }]
+   */
+  async confirm(userId: string, id: string, serialAssignments?: { productId: string; serialNumbers: string[] }[]) {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id }, include: { items: true, client: true } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status !== 'PENDING') throw new BadRequestException(`Order is already ${so.status}`);
+
+    // Credit limit check (warning enforced server-side)
+    if (Number(so.client.creditLimit) > 0) {
+      const outstanding = await this.prisma.invoice.aggregate({
+        where: { clientId: so.clientId, type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
+        _sum: { total: true, paidAmount: true },
+      });
+      const balance = Number(outstanding._sum.total ?? 0) - Number(outstanding._sum.paidAmount ?? 0);
+      if (balance + Number(so.total) > Number(so.client.creditLimit)) {
+        throw new BadRequestException(
+          `Credit limit exceeded: outstanding ${balance.toFixed(2)} + order ${Number(so.total).toFixed(2)} > limit ${Number(so.client.creditLimit).toFixed(2)}`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of so.items) {
+        await this.stock.adjustStock(tx, {
+          productId: item.productId,
+          warehouseId: so.warehouseId,
+          delta: -item.quantity,
+          type: 'OUT',
+          userId,
+          reason: `Sales order ${so.number} confirmed`,
+          refType: 'SalesOrder',
+          refId: so.id,
+        });
+      }
+      if (serialAssignments?.length) {
+        for (const a of serialAssignments) {
+          const units = await tx.productUnit.findMany({
+            where: { serialNumber: { in: a.serialNumbers }, productId: a.productId, status: 'IN_STOCK' },
+          });
+          if (units.length !== a.serialNumbers.length) {
+            throw new BadRequestException(`Some serial numbers for product #${a.productId} are not in stock`);
+          }
+          await tx.productUnit.updateMany({
+            where: { id: { in: units.map((u) => u.id) } },
+            data: { status: 'SOLD', salesOrderId: so.id },
+          });
+        }
+      }
+      await tx.salesOrder.update({ where: { id }, data: { status: 'CONFIRMED' } });
+    });
+    await this.audit.log(userId, 'CONFIRM', 'SalesOrder', id, { number: so.number });
+    return this.findOne(id);
+  }
+
+  async deliver(userId: string, id: string, deliveries: { itemId: string; quantity: number }[]) {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id }, include: { items: true } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status !== 'CONFIRMED' && so.status !== 'PARTIALLY_DELIVERED')
+      throw new BadRequestException('Order must be confirmed before delivery');
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const d of deliveries) {
+        const item = so.items.find((i) => i.id === d.itemId);
+        if (!item) throw new BadRequestException(`Item ${d.itemId} not on this order`);
+        if (item.deliveredQty + d.quantity > item.quantity)
+          throw new BadRequestException(`Delivery exceeds ordered quantity for item ${d.itemId}`);
+        await tx.salesOrderItem.update({
+          where: { id: d.itemId },
+          data: { deliveredQty: { increment: d.quantity } },
+        });
+      }
+      const updated = await tx.salesOrderItem.findMany({ where: { salesOrderId: id } });
+      const allDelivered = updated.every((i) => i.deliveredQty >= i.quantity);
+      await tx.salesOrder.update({
+        where: { id },
+        data: { status: allDelivered ? 'DELIVERED' : 'PARTIALLY_DELIVERED' },
+      });
+    });
+    await this.audit.log(userId, 'DELIVER', 'SalesOrder', id, { deliveries });
+    return this.findOne(id);
+  }
+
+  async cancel(userId: string, id: string) {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id }, include: { items: true, invoices: true } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status === 'CANCELLED') throw new BadRequestException('Order already cancelled');
+    if (so.invoices.some((inv) => inv.status !== 'CANCELLED'))
+      throw new BadRequestException('Order has active invoices — cancel them first');
+
+    const wasStockDeducted = so.status !== 'PENDING';
+    await this.prisma.$transaction(async (tx) => {
+      if (wasStockDeducted) {
+        for (const item of so.items) {
+          await this.stock.adjustStock(tx, {
+            productId: item.productId,
+            warehouseId: so.warehouseId,
+            delta: item.quantity,
+            type: 'IN',
+            userId,
+            reason: `Sales order ${so.number} cancelled — stock restored`,
+            refType: 'SalesOrder',
+            refId: so.id,
+          });
+        }
+      }
+      // Release any serial units assigned to this order but not yet invoiced
+      await tx.productUnit.updateMany({
+        where: { salesOrderId: so.id, invoiceId: null, status: 'SOLD' },
+        data: { status: 'IN_STOCK', salesOrderId: null },
+      });
+      await tx.salesOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
+    });
+    await this.audit.log(userId, 'CANCEL', 'SalesOrder', id, { number: so.number, stockRestored: wasStockDeducted });
+    return this.findOne(id);
+  }
+}
