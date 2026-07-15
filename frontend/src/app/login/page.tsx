@@ -1,0 +1,116 @@
+'use client';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { SunMedium, Languages } from 'lucide-react';
+import { toast } from 'sonner';
+import { api, errMsg } from '../../lib/api';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+
+function switchLocale() {
+  const current = document.cookie.includes('locale=ar') ? 'ar' : 'en';
+  document.cookie = `locale=${current === 'ar' ? 'en' : 'ar'};path=/;max-age=31536000`;
+  window.location.reload();
+}
+
+export default function LoginPage() {
+  const t = useTranslations();
+  const router = useRouter();
+  const [email, setEmail] = useState('admin@solarstore.local');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        const { data } = await api.post('/auth/login', { email, password });
+        localStorage.setItem('token', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        router.replace('/dashboard');
+      } else if (mode === 'forgot') {
+        const { data } = await api.post('/auth/forgot-password', { email });
+        if (data.resetToken) {
+          setResetToken(data.resetToken);
+          setMode('reset');
+          toast.info(t('auth.resetToken') + ': ' + data.resetToken.slice(0, 12) + '…');
+        }
+      } else {
+        await api.post('/auth/reset-password', { token: resetToken, newPassword });
+        toast.success(t('common.saved'));
+        setMode('login');
+      }
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="absolute end-4 top-4">
+        <Button variant="ghost" size="icon" onClick={switchLocale} title={t('common.language')}>
+          <Languages />
+        </Button>
+      </div>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <div className="mb-1 flex items-center gap-2">
+            <SunMedium className="h-7 w-7 text-amber-500" />
+            <CardTitle className="text-xl">{t('app.title')}</CardTitle>
+          </div>
+          <CardDescription>{t('auth.welcome')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="email">{t('auth.email')}</Label>
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+            </div>
+            {mode === 'login' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="password">{t('auth.password')}</Label>
+                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </div>
+            )}
+            {mode === 'reset' && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>{t('auth.resetToken')}</Label>
+                  <Input value={resetToken} onChange={(e) => setResetToken(e.target.value)} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('auth.newPassword')}</Label>
+                  <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
+                </div>
+              </>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? t('auth.signingIn') : mode === 'login' ? t('auth.signIn') : mode === 'forgot' ? t('auth.sendResetLink') : t('auth.resetPassword')}
+            </Button>
+            <div className="text-center">
+              {mode === 'login' ? (
+                <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setMode('forgot')}>
+                  {t('auth.forgotPassword')}
+                </button>
+              ) : (
+                <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setMode('login')}>
+                  {t('auth.backToLogin')}
+                </button>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
