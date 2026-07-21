@@ -31,10 +31,6 @@ class InvoiceItemDto {
   discountValue?: number;
 
   @IsOptional()
-  @IsNumber()
-  taxRatePct?: number;
-
-  @IsOptional()
   @IsArray()
   serialNumbers?: string[];
 }

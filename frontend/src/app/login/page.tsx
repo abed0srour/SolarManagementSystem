@@ -1,8 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SunMedium, Languages } from 'lucide-react';
+import { SunMedium, Languages, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, errMsg } from '../../lib/api';
 import { Button } from '../../components/ui/button';
@@ -19,12 +19,29 @@ function switchLocale() {
 export default function LoginPage() {
   const t = useTranslations();
   const router = useRouter();
-  const [email, setEmail] = useState('admin@solarstore.local');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
+
+  // Prefill saved credentials when "Remember me" was used before
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('rememberedLogin');
+      if (saved) {
+        const { email: e, password: p } = JSON.parse(saved);
+        if (e) setEmail(e);
+        if (p) setPassword(p);
+        setRemember(true);
+      }
+    } catch {
+      /* ignore corrupt saved data */
+    }
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +49,8 @@ export default function LoginPage() {
     try {
       if (mode === 'login') {
         const { data } = await api.post('/auth/login', { email, password });
+        if (remember) localStorage.setItem('rememberedLogin', JSON.stringify({ email, password }));
+        else localStorage.removeItem('rememberedLogin');
         localStorage.setItem('token', data.accessToken);
         localStorage.setItem('refreshToken', data.refreshToken);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -77,10 +96,27 @@ export default function LoginPage() {
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
             </div>
             {mode === 'login' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="password">{t('auth.password')}</Label>
-                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">{t('auth.password')}</Label>
+                  <div className="relative">
+                    <Input id="password" type={showPassword ? 'text' : 'password'} className="pe-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      title={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                      onClick={() => setShowPassword((v) => !v)}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                  <input type="checkbox" className="h-4 w-4 accent-primary" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                  {t('auth.rememberMe')}
+                </label>
+              </>
             )}
             {mode === 'reset' && (
               <>

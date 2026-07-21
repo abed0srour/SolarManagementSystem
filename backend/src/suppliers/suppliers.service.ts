@@ -36,14 +36,15 @@ export class SuppliersService {
       this.prisma.supplier.count({ where }),
     ]);
 
+    // What we still owe each supplier = unpaid remainder of their purchase orders
     const ids = items.map((s) => s.id);
-    const payables = await this.prisma.invoice.groupBy({
+    const payables = await this.prisma.purchaseOrder.groupBy({
       by: ['supplierId'],
-      where: { supplierId: { in: ids }, type: 'PURCHASE', status: { notIn: ['CANCELLED', 'PAID'] } },
+      where: { supplierId: { in: ids }, status: { not: 'CANCELLED' }, deletedAt: null },
       _sum: { total: true, paidAmount: true },
     });
     const payableMap = new Map(
-      payables.map((g) => [g.supplierId, Number(g._sum.total ?? 0) - Number(g._sum.paidAmount ?? 0)]),
+      payables.map((g) => [g.supplierId, Math.max(0, Number(g._sum.total ?? 0) - Number(g._sum.paidAmount ?? 0))]),
     );
     return {
       items: items.map((s) => ({ ...s, outstandingPayable: payableMap.get(s.id) ?? 0 })),
@@ -54,7 +55,7 @@ export class SuppliersService {
   }
 
   async findOne(id: string) {
-    const supplier = await this.prisma.supplier.findUnique({
+    const supplier = await this.prisma.supplier.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         products: { include: { product: { select: { id: true, sku: true, name: true, costPrice: true } } } },
@@ -113,7 +114,7 @@ export class SuppliersService {
   // ---- Supplier returns ----
 
   supplierReturns(query: { supplierId?: string }) {
-    return this.prisma.supplierReturn.findMany({
+    return this.prisma.supplierReturn.findMany({ relationLoadStrategy: 'join',
       where: query.supplierId ? { supplierId: query.supplierId } : undefined,
       include: { supplier: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },

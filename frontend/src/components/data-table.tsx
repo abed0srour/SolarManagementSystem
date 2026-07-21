@@ -37,7 +37,7 @@ export default function DataTable({
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState(initialSearch ?? '');
   const [debounced, setDebounced] = useState(initialSearch ?? '');
   const [sortBy, setSortBy] = useState<string | undefined>();

@@ -15,24 +15,21 @@ export interface LineInput {
   unitPrice: number;
   discountType?: DiscountType;
   discountValue?: number;
-  taxRatePct?: number;
 }
 
 export interface LineTotals {
   net: number;
-  tax: number;
   lineTotal: number;
 }
 
-/** gross = qty*price; net = gross - line discount; tax = net * rate; lineTotal = net + tax */
+/** gross = qty*price; lineTotal = net = gross - line discount */
 export function calcLine(l: LineInput): LineTotals {
   const gross = l.quantity * l.unitPrice;
   const net = applyDiscount(gross, l.discountType, l.discountValue ?? 0);
-  const tax = (net * (l.taxRatePct ?? 0)) / 100;
-  return { net: round2(net), tax: round2(tax), lineTotal: round2(net + tax) };
+  return { net: round2(net), lineTotal: round2(net) };
 }
 
-/** subtotal = sum of line nets; total = (subtotal - doc discount) + tax + shipping */
+/** subtotal = sum of line nets; total = (subtotal - doc discount) + shipping */
 export function calcDocTotals(
   lines: LineTotals[],
   docDiscountType?: DiscountType,
@@ -40,8 +37,7 @@ export function calcDocTotals(
   shippingFee = 0,
 ) {
   const subtotal = round2(lines.reduce((s, l) => s + l.net, 0));
-  const taxAmount = round2(lines.reduce((s, l) => s + l.tax, 0));
   const afterDiscount = applyDiscount(subtotal, docDiscountType, docDiscountValue ?? 0);
-  const total = round2(afterDiscount + taxAmount + shippingFee);
-  return { subtotal, taxAmount, total };
+  const total = round2(afterDiscount + shippingFee);
+  return { subtotal, total };
 }

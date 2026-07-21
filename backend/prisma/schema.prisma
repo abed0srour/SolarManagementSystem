@@ -1,10 +1,14 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // relationJoins: load included relations via a single SQL JOIN instead of
+  // one query per relation — critical over a high-latency remote database.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============ Users, Auth & Audit ============
@@ -25,8 +29,9 @@ model User {
   createdAt           DateTime  @default(now())
   deletedAt           DateTime?
 
-  refreshTokens    RefreshToken[]
-  resetTokens      PasswordResetToken[]
+  refreshTokens     RefreshToken[]
+  resetTokens       PasswordResetToken[]
+  verificationCodes VerificationCode[]
   loginHistory     LoginHistory[]
   auditLogs        AuditLog[]
   priceChanges     PriceHistory[]
@@ -42,6 +47,8 @@ model User {
   serviceJobs      ServiceJob[]
   goodsReceipts    GoodsReceipt[]
   attachments      Attachment[]
+  installations    Installation[]
+  expenses         Expense[]
 }
 
 model RefreshToken {
@@ -66,6 +73,21 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+// Short-lived numeric codes emailed to confirm sensitive account changes
+model VerificationCode {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   String // EMAIL_CHANGE | PASSWORD_CHANGE
+  newEmail  String?
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, purpose])
 }
 
 model LoginHistory {
@@ -170,7 +192,8 @@ model Product {
   costPrice                 Decimal   @db.Decimal(12, 2)
   salePrice                 Decimal   @db.Decimal(12, 2)
   priceUpdatedAt            DateTime  @default(now())
-  taxRatePct                Decimal   @default(0) @db.Decimal(5, 2)
+  // Services (installation, delivery…) are sellable but carry no stock
+  isService                 Boolean   @default(false)
   trackSerials              Boolean   @default(true)
   lowStockThreshold         Int       @default(5)
   warrantyMonths            Int? // product warranty
@@ -359,6 +382,7 @@ model Client {
   refunds        Refund[]
   warrantyClaims WarrantyClaim[]
   serviceJobs    ServiceJob[]
+  installations  Installation[]
 
   @@index([name])
 }
@@ -435,7 +459,6 @@ model Quotation {
   discountType  DiscountType?
   discountValue Decimal         @default(0) @db.Decimal(12, 2)
   subtotal      Decimal         @default(0) @db.Decimal(12, 2)
-  taxAmount     Decimal         @default(0) @db.Decimal(12, 2)
   total         Decimal         @default(0) @db.Decimal(12, 2)
   notes         String?
   createdById   String
@@ -460,7 +483,6 @@ model QuotationItem {
   unitPrice     Decimal       @db.Decimal(12, 2)
   discountType  DiscountType?
   discountValue Decimal       @default(0) @db.Decimal(12, 2)
-  taxRatePct    Decimal       @default(0) @db.Decimal(5, 2)
   lineTotal     Decimal       @db.Decimal(12, 2)
 }
 
@@ -486,7 +508,6 @@ model SalesOrder {
   discountType  DiscountType?
   discountValue Decimal          @default(0) @db.Decimal(12, 2)
   subtotal      Decimal          @default(0) @db.Decimal(12, 2)
-  taxAmount     Decimal          @default(0) @db.Decimal(12, 2)
   shippingFee   Decimal          @default(0) @db.Decimal(12, 2)
   total         Decimal          @default(0) @db.Decimal(12, 2)
   notes         String?
@@ -495,10 +516,11 @@ model SalesOrder {
   createdAt     DateTime         @default(now())
   deletedAt     DateTime?
 
-  items       SalesOrderItem[]
-  invoices    Invoice[]
-  serviceJobs ServiceJob[]
-  units       ProductUnit[]
+  items         SalesOrderItem[]
+  invoices      Invoice[]
+  serviceJobs   ServiceJob[]
+  units         ProductUnit[]
+  installations Installation[]
 
   @@index([status])
   @@index([clientId])
@@ -515,7 +537,6 @@ model SalesOrderItem {
   unitPrice     Decimal       @db.Decimal(12, 2)
   discountType  DiscountType?
   discountValue Decimal       @default(0) @db.Decimal(12, 2)
-  taxRatePct    Decimal       @default(0) @db.Decimal(5, 2)
   lineTotal     Decimal       @db.Decimal(12, 2)
   deliveredQty  Int           @default(0)
 }
@@ -541,7 +562,10 @@ model PurchaseOrder {
   currency         String              @default("USD")
   exchangeRate     Decimal             @default(1) @db.Decimal(12, 6)
   subtotal         Decimal             @default(0) @db.Decimal(12, 2)
+  hasDeliveryCost  Boolean             @default(false)
+  deliveryCost     Decimal             @default(0) @db.Decimal(12, 2)
   total            Decimal             @default(0) @db.Decimal(12, 2)
+  paidAmount       Decimal             @default(0) @db.Decimal(12, 2)
   notes            String?
   createdById      String
   createdBy        User                @relation(fields: [createdById], references: [id])
@@ -552,6 +576,7 @@ model PurchaseOrder {
   goodsReceipts GoodsReceipt[]
   invoices      Invoice[]
   units         ProductUnit[]
+  payments      Payment[]
 
   @@index([status])
   @@index([supplierId])
@@ -616,7 +641,6 @@ model Invoice {
   discountType    DiscountType?
   discountValue   Decimal        @default(0) @db.Decimal(12, 2)
   subtotal        Decimal        @default(0) @db.Decimal(12, 2)
-  taxAmount       Decimal        @default(0) @db.Decimal(12, 2)
   shippingFee     Decimal        @default(0) @db.Decimal(12, 2)
   total           Decimal        @default(0) @db.Decimal(12, 2)
   paidAmount      Decimal        @default(0) @db.Decimal(12, 2)
@@ -650,7 +674,6 @@ model InvoiceItem {
   unitPrice     Decimal       @db.Decimal(12, 2) // price snapshot at time of transaction
   discountType  DiscountType?
   discountValue Decimal       @default(0) @db.Decimal(12, 2)
-  taxRatePct    Decimal       @default(0) @db.Decimal(5, 2)
   lineTotal     Decimal       @db.Decimal(12, 2)
 }
 
@@ -661,10 +684,8 @@ enum PaymentDirection {
 
 enum PaymentMethod {
   CASH
-  BANK_TRANSFER
-  CHEQUE
-  CARD
-  MOBILE
+  WHISH
+  OMT
   STORE_CREDIT
 }
 
@@ -678,6 +699,8 @@ model Payment {
   client       Client?          @relation(fields: [clientId], references: [id])
   supplierId   String?
   supplier     Supplier?        @relation(fields: [supplierId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   scheduleId   String?
   schedule     PaymentSchedule? @relation(fields: [scheduleId], references: [id])
   method       PaymentMethod
@@ -871,6 +894,132 @@ model ServiceJob {
   @@index([status, scheduledDate])
 }
 
+// ============ Solar Operations ============
+
+enum SystemType {
+  ON_GRID
+  OFF_GRID
+  HYBRID
+}
+
+enum InstallationStatus {
+  SURVEY
+  DESIGN
+  APPROVED
+  INSTALLING
+  COMMISSIONED
+  ACTIVE
+  ON_HOLD
+  CANCELLED
+}
+
+model Installation {
+  id                 String             @id @default(uuid())
+  number             String             @unique
+  clientId           String
+  client             Client             @relation(fields: [clientId], references: [id])
+  salesOrderId       String?
+  salesOrder         SalesOrder?        @relation(fields: [salesOrderId], references: [id])
+  status             InstallationStatus @default(SURVEY)
+  systemType         SystemType         @default(HYBRID)
+  siteAddress        String?
+  city               String?
+  latitude           Decimal?           @db.Decimal(9, 6)
+  longitude          Decimal?           @db.Decimal(9, 6)
+  capacityKw         Decimal            @default(0) @db.Decimal(8, 2)
+  panelCount         Int                @default(0)
+  batteryKwh         Decimal            @default(0) @db.Decimal(8, 2)
+  tariffPerKwh       Decimal            @default(0.20) @db.Decimal(6, 3) // grid price used for savings estimates
+  expectedMonthlyKwh Decimal?           @db.Decimal(10, 2)
+  installedAt        DateTime?
+  commissionedAt     DateTime?
+  notes              String?
+  createdById        String
+  createdBy          User               @relation(fields: [createdById], references: [id])
+  createdAt          DateTime           @default(now())
+  deletedAt          DateTime?
+
+  readings  EnergyReading[]
+  contracts MaintenanceContract[]
+
+  @@index([status])
+  @@index([clientId])
+}
+
+model EnergyReading {
+  id             String       @id @default(uuid())
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  readingDate    DateTime     @db.Date
+  energyKwh      Decimal      @db.Decimal(10, 2)
+  peakPowerKw    Decimal?     @db.Decimal(8, 2)
+  sunHours       Decimal?     @db.Decimal(4, 1)
+  note           String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([installationId, readingDate])
+  @@index([readingDate])
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model MaintenanceContract {
+  id             String         @id @default(uuid())
+  number         String         @unique
+  installationId String
+  installation   Installation   @relation(fields: [installationId], references: [id])
+  status         ContractStatus @default(ACTIVE)
+  startDate      DateTime
+  endDate        DateTime
+  visitsPerYear  Int            @default(2)
+  pricePerYear   Decimal        @default(0) @db.Decimal(12, 2)
+  lastVisitDate  DateTime?
+  nextVisitDate  DateTime?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  deletedAt      DateTime?
+
+  @@index([status, nextVisitDate])
+}
+
+// ============ Expenses ============
+
+enum ExpenseCategory {
+  RENT
+  SALARIES
+  UTILITIES
+  TRANSPORT
+  MARKETING
+  EQUIPMENT
+  MAINTENANCE
+  OTHER
+}
+
+model Expense {
+  id            String          @id @default(uuid())
+  number        String          @unique
+  category      ExpenseCategory @default(OTHER)
+  description   String
+  amount        Decimal         @db.Decimal(12, 2)
+  currency      String          @default("USD")
+  expenseDate   DateTime        @default(now())
+  vendor        String?
+  paymentMethod PaymentMethod   @default(CASH)
+  reference     String?
+  notes         String?
+  createdById   String
+  createdBy     User            @relation(fields: [createdById], references: [id])
+  createdAt     DateTime        @default(now())
+  deletedAt     DateTime?
+
+  @@index([category, expenseDate])
+  @@index([expenseDate])
+}
+
 // ============ Notifications & Settings ============
 
 enum NotificationType {
@@ -881,6 +1030,9 @@ enum NotificationType {
   QUOTATION_EXPIRING
   WARRANTY_CLAIM_OPENED
   SHELF_LIFE_ALERT
+  MAINTENANCE_VISIT_DUE
+  CONTRACT_EXPIRING
+  READING_GAP
 }
 
 model Notification {
@@ -906,4 +1058,29 @@ model NumberSequence {
   prefix     String
   nextNumber Int    @default(1)
   padding    Int    @default(5)
+}
+
+enum BackupStatus {
+  SUCCESS
+  FAILED
+}
+
+// History of backup/restore runs. Kept separate from the backup file itself
+// (which is overwritten in place) so operators have an audit trail even
+// though only the latest snapshot is stored on disk. Excluded from the
+// backup/restore payload itself so its own history survives a restore.
+model BackupLog {
+  id          String       @id @default(uuid())
+  type        String // BACKUP | RESTORE
+  status      BackupStatus
+  filename    String?
+  sizeBytes   Int?
+  tableCount  Int?
+  rowCount    Int?
+  error       String?
+  triggeredBy String? // user id, or "SCHEDULER"
+  durationMs  Int?
+  createdAt   DateTime     @default(now())
+
+  @@index([createdAt])
 }

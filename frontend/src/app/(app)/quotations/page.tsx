@@ -1,4 +1,6 @@
 'use client';
+import { FileText as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -9,6 +11,7 @@ import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
+import ClientInfoDialog from '../../../components/client-info-dialog';
 import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -27,6 +30,7 @@ export default function QuotationsPage() {
   const [convertFor, setConvertFor] = useState<any>(null);
   const [convertWh, setConvertWh] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -47,12 +51,11 @@ export default function QuotationsPage() {
     });
     setLines(
       (row.items ?? []).map((i: any) => ({
-        product: i.product ? { id: i.productId, name: i.product.name, sku: i.product.sku, salePrice: i.unitPrice, taxRatePct: i.taxRatePct } : { id: i.productId, name: i.description ?? 'item', sku: '', salePrice: i.unitPrice, taxRatePct: i.taxRatePct },
+        product: i.product ? { id: i.productId, name: i.product.name, sku: i.product.sku, salePrice: i.unitPrice } : { id: i.productId, name: i.description ?? 'item', sku: '', salePrice: i.unitPrice },
         quantity: i.quantity,
         unitPrice: Number(i.unitPrice),
         discountType: i.discountType ?? '',
         discountValue: Number(i.discountValue),
-        taxRatePct: Number(i.taxRatePct),
       })),
     );
     setOpen(true);
@@ -93,7 +96,7 @@ export default function QuotationsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('quotations.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('quotations.title')} subtitle={t('subtitles.quotations')} />
       <DataTable
         endpoint="/quotations"
         refreshKey={refreshKey}
@@ -114,7 +117,12 @@ export default function QuotationsPage() {
         }
         columns={[
           { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
-          { key: 'client', label: t('common.client'), render: (r) => r.client?.name },
+          {
+            key: 'client', label: t('common.client'),
+            render: (r) => r.client?.name ? (
+              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
+            ) : '—',
+          },
           { key: 'createdAt', label: t('common.date'), render: (r) => fmtDate(r.createdAt) },
           { key: 'validUntil', label: t('quotations.validUntil'), render: (r) => fmtDate(r.validUntil) },
           { key: 'total', label: t('common.total'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total)}</span> },
@@ -194,9 +202,12 @@ export default function QuotationsPage() {
         </DialogContent>
       </Dialog>
 
+      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
+
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.delete(`/quotations/${deleteTarget.id}`);

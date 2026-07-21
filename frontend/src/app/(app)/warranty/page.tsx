@@ -1,8 +1,10 @@
 'use client';
+import { ShieldCheck as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus } from 'lucide-react';
+import { Eye, Plus } from 'lucide-react';
 import { api, errMsg, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
@@ -23,6 +25,7 @@ export default function WarrantyPage() {
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [statusFilter, setStatusFilter] = useState('');
+  const [unitInfo, setUnitInfo] = useState<any>(null);
 
   const save = async () => {
     try {
@@ -56,12 +59,38 @@ export default function WarrantyPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('warranty.title')}</h1>
-      <Tabs defaultValue="claims">
+      <PageHeader icon={PageIcon} title={t('warranty.title')} subtitle={t('subtitles.warranty')} />
+      <Tabs defaultValue="units">
         <TabsList>
+          <TabsTrigger value="units">{t('warranty.soldUnits')}</TabsTrigger>
           <TabsTrigger value="claims">{t('warranty.claims')}</TabsTrigger>
           <TabsTrigger value="expiring">{t('warranty.expiring')}</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="units">
+          <DataTable
+            endpoint="/inventory/units"
+            searchable={false}
+            refreshKey={refreshKey}
+            extraParams={{ status: 'SOLD' }}
+            onRowClick={(r) => setUnitInfo(r)}
+            columns={[
+              { key: 'serialNumber', label: t('inventory.serialNumber'), render: (r) => <span className="whitespace-nowrap font-mono text-xs" dir="ltr">{r.serialNumber}</span> },
+              { key: 'product', label: t('common.product'), render: (r) => `${r.product?.name} [${r.product?.sku}]` },
+              { key: 'client', label: t('common.client'), render: (r) => r.invoice?.client?.name ?? r.salesOrder?.client?.name ?? '—' },
+              { key: 'phone', label: t('common.phone'), render: (r) => r.invoice?.client?.phone ?? r.salesOrder?.client?.phone ?? '—' },
+              { key: 'status', label: t('common.status'), render: (r) => <StatusChip status={r.status} /> },
+              {
+                key: 'actions', label: '', className: 'w-12',
+                render: (r) => (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" title={t('warranty.unitDetails')} onClick={(e) => { e.stopPropagation(); setUnitInfo(r); }}>
+                    <Eye />
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </TabsContent>
 
         <TabsContent value="claims">
           <DataTable
@@ -137,6 +166,37 @@ export default function WarrantyPage() {
             <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
             <Button onClick={save} disabled={!form.issue || (!form.serialNumber && !form.product)}>{t('common.save')}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sold unit warranty details */}
+      <Dialog open={!!unitInfo} onOpenChange={(v) => !v && setUnitInfo(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-mono text-sm" dir="ltr">{unitInfo?.serialNumber}</DialogTitle>
+          </DialogHeader>
+          {unitInfo && (
+            <div className="space-y-2 text-sm">
+              <div><span className="text-muted-foreground">{t('common.product')}: </span>{unitInfo.product?.name} [{unitInfo.product?.sku}]</div>
+              <div><span className="text-muted-foreground">{t('common.client')}: </span>{unitInfo.invoice?.client?.name ?? unitInfo.salesOrder?.client?.name ?? '—'}</div>
+              <div><span className="text-muted-foreground">{t('common.phone')}: </span>{unitInfo.invoice?.client?.phone ?? unitInfo.salesOrder?.client?.phone ?? '—'}</div>
+              <div className="flex items-center gap-2"><span className="text-muted-foreground">{t('common.status')}: </span><StatusChip status={unitInfo.status} /></div>
+              <div><span className="text-muted-foreground">{t('inventory.startDay')}: </span>{fmtDate(unitInfo.warrantyStartDate)}</div>
+              <div><span className="text-muted-foreground">{t('warranty.warrantyEnd')}: </span>{fmtDate(unitInfo.warrantyEndDate)}</div>
+              {unitInfo.performanceWarrantyEndDate && (
+                <div><span className="text-muted-foreground">{t('warranty.performanceEnd')}: </span>{fmtDate(unitInfo.performanceWarrantyEndDate)}</div>
+              )}
+              {unitInfo.manufactureDate && (
+                <div><span className="text-muted-foreground">{t('inventory.manufactureDate')}: </span>{fmtDate(unitInfo.manufactureDate)}</div>
+              )}
+              {unitInfo.invoice?.number && (
+                <div><span className="text-muted-foreground">{t('payments.invoice')}: </span><span className="font-mono text-xs">{unitInfo.invoice.number}</span></div>
+              )}
+              {unitInfo.salesOrder?.number && (
+                <div><span className="text-muted-foreground">{t('nav.salesOrders')}: </span><span className="font-mono text-xs">{unitInfo.salesOrder.number}</span></div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

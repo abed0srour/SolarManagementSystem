@@ -1,9 +1,11 @@
 'use client';
+import { Users as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Archive, ShoppingCart, Pencil, ClipboardList } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -15,20 +17,27 @@ import { Textarea } from '../../../components/ui/textarea';
 import { Badge } from '../../../components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 
+const SORTS: Record<string, { sortBy: string; sortDir: string }> = {
+  newest: { sortBy: 'createdAt', sortDir: 'desc' },
+  oldest: { sortBy: 'createdAt', sortDir: 'asc' },
+  remainingHigh: { sortBy: 'remaining', sortDir: 'desc' },
+  nameAz: { sortBy: 'name', sortDir: 'asc' },
+};
+
 export default function ClientsPage() {
   const t = useTranslations();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
-  const [addresses, setAddresses] = useState<any[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [sort, setSort] = useState('newest');
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', type: 'INDIVIDUAL', tier: 'RETAIL', email: '', phone: '', taxNumber: '', creditLimit: 0, notes: '' });
-    setAddresses([]);
+    setForm({ name: '', type: 'INDIVIDUAL', tier: 'RETAIL', email: '', phone: '', creditLimit: 0, notes: '', address: '' });
     setOpen(true);
   };
 
@@ -36,22 +45,22 @@ export default function ClientsPage() {
     setEditing(row);
     setForm({
       name: row.name, type: row.type, tier: row.tier, email: row.email ?? '', phone: row.phone ?? '',
-      taxNumber: row.taxNumber ?? '', creditLimit: Number(row.creditLimit), notes: row.notes ?? '',
+      creditLimit: Number(row.creditLimit), notes: row.notes ?? '',
+      address: row.addresses?.[0]?.line1 ?? '',
     });
-    setAddresses((row.addresses ?? []).map((a: any) => ({ label: a.label, line1: a.line1, city: a.city ?? '', isBilling: a.isBilling, isInstallation: a.isInstallation })));
     setOpen(true);
   };
 
   const save = async () => {
     try {
+      const { address, ...rest } = form;
       const payload = {
-        ...form,
+        ...rest,
         creditLimit: Number(form.creditLimit) || 0,
         email: form.email || undefined,
         phone: form.phone || undefined,
-        taxNumber: form.taxNumber || undefined,
         notes: form.notes || undefined,
-        addresses: addresses.filter((a) => a.line1),
+        addresses: address?.trim() ? [{ label: 'Main', line1: address.trim(), isBilling: true, isInstallation: true }] : [],
       };
       if (editing) await api.patch(`/clients/${editing.id}`, payload);
       else await api.post('/clients', payload);
@@ -65,35 +74,63 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('clients.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('clients.title')} subtitle={t('subtitles.clients')} />
       <DataTable
         endpoint="/clients"
         refreshKey={refreshKey}
         initialSearch={searchParams.get('search') ?? undefined}
-        onRowClick={openEdit}
+        extraParams={SORTS[sort]}
+        filters={
+          <Select className="w-52" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="newest">{t('clients.sortNewest')}</option>
+            <option value="oldest">{t('clients.sortOldest')}</option>
+            <option value="remainingHigh">{t('clients.sortRemaining')}</option>
+            <option value="nameAz">{t('clients.sortName')}</option>
+          </Select>
+        }
         toolbar={
           <Button onClick={openCreate}>
             <Plus /> {t('clients.newClient')}
           </Button>
         }
         columns={[
-          { key: 'name', label: t('common.name'), sortable: true },
+          { key: 'name', label: t('common.name') },
           { key: 'type', label: t('clients.type'), render: (r) => t(`clients.${r.type}`) },
-          { key: 'tier', label: t('clients.tier'), sortable: true, render: (r) => <Badge variant="outline">{t(`clients.${r.tier}`)}</Badge> },
+          { key: 'tier', label: t('clients.tier'), render: (r) => <Badge variant="outline">{t(`clients.${r.tier}`)}</Badge> },
           { key: 'phone', label: t('common.phone') },
-          { key: 'email', label: t('common.email') },
-          { key: 'creditLimit', label: t('clients.creditLimit'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.creditLimit)}</span> },
           {
-            key: 'outstandingBalance', label: t('clients.outstanding'), className: 'text-end',
-            render: (r) => <span className={`tabular-nums ${r.outstandingBalance > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : ''}`}>{fmtMoney(r.outstandingBalance)}</span>,
+            key: 'billedTotal', label: t('clients.balance'), className: 'text-end',
+            render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.billedTotal ?? 0)}</span>,
           },
-          { key: 'storeCredit', label: t('clients.storeCredit'), className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.storeCredit)}</span> },
+          {
+            key: 'paidTotal', label: t('orders.paid'), className: 'text-end',
+            render: (r) => <span className="tabular-nums text-green-600 dark:text-green-400">{fmtMoney(r.paidTotal ?? 0)}</span>,
+          },
+          {
+            key: 'outstandingBalance', label: t('orders.remaining'), className: 'text-end',
+            render: (r) => (
+              <span className={`tabular-nums ${r.outstandingBalance > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                {fmtMoney(r.outstandingBalance ?? 0)}
+              </span>
+            ),
+          },
           {
             key: 'actions', label: '',
             render: (r) => (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                <Trash2 />
-              </Button>
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" title={t('clients.viewOrders')} onClick={(e) => { e.stopPropagation(); router.push(`/clients/${r.id}/orders`); }}>
+                  <ClipboardList />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('clients.createOrder')} onClick={(e) => { e.stopPropagation(); router.push(`/sales-orders?clientId=${r.id}`); }}>
+                  <ShoppingCart />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 dark:text-amber-400" title={t('common.edit')} onClick={(e) => { e.stopPropagation(); openEdit(r); }}>
+                  <Pencil />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                  <Archive />
+                </Button>
+              </div>
             ),
           },
         ]}
@@ -115,47 +152,18 @@ export default function ClientsPage() {
             <Field label={t('clients.tier')}>
               <Select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
                 <option value="RETAIL">{t('clients.RETAIL')}</option>
-                <option value="WHOLESALE">{t('clients.WHOLESALE')}</option>
                 <option value="INSTALLER">{t('clients.INSTALLER')}</option>
               </Select>
             </Field>
             <Field label={t('common.phone')}><Input value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
             <Field label={t('common.email')}><Input type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-            <Field label={t('clients.taxNumber')}><Input value={form.taxNumber ?? ''} onChange={(e) => setForm({ ...form, taxNumber: e.target.value })} /></Field>
             <Field label={t('clients.creditLimit')}><Input type="number" min={0} value={form.creditLimit ?? 0} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} /></Field>
+            <Field label={t('common.address')} className="col-span-2 md:col-span-4">
+              <Input value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </Field>
             <Field label={t('common.notes')} className="col-span-2 md:col-span-4">
               <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
-          </div>
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold">{t('clients.addresses')}</span>
-              <Button variant="outline" size="sm" onClick={() => setAddresses([...addresses, { label: 'Main', line1: '', city: '', isBilling: true, isInstallation: false }])}>
-                <Plus /> {t('clients.addAddress')}
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {addresses.map((a, i) => (
-                <div key={i} className="grid grid-cols-2 items-center gap-2 md:grid-cols-6">
-                  <Input placeholder="Label" value={a.label} onChange={(e) => setAddresses(addresses.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
-                  <Input className="md:col-span-2" placeholder={t('common.address')} value={a.line1} onChange={(e) => setAddresses(addresses.map((x, j) => (j === i ? { ...x, line1: e.target.value } : x)))} />
-                  <Input placeholder="City" value={a.city} onChange={(e) => setAddresses(addresses.map((x, j) => (j === i ? { ...x, city: e.target.value } : x)))} />
-                  <div className="flex items-center gap-3 text-xs">
-                    <label className="flex items-center gap-1">
-                      <input type="checkbox" checked={a.isBilling} onChange={(e) => setAddresses(addresses.map((x, j) => (j === i ? { ...x, isBilling: e.target.checked } : x)))} />
-                      {t('clients.billing')}
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input type="checkbox" checked={a.isInstallation} onChange={(e) => setAddresses(addresses.map((x, j) => (j === i ? { ...x, isInstallation: e.target.checked } : x)))} />
-                      {t('clients.installation')}
-                    </label>
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setAddresses(addresses.filter((_, j) => j !== i))}>
-                    <Trash2 />
-                  </Button>
-                </div>
-              ))}
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
@@ -167,6 +175,7 @@ export default function ClientsPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.delete(`/clients/${deleteTarget.id}`);

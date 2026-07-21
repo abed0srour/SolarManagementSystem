@@ -49,6 +49,33 @@ class ChangePasswordDto {
   newPassword: string;
 }
 
+class RequestEmailChangeDto {
+  @IsString()
+  currentPassword: string;
+
+  @IsEmail()
+  newEmail: string;
+}
+
+class ConfirmEmailChangeDto {
+  @IsString()
+  code: string;
+}
+
+class RequestPasswordChangeDto {
+  @IsString()
+  currentPassword: string;
+}
+
+class ConfirmPasswordChangeDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -99,5 +126,27 @@ export class AuthController {
   @Post('change-password')
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('request-email-change')
+  requestEmailChange(@CurrentUser() user: AuthUser, @Body() dto: RequestEmailChangeDto) {
+    return this.authService.requestEmailChange(user.id, dto.currentPassword, dto.newEmail);
+  }
+
+  @Post('confirm-email-change')
+  confirmEmailChange(@CurrentUser() user: AuthUser, @Body() dto: ConfirmEmailChangeDto) {
+    return this.authService.confirmEmailChange(user.id, dto.code);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('request-password-change')
+  requestPasswordChange(@CurrentUser() user: AuthUser, @Body() dto: RequestPasswordChangeDto) {
+    return this.authService.requestPasswordChange(user.id, dto.currentPassword);
+  }
+
+  @Post('confirm-password-change')
+  confirmPasswordChange(@CurrentUser() user: AuthUser, @Body() dto: ConfirmPasswordChangeDto) {
+    return this.authService.confirmPasswordChange(user.id, dto.code, dto.newPassword);
   }
 }

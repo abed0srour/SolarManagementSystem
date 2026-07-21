@@ -1,4 +1,6 @@
 'use client';
+import { CreditCard as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -6,6 +8,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
+import ClientInfoDialog from '../../../components/client-info-dialog';
 import Field from '../../../components/form-field';
 import { ClientPicker, SupplierPicker, InvoicePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
@@ -24,6 +27,7 @@ export default function PaymentsPage() {
   const [directionFilter, setDirectionFilter] = useState('');
   const [dueSchedules, setDueSchedules] = useState<any[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/payments/due-schedules').then((r) => setDueSchedules(r.data)).catch(() => {});
@@ -52,7 +56,7 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('payments.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('payments.title')} subtitle={t('subtitles.payments')} />
 
       {dueSchedules.length > 0 && (
         <Card>
@@ -108,7 +112,12 @@ export default function PaymentsPage() {
             key: 'direction', label: t('payments.direction'),
             render: (r) => <Badge variant={r.direction === 'INCOMING' ? 'success' : 'warning'}>{t(`payments.${r.direction}`)}</Badge>,
           },
-          { key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`, render: (r) => r.client?.name ?? r.supplier?.name ?? '—' },
+          {
+            key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`,
+            render: (r) => r.client?.name && r.clientId ? (
+              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
+            ) : (r.supplier?.name ?? '—'),
+          },
           { key: 'invoice', label: t('payments.invoice'), render: (r) => r.invoice?.number ?? '—' },
           { key: 'method', label: t('common.method'), render: (r) => t(`payments.${r.method}`) },
           { key: 'paymentDate', label: t('common.date'), render: (r) => fmtDate(r.paymentDate) },
@@ -157,7 +166,7 @@ export default function PaymentsPage() {
               </Field>
               <Field label={t('common.method')}>
                 <Select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
-                  {['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'MOBILE', 'STORE_CREDIT'].map((m) => (
+                  {['CASH', 'WHISH', 'OMT', 'STORE_CREDIT'].map((m) => (
                     <option key={m} value={m}>{t(`payments.${m}`)}</option>
                   ))}
                 </Select>
@@ -177,9 +186,12 @@ export default function PaymentsPage() {
         </DialogContent>
       </Dialog>
 
+      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
+
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.delete(`/payments/${deleteTarget.id}`);

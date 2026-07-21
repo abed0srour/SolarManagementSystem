@@ -8,12 +8,11 @@ import {
   SunMedium, LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
-  Search, ChevronRight, User,
+  ChevronRight, User, HardHat, Activity, Calculator, Wallet,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import {
@@ -42,8 +41,8 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
       { key: 'clients', href: '/clients', icon: Users },
       { key: 'quotations', href: '/quotations', icon: FileText },
       { key: 'salesOrders', href: '/sales-orders', icon: ShoppingCart },
-      { key: 'invoices', href: '/invoices', icon: Receipt },
       { key: 'payments', href: '/payments', icon: CreditCard },
+      { key: 'receipts', href: '/receipts', icon: Receipt },
       { key: 'refunds', href: '/refunds', icon: RotateCcw },
     ],
   },
@@ -52,6 +51,15 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
     items: [
       { key: 'suppliers', href: '/suppliers', icon: Truck },
       { key: 'purchaseOrders', href: '/purchase-orders', icon: PackagePlus },
+      { key: 'expenses', href: '/expenses', icon: Wallet },
+    ],
+  },
+  {
+    group: 'solar',
+    items: [
+      { key: 'installations', href: '/installations', icon: HardHat },
+      { key: 'monitoring', href: '/monitoring', icon: Activity },
+      { key: 'calculator', href: '/calculator', icon: Calculator },
     ],
   },
   {
@@ -76,73 +84,6 @@ function switchLocale() {
   window.location.reload();
 }
 
-function GlobalSearch() {
-  const t = useTranslations();
-  const router = useRouter();
-  const [q, setQ] = useState('');
-  const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<{ label: string; sub: string; href: string }[]>([]);
-
-  useEffect(() => {
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const [products, clients, invoices] = await Promise.all([
-          api.get('/products', { params: { search: q, pageSize: 4 } }),
-          api.get('/clients', { params: { search: q, pageSize: 4 } }),
-          api.get('/invoices', { params: { search: q, pageSize: 4 } }),
-        ]);
-        setResults([
-          ...products.data.items.map((p: any) => ({ label: p.name, sub: `${t('nav.products')} · ${p.sku}`, href: '/products?search=' + encodeURIComponent(p.sku) })),
-          ...clients.data.items.map((c: any) => ({ label: c.name, sub: t('nav.clients'), href: '/clients?search=' + encodeURIComponent(c.name) })),
-          ...invoices.data.items.map((i: any) => ({ label: i.number, sub: `${t('nav.invoices')} · ${i.client?.name ?? i.supplier?.name ?? ''}`, href: '/invoices/' + i.id })),
-        ]);
-        setOpen(true);
-      } catch {
-        /* ignore */
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
-
-  return (
-    <div className="relative hidden w-72 md:block">
-      <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        className="ps-8"
-        placeholder={t('common.globalSearchPlaceholder')}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onFocus={() => q.length >= 2 && setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-      />
-      {open && (
-        <div className="absolute top-10 z-50 w-full rounded-md border bg-popover p-1 shadow-md">
-          {results.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">{t('common.noResults')}</div>}
-          {results.map((r, i) => (
-            <button
-              key={i}
-              className="flex w-full flex-col rounded-sm px-3 py-1.5 text-start hover:bg-accent"
-              onMouseDown={() => {
-                router.push(r.href);
-                setOpen(false);
-                setQ('');
-              }}
-            >
-              <span className="text-sm">{r.label}</span>
-              <span className="text-xs text-muted-foreground">{r.sub}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations();
   const router = useRouter();
@@ -153,6 +94,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [userName, setUserName] = useState('');
+  const [company, setCompany] = useState<any>({});
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -162,6 +104,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
     setUserName(JSON.parse(localStorage.getItem('user') ?? '{}')?.name ?? '');
     setReady(true);
+    // Branding (store name, tagline, logo) comes from the admin settings.
+    api.get('/settings').then((r) => {
+      const c = r.data.company ?? {};
+      setCompany(c);
+      if (c.logoUrl) {
+        let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = c.logoUrl;
+      }
+      if (c.name) document.title = c.name;
+    }).catch(() => {});
     const load = () =>
       api
         .get('/notifications', { params: { unreadOnly: 'true', pageSize: 12 } })
@@ -200,10 +157,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const sidebar = (
     <nav className="flex h-full flex-col overflow-y-auto border-e bg-card">
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <SunMedium className="h-6 w-6 text-amber-500" />
-        <div>
-          <div className="text-sm font-bold leading-tight">{t('app.title')}</div>
-          <div className="text-[11px] text-muted-foreground">{t('app.subtitle')}</div>
+        {company.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={company.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded object-contain" />
+        ) : (
+          <SunMedium className="h-6 w-6 text-amber-500" />
+        )}
+        <div className="min-w-0">
+          <div className="truncate text-sm font-bold leading-tight">{company.name || t('app.title')}</div>
+          <div className="truncate text-[11px] text-muted-foreground">{company.tagline || t('app.subtitle')}</div>
         </div>
       </div>
       <div className="flex-1 space-y-4 p-3">
@@ -266,15 +228,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
               {t('common.home')}
             </Link>
-            {activeItem && (
+            {activeItem && pathname === activeItem.href && (
               <>
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
                 <span className="truncate font-medium">{t(`nav.${activeItem.key}`)}</span>
               </>
             )}
+            {activeItem && pathname !== activeItem.href && (
+              <>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+                <Link href={activeItem.href} className="truncate text-muted-foreground hover:text-foreground">
+                  {t(`nav.${activeItem.key}`)}
+                </Link>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+                <span className="truncate font-medium">
+                  {pathname.endsWith('/orders') ? t('clients.ordersCrumb') : pathname.endsWith('/refund') ? t('refunds.newRefund') : t('common.details')}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex-1" />
-          <GlobalSearch />
           {/* Language */}
           <Button variant="ghost" size="icon" onClick={switchLocale} title={t('common.language')}>
             <Languages />

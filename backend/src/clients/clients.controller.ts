@@ -89,6 +89,11 @@ export class ClientsController {
     return this.service.findAll(query);
   }
 
+  @Get(':id/brief')
+  brief(@Param('id') id: string) {
+    return this.service.brief(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

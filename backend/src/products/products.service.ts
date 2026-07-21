@@ -44,7 +44,7 @@ export class ProductsService {
     const sortDir = query.sortDir === 'desc' ? 'desc' : 'asc';
 
     const [items, total] = await Promise.all([
-      this.prisma.product.findMany({
+      this.prisma.product.findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           subCategory: { include: { category: true } },
@@ -60,7 +60,7 @@ export class ProductsService {
   }
 
   async findOne(id: string) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         subCategory: { include: { category: true, attributeDefs: { orderBy: { sortOrder: 'asc' } } } },
@@ -77,36 +77,81 @@ export class ProductsService {
   }
 
   async create(userId: string, data: any) {
-    const product = await this.prisma.product.create({
-      data: {
-        sku: data.sku,
-        name: data.name,
-        brand: data.brand,
-        model: data.model,
-        subCategoryId: data.subCategoryId,
-        attributes: data.attributes ?? {},
-        costPrice: data.costPrice,
-        salePrice: data.salePrice,
-        taxRatePct: data.taxRatePct ?? 0,
-        trackSerials: data.trackSerials ?? true,
-        lowStockThreshold: data.lowStockThreshold ?? 5,
-        warrantyMonths: data.warrantyMonths,
-        performanceWarrantyMonths: data.performanceWarrantyMonths,
-        shelfLifeMonths: data.shelfLifeMonths,
-        barcode: data.barcode,
-        notes: data.notes,
-      },
+    const serialNumbers: string[] = data.isService
+      ? []
+      : (data.serialNumbers ?? []).map((s: string) => s.trim()).filter(Boolean);
+    const tooLong = serialNumbers.filter((s) => s.length > 18);
+    if (tooLong.length)
+      throw new BadRequestException(`Serial numbers must be 18 characters or less: ${tooLong.join(', ')}`);
+
+    const product = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.product.create({
+        data: {
+          sku: data.sku,
+          name: data.name,
+          brand: data.brand,
+          model: data.model,
+          subCategoryId: data.subCategoryId,
+          attributes: data.attributes ?? {},
+          costPrice: data.costPrice,
+          salePrice: data.salePrice,
+          isService: data.isService ?? false,
+          trackSerials: data.isService ? false : (data.trackSerials ?? true),
+          lowStockThreshold: data.lowStockThreshold ?? 5,
+          warrantyMonths: data.warrantyMonths,
+          performanceWarrantyMonths: data.performanceWarrantyMonths,
+          shelfLifeMonths: data.shelfLifeMonths,
+          barcode: data.barcode,
+          notes: data.notes,
+        },
+      });
+      await tx.priceHistory.create({
+        data: {
+          productId: p.id,
+          newCostPrice: data.costPrice,
+          newSalePrice: data.salePrice,
+          reason: 'Initial price',
+          changedById: userId,
+        },
+      });
+
+      // Serial numbers attached at creation become in-stock units right away.
+      if (serialNumbers.length) {
+        const warehouse =
+          (await tx.warehouse.findFirst({ where: { isDefault: true } })) ?? (await tx.warehouse.findFirst());
+        if (!warehouse) throw new BadRequestException('Create a warehouse before registering serial numbers');
+        await tx.productUnit.createMany({
+          data: serialNumbers.map((serialNumber) => ({
+            productId: p.id,
+            warehouseId: warehouse.id,
+            serialNumber,
+            status: 'IN_STOCK' as const,
+          })),
+        });
+        await tx.stockLevel.upsert({
+          where: { productId_warehouseId: { productId: p.id, warehouseId: warehouse.id } },
+          update: { quantity: { increment: serialNumbers.length } },
+          create: { productId: p.id, warehouseId: warehouse.id, quantity: serialNumbers.length },
+        });
+        await tx.stockMovement.create({
+          data: {
+            productId: p.id,
+            warehouseId: warehouse.id,
+            type: 'IN',
+            quantity: serialNumbers.length,
+            reason: 'Initial serial numbers registered at product creation',
+            userId,
+          },
+        });
+      }
+      return p;
     });
-    await this.prisma.priceHistory.create({
-      data: {
-        productId: product.id,
-        newCostPrice: data.costPrice,
-        newSalePrice: data.salePrice,
-        reason: 'Initial price',
-        changedById: userId,
-      },
+
+    await this.audit.log(userId, 'CREATE', 'Product', product.id, {
+      sku: product.sku,
+      name: product.name,
+      serials: serialNumbers.length || undefined,
     });
-    await this.audit.log(userId, 'CREATE', 'Product', product.id, { sku: product.sku, name: product.name });
     return product;
   }
 
@@ -129,7 +174,7 @@ export class ProductsService {
         attributes: data.attributes,
         costPrice: data.costPrice,
         salePrice: data.salePrice,
-        taxRatePct: data.taxRatePct,
+        isService: data.isService,
         trackSerials: data.trackSerials,
         lowStockThreshold: data.lowStockThreshold,
         warrantyMonths: data.warrantyMonths,
@@ -208,7 +253,7 @@ export class ProductsService {
   }
 
   priceHistory(productId: string) {
-    return this.prisma.priceHistory.findMany({
+    return this.prisma.priceHistory.findMany({ relationLoadStrategy: 'join',
       where: { productId },
       orderBy: { createdAt: 'desc' },
       include: { changedBy: { select: { name: true } } },

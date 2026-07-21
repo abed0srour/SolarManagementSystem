@@ -35,9 +35,14 @@ export class StockService {
       create: { productId, warehouseId, quantity: 0 },
     });
     if (level.quantity + delta < 0) {
-      const product = await tx.product.findUnique({ where: { id: productId } });
+      const [product, warehouse] = await Promise.all([
+        tx.product.findUnique({ where: { id: productId } }),
+        tx.warehouse.findUnique({ where: { id: warehouseId } }),
+      ]);
       throw new BadRequestException(
-        `Insufficient stock for ${product?.name ?? `product #${productId}`}: have ${level.quantity}, need ${-delta}`,
+        `Not enough stock of "${product?.name ?? `product #${productId}`}" in warehouse "${warehouse?.name ?? warehouseId}": ` +
+          `available ${level.quantity}, required ${-delta}. ` +
+          `Receive it through a purchase order or add stock via an inventory adjustment first.`,
       );
     }
     await tx.stockLevel.update({
@@ -59,7 +64,7 @@ export class StockService {
     });
   }
 
-  async stockOverview(query: { warehouseId?: string; lowOnly?: string; search?: string }) {
+  async stockOverview(query: { warehouseId?: string; lowOnly?: string; search?: string; page?: number; pageSize?: number }) {
     const where: Prisma.ProductWhereInput = { isActive: true };
     if (query.search) {
       where.OR = [
@@ -67,7 +72,7 @@ export class StockService {
         { sku: { contains: query.search, mode: 'insensitive' } },
       ];
     }
-    const products = await this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({ relationLoadStrategy: 'join',
       where,
       select: {
         id: true,
@@ -88,7 +93,11 @@ export class StockService {
       const reserved = p.stockLevels.reduce((s, l) => s + l.reserved, 0);
       return { ...p, totalQty, reserved, isLow: totalQty <= p.lowStockThreshold };
     });
-    return query.lowOnly === 'true' ? rows.filter((r) => r.isLow) : rows;
+    // isLow depends on the summed stock levels, so filter/paginate in memory
+    const filtered = query.lowOnly === 'true' ? rows.filter((r) => r.isLow) : rows;
+    const page = Number(query.page) || 1;
+    const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    return { items: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
   }
 
   movements(query: { productId?: string; warehouseId?: string; page?: number; pageSize?: number }) {
@@ -97,8 +106,9 @@ export class StockService {
     if (query.warehouseId) where.warehouseId = query.warehouseId;
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 50, 200);
+    const totalPromise = this.prisma.stockMovement.count({ where });
     return this.prisma.stockMovement
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           product: { select: { sku: true, name: true } },
@@ -110,7 +120,7 @@ export class StockService {
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.stockMovement.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async manualAdjustment(
@@ -193,30 +203,33 @@ export class StockService {
 
   // ---- Product units (serial numbers) ----
 
-  units(query: { productId?: string; status?: string; serial?: string; page?: number; pageSize?: number }) {
+  units(query: { productId?: string; salesOrderId?: string; status?: string; serial?: string; page?: number; pageSize?: number }) {
     const where: Prisma.ProductUnitWhereInput = {};
     if (query.productId) where.productId = query.productId;
+    if (query.salesOrderId) where.salesOrderId = query.salesOrderId;
     if (query.status) where.status = query.status as UnitStatus;
     if (query.serial) where.serialNumber = { contains: query.serial, mode: 'insensitive' };
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 50, 200);
+    const totalPromise = this.prisma.productUnit.count({ where });
     return this.prisma.productUnit
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           product: { select: { sku: true, name: true } },
           warehouse: { select: { name: true } },
-          invoice: { select: { number: true } },
+          invoice: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
+          salesOrder: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.productUnit.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async lookupSerial(serial: string) {
-    const unit = await this.prisma.productUnit.findUnique({
+    const unit = await this.prisma.productUnit.findUnique({ relationLoadStrategy: 'join',
       where: { serialNumber: serial },
       include: {
         product: true,
@@ -240,18 +253,21 @@ export class StockService {
       manufactureDate?: Date;
     },
   ) {
-    for (const serialNumber of params.serialNumbers) {
-      await tx.productUnit.create({
-        data: {
-          productId: params.productId,
-          warehouseId: params.warehouseId,
-          serialNumber,
-          purchaseOrderId: params.purchaseOrderId,
-          manufactureDate: params.manufactureDate,
-          status: 'IN_STOCK',
-        },
-      });
-    }
+    const tooLong = params.serialNumbers.filter((s) => s.length > 18);
+    if (tooLong.length)
+      throw new BadRequestException(`Serial numbers must be 18 characters or less: ${tooLong.join(', ')}`);
+    // One batched insert — inserting row by row over a remote pooler is slow
+    // enough to blow the transaction timeout on large receipts.
+    await tx.productUnit.createMany({
+      data: params.serialNumbers.map((serialNumber) => ({
+        productId: params.productId,
+        warehouseId: params.warehouseId,
+        serialNumber,
+        purchaseOrderId: params.purchaseOrderId,
+        manufactureDate: params.manufactureDate,
+        status: 'IN_STOCK' as const,
+      })),
+    });
   }
 
   async updateUnit(userId: string, id: string, data: { status?: UnitStatus; manufactureDate?: string; warehouseId?: string }) {

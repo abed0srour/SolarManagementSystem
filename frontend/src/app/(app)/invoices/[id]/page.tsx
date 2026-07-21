@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Printer, FileDown, CreditCard, CalendarClock, XCircle, Plus, Trash2 } from 'lucide-react';
-import { api, errMsg, fmtMoney, fmtDate } from '../../../../lib/api';
+import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/api';
 import StatusChip from '../../../../components/status-chip';
 import ConfirmDialog from '../../../../components/confirm-dialog';
 import Field from '../../../../components/form-field';
@@ -82,7 +82,7 @@ export default function InvoiceDetailPage() {
         <Button variant="outline" onClick={() => window.print()}>
           <Printer /> {t('common.print')}
         </Button>
-        <Button variant="outline" onClick={() => window.open(`/api/invoices/${inv.id}/pdf`, '_blank')}>
+        <Button variant="outline" onClick={() => downloadFile(`/invoices/${inv.id}/pdf`, `invoice-${inv.number}.pdf`).catch((e) => toast.error(errMsg(e)))}>
           <FileDown /> {t('common.downloadPdf')}
         </Button>
         {inv.status !== 'CANCELLED' && inv.status !== 'PAID' && (
@@ -165,9 +165,6 @@ export default function InvoiceDetailPage() {
                   <span className="tabular-nums">{inv.discountType === 'PERCENT' ? `${Number(inv.discountValue)}%` : fmtMoney(inv.discountValue, inv.currency)}</span>
                 </div>
               )}
-              {Number(inv.taxAmount) > 0 && (
-                <div className="flex justify-between"><span className="text-muted-foreground">{t('common.tax')}</span><span className="tabular-nums">{fmtMoney(inv.taxAmount, inv.currency)}</span></div>
-              )}
               {Number(inv.shippingFee) > 0 && (
                 <div className="flex justify-between"><span className="text-muted-foreground">{t('common.shipping')}</span><span className="tabular-nums">{fmtMoney(inv.shippingFee, inv.currency)}</span></div>
               )}
@@ -246,7 +243,7 @@ export default function InvoiceDetailPage() {
             </Field>
             <Field label={t('common.method')}>
               <Select value={payForm.method ?? 'CASH'} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
-                {['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'MOBILE', 'STORE_CREDIT'].map((m) => (
+                {['CASH', 'WHISH', 'OMT', 'STORE_CREDIT'].map((m) => (
                   <option key={m} value={m}>{t(`payments.${m}`)}</option>
                 ))}
               </Select>
@@ -300,6 +297,7 @@ export default function InvoiceDetailPage() {
       <ConfirmDialog
         open={cancelOpen}
         onOpenChange={setCancelOpen}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.post(`/invoices/${inv.id}/cancel`);

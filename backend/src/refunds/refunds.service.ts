@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
 import { StockService } from '../inventory/stock.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import { round2 } from '../common/calc';
 
 @Injectable()
@@ -13,12 +14,40 @@ export class RefundsService {
     private audit: AuditService,
     private numbering: NumberingService,
     private stock: StockService,
+    private invoices: InvoicesService,
   ) {}
 
-  findAll(query: { status?: string; clientId?: string; search?: string; page?: number; pageSize?: number }) {
+  /**
+   * Create a refund starting from a sales order (the UI works in orders, not
+   * invoices). Resolves the order's active invoice — generating the full
+   * invoice first when none exists — then delegates to the regular flow.
+   * The refund is approved and completed immediately so resellable items are
+   * restocked into the order's warehouse without extra manual steps.
+   */
+  async createFromOrder(userId: string, dto: any) {
+    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+      where: { id: dto.salesOrderId },
+      include: { invoices: { where: { deletedAt: null, status: { not: 'CANCELLED' } } } },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status === 'CANCELLED') throw new BadRequestException('Cannot refund a cancelled order');
+    if (so.status === 'PENDING') throw new BadRequestException('Order is not confirmed yet — cancel it instead of refunding');
+
+    let invoiceId = so.invoices[0]?.id;
+    if (!invoiceId) {
+      const inv = await this.invoices.fromSalesOrder(userId, so.id, {});
+      invoiceId = inv.id;
+    }
+    const refund = await this.create(userId, { ...dto, invoiceId });
+    await this.approve(userId, refund.id);
+    return this.complete(userId, refund.id, so.warehouseId);
+  }
+
+  findAll(query: { status?: string; clientId?: string; salesOrderId?: string; search?: string; page?: number; pageSize?: number }) {
     const where: Prisma.RefundWhereInput = { deletedAt: null };
     if (query.status) where.status = query.status as any;
     if (query.clientId) where.clientId = query.clientId;
+    if (query.salesOrderId) where.invoice = { salesOrderId: query.salesOrderId };
     if (query.search) {
       where.OR = [
         { number: { contains: query.search, mode: 'insensitive' } },
@@ -28,23 +57,24 @@ export class RefundsService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.refund.count({ where });
     return this.prisma.refund
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           client: { select: { name: true } },
-          invoice: { select: { number: true } },
+          invoice: { select: { number: true, salesOrderId: true, salesOrder: { select: { number: true } } } },
           items: { include: { product: { select: { sku: true, name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.refund.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const r = await this.prisma.refund.findUnique({
+    const r = await this.prisma.refund.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: true,
@@ -59,7 +89,7 @@ export class RefundsService {
   }
 
   async create(userId: string, dto: any) {
-    const invoice = await this.prisma.invoice.findUnique({
+    const invoice = await this.prisma.invoice.findUnique({ relationLoadStrategy: 'join',
       where: { id: dto.invoiceId },
       include: { items: true },
     });
@@ -144,12 +174,16 @@ export class RefundsService {
    * flag serial units RETURNED/DAMAGED, and issue store credit if applicable.
    */
   async complete(userId: string, id: string, warehouseId: string) {
-    const r = await this.prisma.refund.findUnique({ where: { id }, include: { items: true } });
+    const r = await this.prisma.refund.findUnique({ relationLoadStrategy: 'join',
+      where: { id },
+      include: { items: { include: { product: { select: { isService: true } } } } },
+    });
     if (!r) throw new NotFoundException('Refund not found');
     if (r.status !== 'APPROVED') throw new BadRequestException('Refund must be approved first');
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of r.items) {
+        if (item.product?.isService) continue; // services are never restocked
         if (item.condition === 'RESELLABLE') {
           await this.stock.adjustStock(tx, {
             productId: item.productId,
@@ -164,12 +198,22 @@ export class RefundsService {
         }
         const serials = (item.serialNumbers as string[] | null) ?? [];
         if (serials.length) {
+          // Resellable units go straight back into stock, fully detached from
+          // the old sale, so their serial numbers are sellable again.
           await tx.productUnit.updateMany({
             where: { serialNumber: { in: serials } },
-            data: {
-              status: item.condition === 'RESELLABLE' ? 'RETURNED' : 'DAMAGED',
-              warehouseId,
-            },
+            data:
+              item.condition === 'RESELLABLE'
+                ? {
+                    status: 'IN_STOCK',
+                    warehouseId,
+                    salesOrderId: null,
+                    invoiceId: null,
+                    warrantyStartDate: null,
+                    warrantyEndDate: null,
+                    performanceWarrantyEndDate: null,
+                  }
+                : { status: 'DAMAGED', warehouseId },
           });
         }
       }

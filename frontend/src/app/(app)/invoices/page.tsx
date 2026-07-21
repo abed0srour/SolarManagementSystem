@@ -1,4 +1,6 @@
 'use client';
+import { ReceiptText as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -9,6 +11,7 @@ import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
+import ClientInfoDialog from '../../../components/client-info-dialog';
 import { ClientPicker, SupplierPicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -24,6 +27,7 @@ export default function InvoicesPage() {
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   const openCreate = () => {
     setForm({ type: 'SALE', client: null, supplier: null, dueDate: '', discountType: '', discountValue: 0, shippingFee: 0, notes: '' });
@@ -55,7 +59,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('invoices.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('invoices.title')} subtitle={t('subtitles.invoices')} />
       <DataTable
         endpoint="/invoices"
         refreshKey={refreshKey}
@@ -84,7 +88,12 @@ export default function InvoicesPage() {
         columns={[
           { key: 'number', label: t('invoices.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           { key: 'type', label: t('clients.type'), render: (r) => (r.type === 'SALE' ? t('invoices.sale') : t('invoices.purchase')) },
-          { key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`, render: (r) => r.client?.name ?? r.supplier?.name ?? '—' },
+          {
+            key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`,
+            render: (r) => r.client?.name && r.clientId ? (
+              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
+            ) : (r.supplier?.name ?? '—'),
+          },
           { key: 'issueDate', label: t('invoices.issueDate'), render: (r) => fmtDate(r.issueDate) },
           { key: 'dueDate', label: t('common.dueDate'), render: (r) => fmtDate(r.dueDate) },
           { key: 'total', label: t('common.total'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total, r.currency)}</span> },
@@ -143,6 +152,8 @@ export default function InvoicesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
     </div>
   );
 }

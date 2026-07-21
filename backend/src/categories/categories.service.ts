@@ -10,7 +10,7 @@ export class CategoriesService {
   ) {}
 
   findAll() {
-    return this.prisma.category.findMany({
+    return this.prisma.category.findMany({ relationLoadStrategy: 'join',
       where: { deletedAt: null },
       include: {
         subCategories: {
@@ -43,6 +43,21 @@ export class CategoriesService {
   }
 
   async createSubCategory(userId: string, data: { categoryId: string; name: string; description?: string }) {
+    // (categoryId, name) is unique — a soft-deleted row with the same name would
+    // otherwise block re-creation with a cryptic P2002 error.
+    const existing = await this.prisma.subCategory.findUnique({
+      where: { categoryId_name: { categoryId: data.categoryId, name: data.name } },
+    });
+    if (existing && !existing.deletedAt)
+      throw new BadRequestException(`A sub-category named "${data.name}" already exists in this category`);
+    if (existing) {
+      const restored = await this.prisma.subCategory.update({
+        where: { id: existing.id },
+        data: { deletedAt: null, description: data.description },
+      });
+      await this.audit.log(userId, 'RESTORE', 'SubCategory', restored.id, { name: restored.name });
+      return restored;
+    }
     const sub = await this.prisma.subCategory.create({ data });
     await this.audit.log(userId, 'CREATE', 'SubCategory', sub.id, { name: sub.name });
     return sub;

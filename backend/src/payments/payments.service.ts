@@ -38,24 +38,25 @@ export class PaymentsService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.payment.count({ where });
     return this.prisma.payment
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
-          invoice: { select: { number: true } },
-          client: { select: { name: true } },
-          supplier: { select: { name: true } },
+          invoice: { select: { number: true, salesOrder: { select: { id: true, number: true } } } },
+          client: { select: { name: true, phone: true } },
+          supplier: { select: { name: true, phone: true } },
           createdBy: { select: { name: true } },
         },
         orderBy: { paymentDate: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.payment.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const p = await this.prisma.payment.findUnique({
+    const p = await this.prisma.payment.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         invoice: { include: { client: true, supplier: true } },
@@ -172,7 +173,7 @@ export class PaymentsService {
   async dueSchedules() {
     const now = new Date();
     const in14days = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
-    const schedules = await this.prisma.paymentSchedule.findMany({
+    const schedules = await this.prisma.paymentSchedule.findMany({ relationLoadStrategy: 'join',
       where: { status: { not: 'PAID' }, dueDate: { lte: in14days } },
       include: { invoice: { include: { client: { select: { name: true } } } } },
       orderBy: { dueDate: 'asc' },

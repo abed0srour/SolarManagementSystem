@@ -13,11 +13,12 @@ export class NotificationsService {
     const where = query.unreadOnly === 'true' ? { isRead: false } : {};
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 30, 200);
+    const totalPromise = this.prisma.notification.count({ where });
     return this.prisma.notification
       .findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize })
       .then(async (items) => ({
         items,
-        total: await this.prisma.notification.count({ where }),
+        total: await totalPromise,
         unread: await this.prisma.notification.count({ where: { isRead: false } }),
         page,
         pageSize,
@@ -72,7 +73,7 @@ export class NotificationsService {
   async checkOverduePayments() {
     const now = new Date();
     // Overdue invoices
-    const overdue = await this.prisma.invoice.findMany({
+    const overdue = await this.prisma.invoice.findMany({ relationLoadStrategy: 'join',
       where: { status: { in: ['UNPAID', 'PARTIALLY_PAID'] }, dueDate: { lt: now } },
       include: { client: { select: { name: true } }, supplier: { select: { name: true } } },
     });
@@ -82,7 +83,7 @@ export class NotificationsService {
       await this.notifyOnce('PAYMENT_OVERDUE', `Invoice ${inv.number} (${party}) is overdue — balance ${(Number(inv.total) - Number(inv.paidAmount)).toFixed(2)}`, 'Invoice', inv.id);
     }
     // Overdue installments
-    const schedules = await this.prisma.paymentSchedule.findMany({
+    const schedules = await this.prisma.paymentSchedule.findMany({ relationLoadStrategy: 'join',
       where: { status: 'PENDING', dueDate: { lt: now } },
       include: { invoice: { include: { client: { select: { name: true } } } } },
     });
@@ -92,7 +93,7 @@ export class NotificationsService {
     }
     // Due within 3 days
     const soon = new Date(now.getTime() + 3 * 24 * 3600 * 1000);
-    const dueSoon = await this.prisma.paymentSchedule.findMany({
+    const dueSoon = await this.prisma.paymentSchedule.findMany({ relationLoadStrategy: 'join',
       where: { status: 'PENDING', dueDate: { gte: now, lte: soon } },
       include: { invoice: { include: { client: { select: { name: true } } } } },
     });
@@ -104,7 +105,7 @@ export class NotificationsService {
   async checkExpiringQuotations() {
     const now = new Date();
     const soon = new Date(now.getTime() + 3 * 24 * 3600 * 1000);
-    const expiring = await this.prisma.quotation.findMany({
+    const expiring = await this.prisma.quotation.findMany({ relationLoadStrategy: 'join',
       where: { status: 'SENT', validUntil: { gte: now, lte: soon } },
       include: { client: { select: { name: true } } },
     });
@@ -121,7 +122,7 @@ export class NotificationsService {
   async checkExpiringWarranties() {
     const now = new Date();
     const soon = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
-    const units = await this.prisma.productUnit.findMany({
+    const units = await this.prisma.productUnit.findMany({ relationLoadStrategy: 'join',
       where: { status: 'SOLD', warrantyEndDate: { gte: now, lte: soon } },
       include: { product: { select: { name: true } } },
     });
@@ -132,7 +133,7 @@ export class NotificationsService {
 
   /** Lead-acid shelf-life: manufacture date + shelfLifeMonths approaching for units still in stock. */
   async checkShelfLife() {
-    const units = await this.prisma.productUnit.findMany({
+    const units = await this.prisma.productUnit.findMany({ relationLoadStrategy: 'join',
       where: { status: 'IN_STOCK', manufactureDate: { not: null }, product: { shelfLifeMonths: { not: null } } },
       include: { product: { select: { name: true, shelfLifeMonths: true } } },
     });

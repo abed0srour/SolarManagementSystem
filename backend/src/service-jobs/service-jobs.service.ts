@@ -26,19 +26,20 @@ export class ServiceJobsService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.serviceJob.count({ where });
     return this.prisma.serviceJob
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: { client: { select: { name: true } }, salesOrder: { select: { number: true } } },
         orderBy: [{ scheduledDate: 'asc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.serviceJob.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const job = await this.prisma.serviceJob.findUnique({
+    const job = await this.prisma.serviceJob.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: { include: { addresses: true } },

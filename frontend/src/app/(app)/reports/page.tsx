@@ -1,4 +1,6 @@
 'use client';
+import { BarChart3 as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
@@ -49,7 +51,7 @@ export default function ReportsPage() {
   const t = useTranslations();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('reports.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('reports.title')} subtitle={t('subtitles.reports')} />
       <Tabs defaultValue="profit">
         <TabsList className="flex-wrap">
           <TabsTrigger value="profit">{t('reports.profitByProduct')}</TabsTrigger>

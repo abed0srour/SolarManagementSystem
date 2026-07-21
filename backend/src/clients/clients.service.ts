@@ -23,41 +23,78 @@ export class ClientsService {
     if (query.tier) where.tier = query.tier as any;
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const sortDir: 'asc' | 'desc' = query.sortDir === 'asc' ? 'asc' : 'desc';
 
+    /** balance = everything billed (non-cancelled sale invoices); paid; remaining = balance - paid */
+    const statsFor = async (ids: string[]) => {
+      const grouped = await this.prisma.invoice.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, type: 'SALE', status: { not: 'CANCELLED' }, deletedAt: null },
+        _sum: { total: true, paidAmount: true },
+      });
+      return new Map(
+        grouped.map((g) => {
+          const billed = Number(g._sum.total ?? 0);
+          const paid = Number(g._sum.paidAmount ?? 0);
+          return [g.clientId, { billedTotal: billed, paidTotal: paid, outstandingBalance: billed - paid }] as const;
+        }),
+      );
+    };
+    const empty = { billedTotal: 0, paidTotal: 0, outstandingBalance: 0 };
+
+    // "remaining" is computed, so it cannot be sorted in SQL — sort in memory.
+    if (query.sortBy === 'remaining') {
+      const all = await this.prisma.client.findMany({ relationLoadStrategy: 'join', where, include: { addresses: true } });
+      const stats = await statsFor(all.map((c) => c.id));
+      const enriched = all
+        .map((c) => ({ ...c, ...(stats.get(c.id) ?? empty) }))
+        .sort((a, b) => (sortDir === 'asc' ? a.outstandingBalance - b.outstandingBalance : b.outstandingBalance - a.outstandingBalance));
+      return {
+        items: enriched.slice((page - 1) * pageSize, page * pageSize),
+        total: enriched.length,
+        page,
+        pageSize,
+      };
+    }
+
+    const sortBy = ['name', 'createdAt', 'creditLimit', 'tier'].includes(query.sortBy ?? '') ? query.sortBy! : 'createdAt';
     const [items, total] = await Promise.all([
-      this.prisma.client.findMany({
+      this.prisma.client.findMany({ relationLoadStrategy: 'join',
         where,
         include: { addresses: true },
-        orderBy: {
-          [['name', 'createdAt', 'creditLimit', 'tier'].includes(query.sortBy ?? '') ? query.sortBy! : 'name']:
-            query.sortDir === 'desc' ? 'desc' : 'asc',
-        },
+        orderBy: { [sortBy]: sortDir },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       this.prisma.client.count({ where }),
     ]);
-
-    // outstanding balance = sum of unpaid portions of sale invoices
-    const ids = items.map((c) => c.id);
-    const invoices = await this.prisma.invoice.groupBy({
-      by: ['clientId'],
-      where: { clientId: { in: ids }, type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
-      _sum: { total: true, paidAmount: true },
-    });
-    const balanceMap = new Map(
-      invoices.map((g) => [g.clientId, Number(g._sum.total ?? 0) - Number(g._sum.paidAmount ?? 0)]),
-    );
+    const stats = await statsFor(items.map((c) => c.id));
     return {
-      items: items.map((c) => ({ ...c, outstandingBalance: balanceMap.get(c.id) ?? 0 })),
+      items: items.map((c) => ({ ...c, ...(stats.get(c.id) ?? empty) })),
       total,
       page,
       pageSize,
     };
   }
 
+  /** Lightweight profile for popups: basics + addresses + outstanding, no history lists. */
+  async brief(id: string) {
+    const [client, outstanding] = await Promise.all([
+      this.prisma.client.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { addresses: true } }),
+      this.prisma.invoice.aggregate({
+        where: { clientId: id, type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
+        _sum: { total: true, paidAmount: true },
+      }),
+    ]);
+    if (!client) throw new NotFoundException('Client not found');
+    return {
+      ...client,
+      outstandingBalance: Number(outstanding._sum.total ?? 0) - Number(outstanding._sum.paidAmount ?? 0),
+    };
+  }
+
   async findOne(id: string) {
-    const client = await this.prisma.client.findUnique({
+    const client = await this.prisma.client.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         addresses: true,
@@ -110,7 +147,7 @@ export class ClientsService {
       }
     }
     await this.audit.log(userId, 'UPDATE', 'Client', id);
-    return this.prisma.client.findUnique({ where: { id }, include: { addresses: true } });
+    return this.prisma.client.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { addresses: true } });
   }
 
   /** Soft delete — history (invoices, payments) stays intact. */

@@ -1,6 +1,8 @@
-﻿import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+﻿import { Body, Controller, Delete, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PaymentsService } from './payments.service';
+import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
 class PaymentDto {
@@ -23,7 +25,7 @@ class PaymentDto {
   @IsString()
   scheduleId?: string;
 
-  @IsIn(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'MOBILE', 'STORE_CREDIT'])
+  @IsIn(['CASH', 'WHISH', 'OMT', 'STORE_CREDIT'])
   method: string;
 
   @IsNumber()
@@ -53,7 +55,10 @@ class PaymentDto {
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private service: PaymentsService) {}
+  constructor(
+    private service: PaymentsService,
+    private pdfService: InvoicePdfService,
+  ) {}
 
   @Get()
   findAll(@Query() query: any) {
@@ -63,6 +68,14 @@ export class PaymentsController {
   @Get('due-schedules')
   dueSchedules() {
     return this.service.dueSchedules();
+  }
+
+  @Get(':id/receipt-pdf')
+  @Header('Content-Type', 'application/pdf')
+  async receiptPdf(@Param('id') id: string, @Res() res: Response) {
+    const bytes = await this.pdfService.receipt(id);
+    res.setHeader('Content-Disposition', `inline; filename=receipt-${id}.pdf`);
+    res.send(Buffer.from(bytes));
   }
 
   @Get(':id')

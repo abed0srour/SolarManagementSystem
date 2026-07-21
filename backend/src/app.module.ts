@@ -24,6 +24,11 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditModule } from './audit/audit.module';
+import { InstallationsModule } from './installations/installations.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { SolarCalculatorModule } from './solar-calculator/solar-calculator.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -51,6 +56,11 @@ import { AuditModule } from './audit/audit.module';
     ReportsModule,
     SettingsModule,
     AuditModule,
+    InstallationsModule,
+    MaintenanceModule,
+    ExpensesModule,
+    SolarCalculatorModule,
+    BackupModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

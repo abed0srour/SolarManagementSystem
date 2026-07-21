@@ -1,4 +1,6 @@
 'use client';
+import { Wrench as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -63,7 +65,7 @@ export default function ServiceJobsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('serviceJobs.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('serviceJobs.title')} subtitle={t('subtitles.serviceJobs')} />
       <DataTable
         endpoint="/service-jobs"
         refreshKey={refreshKey}

@@ -26,8 +26,9 @@ export class WarrantyService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.warrantyClaim.count({ where });
     return this.prisma.warrantyClaim
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           client: { select: { name: true } },
@@ -39,11 +40,11 @@ export class WarrantyService {
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.warrantyClaim.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const claim = await this.prisma.warrantyClaim.findUnique({
+    const claim = await this.prisma.warrantyClaim.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: true,
@@ -66,7 +67,7 @@ export class WarrantyService {
     let underWarranty: boolean | undefined;
 
     if (dto.serialNumber) {
-      const unit = await this.prisma.productUnit.findUnique({
+      const unit = await this.prisma.productUnit.findUnique({ relationLoadStrategy: 'join',
         where: { serialNumber: dto.serialNumber },
         include: { invoice: true },
       });
@@ -121,16 +122,24 @@ export class WarrantyService {
   }
 
   /** Units whose warranty expires within the next N days (default 60) — upsell/maintenance leads. */
-  expiringSoon(days = 60) {
+  expiringSoon(days = 60, query: { page?: number; pageSize?: number } = {}) {
     const now = new Date();
     const until = new Date(now.getTime() + days * 24 * 3600 * 1000);
-    return this.prisma.productUnit.findMany({
-      where: { warrantyEndDate: { gte: now, lte: until }, status: 'SOLD' },
-      include: {
-        product: { select: { sku: true, name: true } },
-        invoice: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
-      },
-      orderBy: { warrantyEndDate: 'asc' },
-    });
+    const where: Prisma.ProductUnitWhereInput = { warrantyEndDate: { gte: now, lte: until }, status: 'SOLD' };
+    const page = Number(query.page) || 1;
+    const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.productUnit.count({ where });
+    return this.prisma.productUnit
+      .findMany({ relationLoadStrategy: 'join',
+        where,
+        include: {
+          product: { select: { sku: true, name: true } },
+          invoice: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
+        },
+        orderBy: { warrantyEndDate: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 }

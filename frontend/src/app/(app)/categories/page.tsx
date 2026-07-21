@@ -1,4 +1,6 @@
 'use client';
+import { FolderTree as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -85,7 +87,7 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t('categories.title')}</h1>
+        <PageHeader icon={PageIcon} title={t('categories.title')} subtitle={t('subtitles.categories')} />
         <Button onClick={() => openDialog({ kind: 'category' })}>
           <Plus /> {t('categories.newCategory')}
         </Button>
@@ -232,7 +234,7 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog open={!!deleteFn} onOpenChange={(v) => !v && setDeleteFn(null)} onConfirm={async () => { await deleteFn?.(); }} />
+      <ConfirmDialog open={!!deleteFn} onOpenChange={(v) => !v && setDeleteFn(null)} requireText={t('common.deleteWord')} onConfirm={async () => { await deleteFn?.(); }} />
     </div>
   );
 }

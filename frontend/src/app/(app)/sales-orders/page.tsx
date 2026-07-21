@@ -1,14 +1,19 @@
 'use client';
-import { useState } from 'react';
+import { ShoppingCart as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, CheckCircle2, PackageCheck, XCircle, ReceiptText } from 'lucide-react';
-import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
+import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote } from 'lucide-react';
+import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
+import ClientInfoDialog from '../../../components/client-info-dialog';
+import SerialPicker from '../../../components/serial-picker';
 import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -19,26 +24,59 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 export default function SalesOrdersPage() {
   const t = useTranslations();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [confirmFor, setConfirmFor] = useState<any>(null);
-  const [serialInputs, setSerialInputs] = useState<Record<string, string>>({});
+  const [serialInputs, setSerialInputs] = useState<Record<string, string[]>>({});
   const [deliverFor, setDeliverFor] = useState<any>(null);
   const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
-  const [invoiceFor, setInvoiceFor] = useState<any>(null);
-  const [depositPct, setDepositPct] = useState('');
   const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
+  const [payFor, setPayFor] = useState<any>(null);
+  const [payForm, setPayForm] = useState<any>({});
 
-  const openCreate = () => {
+  const openPay = (row: any) => {
+    setPayFor(row);
+    setPayForm({ amount: row.outstanding, method: 'CASH', reference: '', paymentDate: new Date().toISOString().slice(0, 10) });
+  };
+
+  const doPay = async () => {
+    try {
+      await api.post(`/sales-orders/${payFor.id}/pay`, {
+        amount: Number(payForm.amount),
+        method: payForm.method,
+        reference: payForm.reference || undefined,
+        paymentDate: payForm.paymentDate || undefined,
+      });
+      toast.success(t('common.saved'));
+      setPayFor(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  const openCreate = (client: any = null) => {
     setEditing(null);
-    setForm({ client: null, warehouse: null, discountType: '', discountValue: 0, shippingFee: 0, notes: '' });
+    setForm({ client, warehouse: null, discountType: '', discountValue: 0, shippingFee: 0, notes: '' });
     setLines([emptyLine()]);
     setOpen(true);
   };
+
+  // "Create order" from the Clients page lands here with ?clientId=…
+  useEffect(() => {
+    const clientId = searchParams.get('clientId');
+    if (!clientId) return;
+    api.get(`/clients/${clientId}/brief`).then((r) => openCreate(r.data)).catch(() => openCreate());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const openEdit = async (row: any) => {
     const { data } = await api.get(`/sales-orders/${row.id}`);
@@ -53,12 +91,11 @@ export default function SalesOrdersPage() {
     });
     setLines(
       (data.items ?? []).map((i: any) => ({
-        product: { id: i.productId, name: i.product?.name ?? '', sku: i.product?.sku ?? '', salePrice: i.unitPrice, taxRatePct: i.taxRatePct, trackSerials: i.product?.trackSerials },
+        product: { id: i.productId, name: i.product?.name ?? '', sku: i.product?.sku ?? '', salePrice: i.unitPrice, trackSerials: i.product?.trackSerials },
         quantity: i.quantity,
         unitPrice: Number(i.unitPrice),
         discountType: i.discountType ?? '',
         discountValue: Number(i.discountValue),
-        taxRatePct: Number(i.taxRatePct),
       })),
     );
     setOpen(true);
@@ -94,8 +131,8 @@ export default function SalesOrdersPage() {
   const doConfirm = async () => {
     try {
       const serialAssignments = Object.entries(serialInputs)
-        .filter(([, v]) => v.trim())
-        .map(([productId, v]) => ({ productId, serialNumbers: v.split(',').map((s) => s.trim()).filter(Boolean) }));
+        .filter(([, v]) => v.length > 0)
+        .map(([productId, serialNumbers]) => ({ productId, serialNumbers }));
       await api.post(`/sales-orders/${confirmFor.id}/confirm`, { serialAssignments: serialAssignments.length ? serialAssignments : undefined });
       toast.success(t('common.saved'));
       setConfirmFor(null);
@@ -125,53 +162,67 @@ export default function SalesOrdersPage() {
     }
   };
 
-  const doInvoice = async () => {
-    try {
-      await api.post('/invoices/from-order', {
-        salesOrderId: invoiceFor.id,
-        percent: depositPct ? Number(depositPct) : undefined,
-      });
-      toast.success(t('common.saved'));
-      setInvoiceFor(null);
-      setDepositPct('');
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
-
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('orders.salesTitle')}</h1>
+      <PageHeader icon={PageIcon} title={t('orders.salesTitle')} subtitle={t('subtitles.salesOrders')} />
       <DataTable
         endpoint="/sales-orders"
         refreshKey={refreshKey}
-        extraParams={statusFilter ? { status: statusFilter } : undefined}
-        onRowClick={openEdit}
+        extraParams={{ ...(statusFilter ? { status: statusFilter } : {}), ...(paymentStatusFilter ? { paymentStatus: paymentStatusFilter } : {}) }}
+        onRowClick={(r) => router.push(`/sales-orders/${r.id}`)}
         filters={
-          <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">{t('common.all')}</option>
-            {['PENDING', 'CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED', 'CANCELLED'].map((s) => (
-              <option key={s} value={s}>{t(`status.${s}`)}</option>
-            ))}
-          </Select>
+          <>
+            <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">{t('common.all')}</option>
+              {['PENDING', 'CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED', 'CANCELLED'].map((s) => (
+                <option key={s} value={s}>{t(`status.${s}`)}</option>
+              ))}
+            </Select>
+            <Select className="w-36" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)}>
+              <option value="">{t('orders.paymentStatus')}</option>
+              <option value="UNPAID">{t('status.UNPAID')}</option>
+            </Select>
+          </>
         }
         toolbar={
-          <Button onClick={openCreate}>
+          <Button onClick={() => openCreate()}>
             <Plus /> {t('orders.newSalesOrder')}
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
-          { key: 'client', label: t('common.client'), render: (r) => r.client?.name },
-          { key: 'orderDate', label: t('common.date'), render: (r) => fmtDate(r.orderDate) },
-          { key: 'total', label: t('common.total'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total)}</span> },
-          { key: 'status', label: t('common.status'), render: (r) => <StatusChip status={r.status} /> },
-          { key: 'invoices', label: t('nav.invoices'), render: (r) => (r.invoices ?? []).map((i: any) => i.number).join(', ') || '—' },
+          { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          {
+            key: 'client', label: t('common.client'),
+            render: (r) => r.client?.name ? (
+              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>
+                {r.client.name}
+              </button>
+            ) : '—',
+          },
+          { key: 'orderDate', label: t('common.date'), className: 'w-24 whitespace-nowrap', render: (r) => fmtDate(r.orderDate) },
+          { key: 'total', label: t('common.total'), className: 'w-28 text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total)}</span> },
+          {
+            key: 'paidAmount', label: t('orders.paid'), className: 'w-28 text-end',
+            render: (r) => <span className="tabular-nums text-green-600 dark:text-green-400">{fmtMoney(r.paidAmount ?? 0)}</span>,
+          },
+          {
+            key: 'outstanding', label: t('orders.remaining'), className: 'w-28 text-end',
+            render: (r) => (
+              <span className={`tabular-nums ${Number(r.outstanding) > 0 && r.status !== 'CANCELLED' ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                {fmtMoney(r.outstanding ?? 0)}
+              </span>
+            ),
+          },
+          { key: 'status', label: t('common.status'), className: 'w-32', render: (r) => <StatusChip status={r.status} /> },
           {
             key: 'actions', label: '',
             render: (r) => (
               <div className="flex justify-end gap-1">
+                {r.status === 'PENDING' && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={(e) => { e.stopPropagation(); openEdit(r); }}>
+                    <Pencil />
+                  </Button>
+                )}
                 {r.status === 'PENDING' && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('orders.confirmOrder')} onClick={(e) => { e.stopPropagation(); openConfirm(r); }}>
                     <CheckCircle2 />
@@ -179,15 +230,53 @@ export default function SalesOrdersPage() {
                 )}
                 {['CONFIRMED', 'PARTIALLY_DELIVERED'].includes(r.status) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('orders.deliver')} onClick={(e) => { e.stopPropagation(); openDeliver(r); }}>
-                    <PackageCheck />
+                    <Truck />
                   </Button>
                 )}
-                {r.status !== 'CANCELLED' && r.status !== 'PENDING' && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title={t('orders.createInvoice')} onClick={(e) => { e.stopPropagation(); setInvoiceFor(r); }}>
-                    <ReceiptText />
+                {r.status !== 'CANCELLED' && Number(r.outstanding) > 0 && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.pay')} onClick={(e) => { e.stopPropagation(); openPay(r); }}>
+                    <Banknote />
+                  </Button>
+                )}
+                {['CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED'].includes(r.status) && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" title={t('refunds.newRefund')} onClick={(e) => { e.stopPropagation(); router.push(`/sales-orders/${r.id}/refund`); }}>
+                    <Undo2 />
                   </Button>
                 )}
                 {r.status !== 'CANCELLED' && (
+                  <Button
+                    variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" title={t('orders.invoicePdf')}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await downloadFile(`/sales-orders/${r.id}/invoice-pdf`, `invoice-${r.number}.pdf`);
+                        setRefreshKey((k) => k + 1);
+                      } catch (err) {
+                        toast.error(errMsg(err));
+                      }
+                    }}
+                  >
+                    <FileDown />
+                  </Button>
+                )}
+                {r.status !== 'CANCELLED' && (
+                  <Button
+                    variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.shareInvoice')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const phone = (r.client?.phone ?? '').replace(/[^\d]/g, '');
+                      const text = t('orders.waInvoiceMessage', {
+                        number: r.number,
+                        total: fmtMoney(r.total),
+                        remaining: fmtMoney(r.outstanding ?? 0),
+                      });
+                      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                    }}
+                  >
+                    <MessageCircle />
+                  </Button>
+                )}
+                {!['CANCELLED', 'DELIVERED'].includes(r.status) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title={t('orders.cancelOrder')} onClick={(e) => { e.stopPropagation(); setCancelTarget(r); }}>
                     <XCircle />
                   </Button>
@@ -251,7 +340,13 @@ export default function SalesOrdersPage() {
                   {i.product?.name} × {i.quantity}
                 </div>
                 {i.product?.trackSerials && (
-                  <Input dir="ltr" placeholder={t('orders.serialsHint')} value={serialInputs[i.productId] ?? ''} onChange={(e) => setSerialInputs({ ...serialInputs, [i.productId]: e.target.value })} />
+                  <SerialPicker
+                    productId={i.productId}
+                    max={i.quantity}
+                    value={serialInputs[i.productId] ?? []}
+                    onChange={(serials) => setSerialInputs({ ...serialInputs, [i.productId]: serials })}
+                    placeholder={t('orders.pickSerials')}
+                  />
                 )}
               </div>
             ))}
@@ -294,24 +389,47 @@ export default function SalesOrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Invoice from order */}
-      <Dialog open={!!invoiceFor} onOpenChange={(v) => !v && setInvoiceFor(null)}>
+      {/* Pay */}
+      <Dialog open={!!payFor} onOpenChange={(v) => !v && setPayFor(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t('orders.createInvoice')} — {invoiceFor?.number}</DialogTitle></DialogHeader>
-          <Field label={t('orders.depositPercent')}>
-            <Input type="number" min={1} max={99} value={depositPct} onChange={(e) => setDepositPct(e.target.value)} />
-          </Field>
+          <DialogHeader><DialogTitle>{t('orders.pay')} — {payFor?.number}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-between rounded-md bg-muted p-3 text-sm">
+              <span>{t('common.total')}: <b className="tabular-nums">{fmtMoney(payFor?.total ?? 0)}</b></span>
+              <span>{t('orders.paid')}: <b className="tabular-nums">{fmtMoney(payFor?.paidAmount ?? 0)}</b></span>
+              <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(payFor?.outstanding ?? 0)}</b></span>
+            </div>
+            <Field label={t('common.amount')}>
+              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+            </Field>
+            <Field label={t('common.method')}>
+              <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                {['CASH', 'WHISH', 'OMT'].map((m) => (
+                  <option key={m} value={m}>{t(`payments.${m}`)}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t('payments.paymentDate')}>
+              <Input type="date" value={payForm.paymentDate ?? ''} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
+            </Field>
+            <Field label={t('common.reference')}>
+              <Input value={payForm.reference ?? ''} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+            </Field>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInvoiceFor(null)}>{t('common.cancel')}</Button>
-            <Button onClick={doInvoice}>{t('common.confirm')}</Button>
+            <Button variant="outline" onClick={() => setPayFor(null)}>{t('common.cancel')}</Button>
+            <Button onClick={doPay} disabled={!Number(payForm.amount)}>{t('orders.pay')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
 
       <ConfirmDialog
         open={!!cancelTarget}
         onOpenChange={(v) => !v && setCancelTarget(null)}
         description={t('orders.confirmCancels')}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.post(`/sales-orders/${cancelTarget.id}/cancel`);

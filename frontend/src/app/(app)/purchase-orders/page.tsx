@@ -1,95 +1,30 @@
 'use client';
+import { PackagePlus as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, PackageCheck, Trash2 } from 'lucide-react';
+import { Plus, PackageCheck, Banknote } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import { SupplierPicker, WarehousePicker, ProductPicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
-
-interface PoLine {
-  product: any | null;
-  quantity: number;
-  unitCost: number;
-}
 
 export default function PurchaseOrdersPage() {
   const t = useTranslations();
+  const router = useRouter();
   const [refreshKey, setRefreshKey] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState<any>({});
-  const [lines, setLines] = useState<PoLine[]>([{ product: null, quantity: 1, unitCost: 0 }]);
   const [statusFilter, setStatusFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [receiveFor, setReceiveFor] = useState<any>(null);
   const [receiveLines, setReceiveLines] = useState<Record<string, { qty: number; serials: string }>>({});
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm({ supplier: null, warehouse: null, expectedDelivery: '', currency: 'USD', exchangeRate: 1, notes: '', status: 'DRAFT' });
-    setLines([{ product: null, quantity: 1, unitCost: 0 }]);
-    setOpen(true);
-  };
-
-  const openEdit = async (row: any) => {
-    const { data } = await api.get(`/purchase-orders/${row.id}`);
-    setEditing(data);
-    setForm({
-      supplier: data.supplier,
-      warehouse: data.warehouse,
-      expectedDelivery: data.expectedDelivery ? data.expectedDelivery.slice(0, 10) : '',
-      currency: data.currency,
-      exchangeRate: Number(data.exchangeRate),
-      notes: data.notes ?? '',
-      status: data.status,
-    });
-    setLines(
-      (data.items ?? []).map((i: any) => ({
-        product: { id: i.productId, name: i.product?.name ?? '', sku: i.product?.sku ?? '', costPrice: i.unitCost },
-        quantity: i.quantity,
-        unitCost: Number(i.unitCost),
-      })),
-    );
-    setOpen(true);
-  };
-
-  const save = async () => {
-    try {
-      const payload = {
-        supplierId: form.supplier?.id,
-        warehouseId: form.warehouse?.id,
-        expectedDelivery: form.expectedDelivery || undefined,
-        currency: form.currency,
-        exchangeRate: Number(form.exchangeRate) || 1,
-        notes: form.notes || undefined,
-        items: lines.filter((l) => l.product).map((l) => ({ productId: l.product.id, quantity: Number(l.quantity), unitCost: Number(l.unitCost) })),
-      };
-      if (editing) await api.patch(`/purchase-orders/${editing.id}`, payload);
-      else await api.post('/purchase-orders', payload);
-      toast.success(t('common.saved'));
-      setOpen(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
-
-  const setStatus = async (row: any, status: string) => {
-    try {
-      await api.post(`/purchase-orders/${row.id}/status`, { status });
-      toast.success(t('common.saved'));
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
+  const [payFor, setPayFor] = useState<any>(null);
+  const [payForm, setPayForm] = useState<any>({});
 
   const openReceive = async (row: any) => {
     const { data } = await api.get(`/purchase-orders/${row.id}`);
@@ -115,48 +50,86 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const setLine = (idx: number, patch: Partial<PoLine>) => setLines(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  const openPay = (row: any) => {
+    const remaining = Math.max(0, Number(row.total) - Number(row.paidAmount ?? 0));
+    setPayForm({ amount: remaining, method: 'CASH', reference: '', notes: '', paymentDate: new Date().toISOString().slice(0, 10) });
+    setPayFor(row);
+  };
+
+  const doPay = async () => {
+    try {
+      await api.post(`/purchase-orders/${payFor.id}/pay`, {
+        amount: Number(payForm.amount),
+        method: payForm.method,
+        reference: payForm.reference || undefined,
+        notes: payForm.notes || undefined,
+        paymentDate: payForm.paymentDate || undefined,
+      });
+      toast.success(t('common.saved'));
+      setPayFor(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('orders.purchaseTitle')}</h1>
+      <PageHeader icon={PageIcon} title={t('orders.purchaseTitle')} subtitle={t('subtitles.purchaseOrders')} />
       <DataTable
         endpoint="/purchase-orders"
         refreshKey={refreshKey}
-        extraParams={statusFilter ? { status: statusFilter } : undefined}
-        onRowClick={openEdit}
+        extraParams={{ ...(statusFilter ? { status: statusFilter } : {}), ...(paymentStatusFilter ? { paymentStatus: paymentStatusFilter } : {}) }}
+        onRowClick={(r) => router.push(`/purchase-orders/${r.id}/edit`)}
         filters={
-          <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">{t('common.all')}</option>
-            {['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'].map((s) => (
-              <option key={s} value={s}>{t(`status.${s}`)}</option>
-            ))}
-          </Select>
+          <>
+            <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">{t('common.all')}</option>
+              {['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'].map((s) => (
+                <option key={s} value={s}>{t(`status.${s}`)}</option>
+              ))}
+            </Select>
+            <Select className="w-36" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)}>
+              <option value="">{t('orders.paymentStatus')}</option>
+              <option value="UNPAID">{t('status.UNPAID')}</option>
+            </Select>
+          </>
         }
         toolbar={
-          <Button onClick={openCreate}>
+          <Button onClick={() => router.push('/purchase-orders/new')}>
             <Plus /> {t('orders.newPurchaseOrder')}
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           { key: 'supplier', label: t('common.supplier'), render: (r) => r.supplier?.name },
-          { key: 'createdAt', label: t('common.date'), render: (r) => fmtDate(r.createdAt) },
-          { key: 'expectedDelivery', label: t('orders.expectedDelivery'), render: (r) => fmtDate(r.expectedDelivery) },
-          { key: 'total', label: t('common.total'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total, r.currency)}</span> },
-          { key: 'status', label: t('common.status'), render: (r) => <StatusChip status={r.status} /> },
+          { key: 'createdAt', label: t('common.date'), className: 'w-24 whitespace-nowrap', render: (r) => fmtDate(r.createdAt) },
+          { key: 'total', label: t('common.total'), className: 'w-28 text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total, r.currency)}</span> },
+          {
+            key: 'remaining', label: t('orders.remaining'), className: 'w-28 text-end',
+            render: (r) => {
+              const remaining = Math.max(0, Number(r.total) - Number(r.paidAmount ?? 0));
+              return (
+                <span className={`tabular-nums ${remaining > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                  {fmtMoney(remaining, r.currency)}
+                </span>
+              );
+            },
+          },
+          { key: 'paymentStatus', label: t('orders.paymentStatus'), className: 'w-28', render: (r) => <StatusChip status={r.paymentStatus ?? 'UNPAID'} /> },
+          { key: 'status', label: t('common.status'), className: 'w-32', render: (r) => <StatusChip status={r.status} /> },
           {
             key: 'actions', label: '',
             render: (r) => (
               <div className="flex justify-end gap-1">
-                {r.status === 'DRAFT' && (
-                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setStatus(r, 'SENT'); }}>
-                    {t('status.SENT')}
+                {['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'].includes(r.status) && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.receive')} onClick={(e) => { e.stopPropagation(); openReceive(r); }}>
+                    <PackageCheck />
                   </Button>
                 )}
-                {['SENT', 'PARTIALLY_RECEIVED'].includes(r.status) && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('orders.receive')} onClick={(e) => { e.stopPropagation(); openReceive(r); }}>
-                    <PackageCheck />
+                {r.status !== 'CANCELLED' && r.paymentStatus !== 'PAID' && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title={t('orders.pay')} onClick={(e) => { e.stopPropagation(); openPay(r); }}>
+                    <Banknote />
                   </Button>
                 )}
               </div>
@@ -164,77 +137,6 @@ export default function PurchaseOrdersPage() {
           },
         ]}
       />
-
-      {/* Create / edit */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent wide>
-          <DialogHeader><DialogTitle>{editing ? editing.number : t('orders.newPurchaseOrder')}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Field label={t('common.supplier')} className="md:col-span-2">
-              <SupplierPicker value={form.supplier} onChange={(s) => setForm({ ...form, supplier: s })} />
-            </Field>
-            <Field label={t('common.warehouse')} className="md:col-span-2">
-              <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} />
-            </Field>
-            <Field label={t('orders.expectedDelivery')}>
-              <Input type="date" value={form.expectedDelivery ?? ''} onChange={(e) => setForm({ ...form, expectedDelivery: e.target.value })} />
-            </Field>
-            <Field label={t('common.currency')}>
-              <Input value={form.currency ?? 'USD'} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
-            </Field>
-            <Field label={t('orders.exchangeRate')}>
-              <Input type="number" min={0} step="0.000001" value={form.exchangeRate ?? 1} onChange={(e) => setForm({ ...form, exchangeRate: e.target.value })} />
-            </Field>
-            <Field label={t('common.notes')}>
-              <Input value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </Field>
-          </div>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-56">{t('common.product')}</TableHead>
-                <TableHead className="w-24">{t('common.quantity')}</TableHead>
-                <TableHead className="w-32">{t('orders.unitCost')}</TableHead>
-                <TableHead className="w-28 text-end">{t('common.lineTotal')}</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lines.map((l, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>
-                    <ProductPicker value={l.product} onChange={(p) => setLine(idx, { product: p, unitCost: p ? Number(p.costPrice) : 0 })} />
-                  </TableCell>
-                  <TableCell>
-                    <Input type="number" min={1} value={l.quantity} onChange={(e) => setLine(idx, { quantity: Number(e.target.value) })} />
-                  </TableCell>
-                  <TableCell>
-                    <Input type="number" min={0} step="0.01" value={l.unitCost} onChange={(e) => setLine(idx, { unitCost: Number(e.target.value) })} />
-                  </TableCell>
-                  <TableCell className="text-end tabular-nums">{fmtMoney(l.quantity * l.unitCost, form.currency)}</TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div>
-            <Button type="button" variant="outline" size="sm" onClick={() => setLines([...lines, { product: null, quantity: 1, unitCost: 0 }])}>
-              <Plus /> {t('common.addLine')}
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save} disabled={!form.supplier || !form.warehouse || lines.filter((l) => l.product).length === 0 || (editing && !['DRAFT', 'SENT'].includes(editing.status))}>
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Receive */}
       <Dialog open={!!receiveFor} onOpenChange={(v) => !v && setReceiveFor(null)}>
@@ -267,6 +169,43 @@ export default function PurchaseOrdersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setReceiveFor(null)}>{t('common.cancel')}</Button>
             <Button onClick={doReceive}>{t('common.confirm')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pay */}
+      <Dialog open={!!payFor} onOpenChange={(v) => !v && setPayFor(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t('orders.pay')} — {payFor?.number}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-between rounded-md bg-muted p-3 text-sm">
+              <span>{t('common.total')}: <b className="tabular-nums">{fmtMoney(payFor?.total ?? 0, payFor?.currency)}</b></span>
+              <span>{t('orders.paid')}: <b className="tabular-nums">{fmtMoney(payFor?.paidAmount ?? 0, payFor?.currency)}</b></span>
+              <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(Math.max(0, Number(payFor?.total ?? 0) - Number(payFor?.paidAmount ?? 0)), payFor?.currency)}</b></span>
+            </div>
+            <Field label={t('common.amount')}>
+              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+            </Field>
+            <Field label={t('common.method')}>
+              <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                {['CASH', 'WHISH', 'OMT'].map((m) => (
+                  <option key={m} value={m}>{t(`payments.${m}`)}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t('payments.paymentDate')}>
+              <Input type="date" value={payForm.paymentDate ?? ''} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
+            </Field>
+            <Field label={t('common.reference')}>
+              <Input value={payForm.reference ?? ''} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+            </Field>
+            <Field label={t('common.notes')}>
+              <Input value={payForm.notes ?? ''} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayFor(null)}>{t('common.cancel')}</Button>
+            <Button onClick={doPay} disabled={!Number(payForm.amount)}>{t('orders.pay')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

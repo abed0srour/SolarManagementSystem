@@ -1,13 +1,15 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { MailService } from '../common/mail.service';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 const REFRESH_DAYS = 7;
+const CODE_MINUTES = 15;
 
 function sha256(s: string) {
   return createHash('sha256').update(s).digest('hex');
@@ -19,6 +21,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
   private async issueTokens(user: { id: string; email: string; name: string; role: string }) {
@@ -82,7 +85,7 @@ export class AuthService {
 
   /** Rotate a refresh token: revoke the presented one and issue a fresh pair. */
   async refresh(refreshToken: string) {
-    const stored = await this.prisma.refreshToken.findUnique({
+    const stored = await this.prisma.refreshToken.findUnique({ relationLoadStrategy: 'join',
       where: { tokenHash: sha256(refreshToken) },
       include: { user: true },
     });
@@ -162,11 +165,104 @@ export class AuthService {
     return { success: true };
   }
 
+  /** Issue a 6-digit code for a sensitive account change and invalidate older ones. */
+  private async issueCode(userId: string, purpose: 'EMAIL_CHANGE' | 'PASSWORD_CHANGE', newEmail?: string) {
+    const code = String(randomInt(100000, 1000000));
+    await this.prisma.verificationCode.updateMany({
+      where: { userId, purpose, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    await this.prisma.verificationCode.create({
+      data: { userId, purpose, newEmail, codeHash: sha256(code), expiresAt: new Date(Date.now() + CODE_MINUTES * 60000) },
+    });
+    return code;
+  }
+
+  private async consumeCode(userId: string, purpose: 'EMAIL_CHANGE' | 'PASSWORD_CHANGE', code: string) {
+    const stored = await this.prisma.verificationCode.findFirst({
+      where: { userId, purpose, codeHash: sha256(code), usedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!stored) throw new BadRequestException('Invalid or expired verification code');
+    await this.prisma.verificationCode.update({ where: { id: stored.id }, data: { usedAt: new Date() } });
+    return stored;
+  }
+
+  /**
+   * Step 1 of changing the account email: verify the password, then email a
+   * 6-digit code to the CURRENT address (proves the requester is the admin).
+   * Without SMTP configured the code is returned in the response (dev mode).
+   */
+  async requestEmailChange(userId: string, currentPassword: string, newEmail: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) throw new BadRequestException('Current password is incorrect');
+    if (newEmail.toLowerCase() === user.email.toLowerCase())
+      throw new BadRequestException('New email is the same as the current one');
+    const taken = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    if (taken) throw new BadRequestException('Email is already in use');
+
+    if (!this.mail.enabled)
+      throw new BadRequestException('Email sending is not configured — set the SMTP_* values in backend/.env first');
+    const code = await this.issueCode(userId, 'EMAIL_CHANGE', newEmail);
+    await this.mail.send(
+      user.email,
+      'Confirm your email change',
+      `A change of your account email to ${newEmail} was requested.\nYour verification code is: ${code}\nIt expires in ${CODE_MINUTES} minutes.\nIf you did not request this, change your password immediately.`,
+    );
+    await this.audit.log(userId, 'REQUEST_EMAIL_CHANGE', 'User', userId, { newEmail });
+    return { success: true, emailSent: true };
+  }
+
+  /** Step 2: apply the email change once the emailed code is entered. */
+  async confirmEmailChange(userId: string, code: string) {
+    const stored = await this.consumeCode(userId, 'EMAIL_CHANGE', code);
+    if (!stored.newEmail) throw new BadRequestException('Invalid verification code');
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { email: stored.newEmail } });
+    await this.audit.log(userId, 'CHANGE_EMAIL', 'User', userId, { email: stored.newEmail });
+    return { success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+  }
+
+  /** Step 1 of the code-verified password change: email a code to the current address. */
+  async requestPasswordChange(userId: string, currentPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) throw new BadRequestException('Current password is incorrect');
+
+    if (!this.mail.enabled)
+      throw new BadRequestException('Email sending is not configured — set the SMTP_* values in backend/.env first');
+    const code = await this.issueCode(userId, 'PASSWORD_CHANGE');
+    await this.mail.send(
+      user.email,
+      'Confirm your password change',
+      `Your verification code is: ${code}\nIt expires in ${CODE_MINUTES} minutes.`,
+    );
+    await this.audit.log(userId, 'REQUEST_PASSWORD_CHANGE', 'User', userId);
+    return { success: true, emailSent: true };
+  }
+
+  /** Step 2: set the new password once the emailed code is entered. */
+  async confirmPasswordChange(userId: string, code: string, newPassword: string) {
+    if (newPassword.length < 8) throw new BadRequestException('New password must be at least 8 characters');
+    await this.consumeCode(userId, 'PASSWORD_CHANGE', code);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null } });
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.log(userId, 'CHANGE_PASSWORD', 'User', userId);
+    return { success: true };
+  }
+
   loginHistory(query: { page?: number; pageSize?: number }) {
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 30, 200);
+    const totalPromise = this.prisma.loginHistory.count();
     return this.prisma.loginHistory
       .findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize })
-      .then(async (items) => ({ items, total: await this.prisma.loginHistory.count(), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 }

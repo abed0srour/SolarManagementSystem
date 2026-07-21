@@ -48,12 +48,16 @@ class CreateProductDto {
   salePrice: number;
 
   @IsOptional()
-  @IsNumber()
-  taxRatePct?: number;
+  @IsBoolean()
+  trackSerials?: boolean;
 
   @IsOptional()
   @IsBoolean()
-  trackSerials?: boolean;
+  isService?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  serialNumbers?: string[];
 
   @IsOptional()
   @IsInt()

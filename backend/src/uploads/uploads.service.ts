@@ -29,7 +29,7 @@ export class UploadsService {
   }
 
   list(entity: string, entityId: string) {
-    return this.prisma.attachment.findMany({
+    return this.prisma.attachment.findMany({ relationLoadStrategy: 'join',
       where: { entity, entityId },
       orderBy: { createdAt: 'desc' },
       include: { uploadedBy: { select: { name: true } } },

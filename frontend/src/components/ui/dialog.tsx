@@ -32,6 +32,15 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // Entity-picker dropdowns render in a body portal (outside this content),
+      // so clicking them must not count as an outside interaction that would
+      // dismiss the dialog or swallow the selection.
+      onInteractOutside={(e) => {
+        if ((e.target as HTMLElement)?.closest?.('[data-entity-picker-list]')) e.preventDefault();
+      }}
+      onPointerDownOutside={(e) => {
+        if ((e.target as HTMLElement)?.closest?.('[data-entity-picker-list]')) e.preventDefault();
+      }}
       className={cn(
         'fixed left-[50%] top-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-5 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg',
         'max-h-[92vh] overflow-y-auto',

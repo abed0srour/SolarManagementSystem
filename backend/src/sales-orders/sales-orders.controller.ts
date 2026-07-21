@@ -1,6 +1,8 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+﻿import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { SalesOrdersService } from './sales-orders.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 import { LineItemDto } from '../common/line-item.dto';
@@ -85,9 +87,33 @@ class DeliverDto {
   deliveries: DeliveryLineDto[];
 }
 
+class PayDto {
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
+
+  @IsIn(['CASH', 'WHISH', 'OMT', 'STORE_CREDIT'])
+  method: string;
+
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentDate?: string;
+}
+
 @Controller('sales-orders')
 export class SalesOrdersController {
-  constructor(private service: SalesOrdersService) {}
+  constructor(
+    private service: SalesOrdersService,
+    private pdfService: InvoicePdfService,
+  ) {}
 
   @Get()
   findAll(@Query() query: any) {
@@ -122,5 +148,19 @@ export class SalesOrdersController {
   @Post(':id/cancel')
   cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.cancel(user.id, id);
+  }
+
+  @Post(':id/pay')
+  pay(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PayDto) {
+    return this.service.pay(user.id, id, dto);
+  }
+
+  @Get(':id/invoice-pdf')
+  @Header('Content-Type', 'application/pdf')
+  async invoicePdf(@CurrentUser() user: AuthUser, @Param('id') id: string, @Res() res: Response) {
+    const invoiceId = await this.service.ensureInvoice(user.id, id);
+    const bytes = await this.pdfService.generate(invoiceId);
+    res.setHeader('Content-Disposition', `inline; filename=invoice-${id}.pdf`);
+    res.send(Buffer.from(bytes));
   }
 }

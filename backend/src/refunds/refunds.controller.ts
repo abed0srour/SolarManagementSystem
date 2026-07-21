@@ -25,6 +25,28 @@ class ReturnItemDto {
   serialNumbers?: string[];
 }
 
+class RefundFromOrderDto {
+  @IsString()
+  salesOrderId: string;
+
+  @IsOptional()
+  @IsIn(['DEFECTIVE', 'WRONG_ITEM', 'CHANGE_OF_MIND', 'OTHER'])
+  reason?: string;
+
+  @IsOptional()
+  @IsIn(['CASH', 'STORE_CREDIT', 'EXCHANGE'])
+  method?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReturnItemDto)
+  items: ReturnItemDto[];
+}
+
 class RefundDto {
   @IsString()
   invoiceId: string;
@@ -75,6 +97,11 @@ export class RefundsController {
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: RefundDto) {
     return this.service.create(user.id, dto);
+  }
+
+  @Post('from-order')
+  createFromOrder(@CurrentUser() user: AuthUser, @Body() dto: RefundFromOrderDto) {
+    return this.service.createFromOrder(user.id, dto);
   }
 
   @Post(':id/approve')

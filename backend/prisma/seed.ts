@@ -3,14 +3,37 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+const ADMIN_EMAIL = 'abd.srour313@gmail.com';
+const LEGACY_ADMIN_EMAIL = 'admin@solarstore.local';
+
 async function main() {
-  // Admin user
+  // Admin user — the legacy admin (if present) is renamed in place so all of
+  // its history (orders, audit logs, …) stays attached to the same user row.
   const passwordHash = await bcrypt.hash('admin123', 10);
-  await prisma.user.upsert({
-    where: { email: 'admin@solarstore.local' },
-    update: {},
-    create: { email: 'admin@solarstore.local', passwordHash, name: 'Admin', role: 'ADMIN' },
-  });
+  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
+  const legacy = await prisma.user.findUnique({ where: { email: LEGACY_ADMIN_EMAIL } });
+  if (admin) {
+    await prisma.user.update({
+      where: { id: admin.id },
+      data: { passwordHash, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+    });
+    if (legacy) {
+      // Both exist: keep the new one, remove the legacy account (fall back to
+      // deactivating it when foreign keys still reference it).
+      try {
+        await prisma.user.delete({ where: { id: legacy.id } });
+      } catch {
+        await prisma.user.update({ where: { id: legacy.id }, data: { isActive: false, deletedAt: new Date() } });
+      }
+    }
+  } else if (legacy) {
+    await prisma.user.update({
+      where: { id: legacy.id },
+      data: { email: ADMIN_EMAIL, passwordHash, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+    });
+  } else {
+    await prisma.user.create({ data: { email: ADMIN_EMAIL, passwordHash, name: 'Admin', role: 'ADMIN' } });
+  }
 
   // Default warehouse
   await prisma.warehouse.upsert({
@@ -30,6 +53,9 @@ async function main() {
     ['CLAIM', 'WC-'],
     ['JOB', 'JOB-'],
     ['SUPPLIER_RETURN', 'SR-'],
+    ['INSTALLATION', 'INST-'],
+    ['EXPENSE', 'EXP-'],
+    ['CONTRACT', 'MC-'],
   ];
   for (const [entity, prefix] of sequences) {
     await prisma.numberSequence.upsert({
@@ -102,7 +128,7 @@ async function main() {
     return sub;
   }
 
-  await subCatWithAttrs(solar.id, 'Monocrystalline', [
+  const monoSub = await subCatWithAttrs(solar.id, 'Monocrystalline', [
     { name: 'wattage', label: 'Wattage', type: 'NUMBER', unit: 'W', required: true },
     { name: 'dimensions', label: 'Dimensions (LxWxH)', type: 'TEXT', unit: 'mm' },
     { name: 'weight', label: 'Weight', type: 'NUMBER', unit: 'kg' },
@@ -125,7 +151,7 @@ async function main() {
   ];
   await subCatWithAttrs(inverters.id, 'On-grid', inverterAttrs);
   await subCatWithAttrs(inverters.id, 'Off-grid', inverterAttrs);
-  await subCatWithAttrs(inverters.id, 'Hybrid', inverterAttrs);
+  const hybridSub = await subCatWithAttrs(inverters.id, 'Hybrid', inverterAttrs);
 
   const batteryAttrs: AttrDef[] = [
     { name: 'capacityAh', label: 'Capacity', type: 'NUMBER', unit: 'Ah', required: true },
@@ -133,13 +159,37 @@ async function main() {
     { name: 'voltage', label: 'Voltage', type: 'NUMBER', unit: 'V', required: true },
     { name: 'cycleLife', label: 'Cycle Life', type: 'NUMBER', unit: 'cycles' },
   ];
-  await subCatWithAttrs(batteries.id, 'Lithium (LiFePO4)', batteryAttrs);
+  const lifepo4Sub = await subCatWithAttrs(batteries.id, 'Lithium (LiFePO4)', batteryAttrs);
   await subCatWithAttrs(batteries.id, 'Lithium (Li-ion)', batteryAttrs);
   await subCatWithAttrs(batteries.id, 'Lead-acid (Flooded)', batteryAttrs);
   await subCatWithAttrs(batteries.id, 'Lead-acid (AGM)', batteryAttrs);
   await subCatWithAttrs(batteries.id, 'Lead-acid (Gel)', batteryAttrs);
 
-  console.log('Seed completed: admin user, warehouse, categories, sequences, settings.');
+  // Demo products so the solar sizing calculator has stock to recommend
+  const warehouse = await prisma.warehouse.findUniqueOrThrow({ where: { name: 'Main Warehouse' } });
+  const demoProducts = [
+    { sku: 'PAN-JINKO-580', name: 'Jinko Tiger Neo 580W', brand: 'Jinko', model: 'JKM580N-72HL4', subCategoryId: monoSub.id, attributes: { wattage: 580, efficiency: 22.3 }, costPrice: 95, salePrice: 135, warrantyMonths: 144, performanceWarrantyMonths: 300, qty: 60 },
+    { sku: 'PAN-LONGI-555', name: 'LONGi Hi-MO 6 555W', brand: 'LONGi', model: 'LR5-72HTH-555M', subCategoryId: monoSub.id, attributes: { wattage: 555, efficiency: 21.5 }, costPrice: 88, salePrice: 125, warrantyMonths: 144, performanceWarrantyMonths: 300, qty: 40 },
+    { sku: 'INV-DEYE-5K', name: 'Deye 5kW Hybrid Inverter', brand: 'Deye', model: 'SUN-5K-SG04LP1', subCategoryId: hybridSub.id, attributes: { capacityKw: 5, phase: 'Single-phase', mpptTrackers: 2 }, costPrice: 620, salePrice: 850, warrantyMonths: 60, qty: 12 },
+    { sku: 'INV-DEYE-8K', name: 'Deye 8kW Hybrid Inverter', brand: 'Deye', model: 'SUN-8K-SG01LP1', subCategoryId: hybridSub.id, attributes: { capacityKw: 8, phase: 'Single-phase', mpptTrackers: 2 }, costPrice: 950, salePrice: 1290, warrantyMonths: 60, qty: 8 },
+    { sku: 'BAT-PYLON-5K', name: 'Pylontech US5000 4.8kWh', brand: 'Pylontech', model: 'US5000', subCategoryId: lifepo4Sub.id, attributes: { capacityAh: 100, capacityKwh: 4.8, voltage: 48, cycleLife: 6000 }, costPrice: 980, salePrice: 1350, warrantyMonths: 84, qty: 16 },
+    { sku: 'BAT-DYNESS-5K', name: 'Dyness B4850 5.12kWh', brand: 'Dyness', model: 'B4850', subCategoryId: lifepo4Sub.id, attributes: { capacityAh: 100, capacityKwh: 5.12, voltage: 51.2, cycleLife: 6000 }, costPrice: 890, salePrice: 1250, warrantyMonths: 84, qty: 10 },
+  ];
+  for (const p of demoProducts) {
+    const { qty, ...data } = p;
+    const product = await prisma.product.upsert({
+      where: { sku: p.sku },
+      update: {},
+      create: { ...data, trackSerials: false },
+    });
+    await prisma.stockLevel.upsert({
+      where: { productId_warehouseId: { productId: product.id, warehouseId: warehouse.id } },
+      update: {},
+      create: { productId: product.id, warehouseId: warehouse.id, quantity: qty },
+    });
+  }
+
+  console.log('Seed completed: admin user, warehouse, categories, sequences, settings, demo products.');
 }
 
 main()

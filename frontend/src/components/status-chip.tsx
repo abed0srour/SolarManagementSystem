@@ -35,6 +35,12 @@ const VARIANTS: Record<string, 'default' | 'success' | 'warning' | 'destructive'
   DAMAGED: 'destructive',
   RETURNED_TO_SUPPLIER: 'muted',
   CREDITED: 'success',
+  SURVEY: 'info',
+  DESIGN: 'muted',
+  INSTALLING: 'warning',
+  COMMISSIONED: 'success',
+  ACTIVE: 'success',
+  ON_HOLD: 'warning',
 };
 
 export default function StatusChip({ status }: { status?: string }) {

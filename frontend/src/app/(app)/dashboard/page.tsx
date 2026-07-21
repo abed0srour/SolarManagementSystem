@@ -1,4 +1,6 @@
 'use client';
+import { LayoutDashboard as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
@@ -63,7 +65,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">{t('dashboard.title')}</h1>
+        <PageHeader icon={PageIcon} title={t('dashboard.title')} subtitle={t('subtitles.dashboard')} />
         <Select className="w-44" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           <option value={7}>{t('dashboard.last7')}</option>
           <option value={30}>{t('dashboard.last30')}</option>
@@ -74,6 +76,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label={t('dashboard.revenue')} value={fmtMoney(k.revenue)} sub={t('dashboard.invoicesCount', { count: k.invoiceCount })} />
+        <StatTile label={t('dashboard.refunds')} value={fmtMoney(k.refunds ?? 0)} sub={`${t('dashboard.netRevenue')}: ${fmtMoney(k.netRevenue ?? k.revenue)}`} />
         <StatTile label={t('dashboard.collected')} value={fmtMoney(k.collected)} />
         <StatTile label={t('dashboard.grossProfit')} value={fmtMoney(k.grossProfit)} />
         <StatTile label={t('dashboard.receivables')} value={fmtMoney(k.accountsReceivable)} />
@@ -81,6 +84,10 @@ export default function DashboardPage() {
         <StatTile label={t('dashboard.pendingOrders')} value={String(k.pendingOrders)} />
         <StatTile label={t('dashboard.openClaims')} value={String(k.openClaims)} />
         <StatTile label={t('dashboard.lowStock')} value={String(k.lowStockCount)} />
+        <StatTile label={t('dashboard.expenses')} value={fmtMoney(k.expenses)} />
+        <StatTile label={t('dashboard.netProfit')} value={fmtMoney(k.netProfit)} />
+        <StatTile label={t('dashboard.energyProduced')} value={`${Number(k.energyKwh ?? 0).toLocaleString()} kWh`} />
+        <StatTile label={t('dashboard.activeSystems')} value={String(k.activeInstallations ?? 0)} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
@@ -122,40 +129,75 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">{t('dashboard.topProducts')}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('products.sku')}</TableHead>
-                <TableHead>{t('common.product')}</TableHead>
-                <TableHead className="text-end">{t('dashboard.qtySold')}</TableHead>
-                <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.topProducts.length === 0 && (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{t('dashboard.topProducts')}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                    {t('dashboard.noSales')}
-                  </TableCell>
+                  <TableHead>{t('products.sku')}</TableHead>
+                  <TableHead>{t('common.product')}</TableHead>
+                  <TableHead className="text-end">{t('dashboard.qtySold')}</TableHead>
+                  <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
                 </TableRow>
-              )}
-              {data.topProducts.map((p: any) => (
-                <TableRow key={p.sku}>
-                  <TableCell className="font-mono text-xs">{p.sku}</TableCell>
-                  <TableCell>{p.name}</TableCell>
-                  <TableCell className="text-end tabular-nums">{p.qty}</TableCell>
-                  <TableCell className="text-end tabular-nums">{fmtMoney(p.revenue)}</TableCell>
+              </TableHeader>
+              <TableBody>
+                {data.topProducts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                      {t('dashboard.noSales')}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {data.topProducts.map((p: any) => (
+                  <TableRow key={p.sku}>
+                    <TableCell className="font-mono text-xs">{p.sku}</TableCell>
+                    <TableCell>{p.name}</TableCell>
+                    <TableCell className="text-end tabular-nums">{p.qty}</TableCell>
+                    <TableCell className="text-end tabular-nums">{fmtMoney(p.revenue)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{t('dashboard.topClients')}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('common.client')}</TableHead>
+                  <TableHead className="text-end">{t('dashboard.ordersCount')}</TableHead>
+                  <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {(data.topClients ?? []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                      {t('dashboard.noSales')}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {(data.topClients ?? []).map((c: any) => (
+                  <TableRow key={c.clientId}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="text-end tabular-nums">{c.invoices}</TableCell>
+                    <TableCell className="text-end tabular-nums">{fmtMoney(c.revenue)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

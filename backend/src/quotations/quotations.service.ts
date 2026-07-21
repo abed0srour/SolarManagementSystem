@@ -25,19 +25,20 @@ export class QuotationsService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.quotation.count({ where });
     return this.prisma.quotation
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: { client: { select: { name: true } }, items: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.quotation.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const q = await this.prisma.quotation.findUnique({
+    const q = await this.prisma.quotation.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: { include: { addresses: true } },
@@ -60,7 +61,6 @@ export class QuotationsService {
         unitPrice: i.unitPrice,
         discountType: i.discountType ?? null,
         discountValue: i.discountValue ?? 0,
-        taxRatePct: i.taxRatePct ?? 0,
         lineTotal: t.lineTotal,
         _totals: t,
       };
@@ -130,7 +130,7 @@ export class QuotationsService {
 
   /** Convert an accepted quotation into a sales order. */
   async convertToOrder(userId: string, id: string, warehouseId: string) {
-    const q = await this.prisma.quotation.findUnique({ where: { id }, include: { items: true } });
+    const q = await this.prisma.quotation.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { items: true } });
     if (!q) throw new NotFoundException('Quotation not found');
     if (q.status === 'CANCELLED' || q.status === 'EXPIRED')
       throw new BadRequestException(`Cannot convert a ${q.status.toLowerCase()} quotation`);
@@ -147,7 +147,6 @@ export class QuotationsService {
           discountType: q.discountType,
           discountValue: q.discountValue,
           subtotal: q.subtotal,
-          taxAmount: q.taxAmount,
           total: q.total,
           notes: q.notes,
           createdById: userId,
@@ -159,7 +158,6 @@ export class QuotationsService {
               unitPrice: i.unitPrice,
               discountType: i.discountType,
               discountValue: i.discountValue,
-              taxRatePct: i.taxRatePct,
               lineTotal: i.lineTotal,
             })),
           },
@@ -174,7 +172,7 @@ export class QuotationsService {
   }
 
   async remove(userId: string, id: string) {
-    const q = await this.prisma.quotation.findUnique({ where: { id }, include: { salesOrders: true } });
+    const q = await this.prisma.quotation.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { salesOrders: true } });
     if (!q) throw new NotFoundException('Quotation not found');
     if (q.salesOrders.length) throw new BadRequestException('Quotation is linked to a sales order');
     await this.prisma.quotation.update({ where: { id }, data: { deletedAt: new Date() } });

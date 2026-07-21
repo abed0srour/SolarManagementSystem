@@ -24,6 +24,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-admin}@db:5432/solar_store?schema=public
+      DIRECT_URL: postgresql://postgres:${POSTGRES_PASSWORD:-admin}@db:5432/solar_store?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRES_IN: 12h
       PORT: 3000
@@ -31,6 +32,7 @@ services:
       - '3000:3000'
     volumes:
       - uploads:/app/uploads
+      - backups:/app/backups
 
   frontend:
     build:
@@ -46,3 +48,4 @@ services:
 volumes:
   pgdata:
   uploads:
+  backups:

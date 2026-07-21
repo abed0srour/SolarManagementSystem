@@ -49,8 +49,8 @@ export class WarrantyController {
   }
 
   @Get('expiring')
-  expiring(@Query('days') days?: string) {
-    return this.service.expiringSoon(days ? Number(days) : 60);
+  expiring(@Query() query: any) {
+    return this.service.expiringSoon(query.days ? Number(query.days) : 60, query);
   }
 
   @Get('claims/:id')

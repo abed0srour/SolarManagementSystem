@@ -17,7 +17,10 @@ export class ReportsService {
     const period = this.range(from, to);
     const saleWhere = { type: 'SALE' as const, status: { not: 'CANCELLED' as const }, issueDate: period };
 
-    const [salesAgg, receivables, payables, invoiceCount, openClaims, pendingOrders] = await Promise.all([
+    // One parallel burst — every sequential query here costs a full round-trip
+    // to the remote database.
+    const completedRefunds = { deletedAt: null, status: 'COMPLETED' as const, createdAt: period };
+    const [salesAgg, receivables, payables, invoiceCount, openClaims, pendingOrders, expensesAgg, activeInstallations, energyAgg, invoices, saleItems, products, clientGroups, refundsAgg, returnedItems] = await Promise.all([
       this.prisma.invoice.aggregate({ where: saleWhere, _sum: { total: true, paidAmount: true } }),
       this.prisma.invoice.aggregate({
         where: { type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
@@ -30,14 +33,36 @@ export class ReportsService {
       this.prisma.invoice.count({ where: saleWhere }),
       this.prisma.warrantyClaim.count({ where: { status: { in: ['OPEN', 'SENT_TO_SUPPLIER'] } } }),
       this.prisma.salesOrder.count({ where: { status: 'PENDING' } }),
+      this.prisma.expense.aggregate({ where: { deletedAt: null, expenseDate: period }, _sum: { amount: true } }),
+      this.prisma.installation.count({ where: { deletedAt: null, status: { in: ['COMMISSIONED', 'ACTIVE'] } } }),
+      this.prisma.energyReading.aggregate({ where: { readingDate: period }, _sum: { energyKwh: true } }),
+      this.prisma.invoice.findMany({
+        where: saleWhere,
+        select: { issueDate: true, total: true },
+        orderBy: { issueDate: 'asc' },
+      }),
+      this.prisma.invoiceItem.findMany({ relationLoadStrategy: 'join',
+        where: { invoice: saleWhere, productId: { not: null } },
+        include: { product: { include: { subCategory: { include: { category: true } } } } },
+      }),
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        select: { lowStockThreshold: true, stockLevels: { select: { quantity: true } } },
+      }),
+      this.prisma.invoice.groupBy({
+        by: ['clientId'],
+        where: { ...saleWhere, clientId: { not: null } },
+        _sum: { total: true },
+        _count: { _all: true },
+      }),
+      this.prisma.refund.aggregate({ where: completedRefunds, _sum: { totalAmount: true } }),
+      this.prisma.returnItem.findMany({ relationLoadStrategy: 'join',
+        where: { condition: 'RESELLABLE', refund: completedRefunds },
+        include: { product: { select: { costPrice: true } } },
+      }),
     ]);
 
     // Sales by day (for chart)
-    const invoices = await this.prisma.invoice.findMany({
-      where: saleWhere,
-      select: { issueDate: true, total: true },
-      orderBy: { issueDate: 'asc' },
-    });
     const byDay = new Map<string, number>();
     for (const inv of invoices) {
       const day = inv.issueDate.toISOString().slice(0, 10);
@@ -45,10 +70,6 @@ export class ReportsService {
     }
 
     // Sales by category
-    const saleItems = await this.prisma.invoiceItem.findMany({
-      where: { invoice: saleWhere, productId: { not: null } },
-      include: { product: { include: { subCategory: { include: { category: true } } } } },
-    });
     const byCategory = new Map<string, number>();
     const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
     let cogs = 0;
@@ -64,26 +85,52 @@ export class ReportsService {
     }
     const revenue = Number(salesAgg._sum.total ?? 0);
 
+    // Completed refunds reduce revenue; resellable returns went back into
+    // stock, so their cost also leaves COGS (damaged returns stay a sunk cost).
+    const refunds = Number(refundsAgg._sum.totalAmount ?? 0);
+    const returnedCogs = returnedItems.reduce((s, ri) => s + Number(ri.product.costPrice) * ri.quantity, 0);
+    const netRevenue = round2(revenue - refunds);
+    const grossProfit = round2(netRevenue - (cogs - returnedCogs));
+
     // Low stock count
-    const products = await this.prisma.product.findMany({
-      where: { isActive: true },
-      select: { lowStockThreshold: true, stockLevels: { select: { quantity: true } } },
-    });
     const lowStockCount = products.filter(
       (p) => p.stockLevels.reduce((s, l) => s + l.quantity, 0) <= p.lowStockThreshold,
     ).length;
 
+    // Top clients by billed revenue in the period
+    const clientRows = await this.prisma.client.findMany({
+      where: { id: { in: clientGroups.map((g) => g.clientId!).filter(Boolean) } },
+      select: { id: true, name: true },
+    });
+    const clientNames = new Map(clientRows.map((c) => [c.id, c.name]));
+    const topClients = clientGroups
+      .map((g) => ({
+        clientId: g.clientId,
+        name: clientNames.get(g.clientId!) ?? '—',
+        invoices: g._count._all,
+        revenue: round2(Number(g._sum.total ?? 0)),
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
     return {
+      topClients,
       kpis: {
         revenue,
+        refunds,
+        netRevenue,
         collected: Number(salesAgg._sum.paidAmount ?? 0),
-        grossProfit: round2(revenue - cogs),
+        grossProfit,
         invoiceCount,
         accountsReceivable: round2(Number(receivables._sum.total ?? 0) - Number(receivables._sum.paidAmount ?? 0)),
         accountsPayable: round2(Number(payables._sum.total ?? 0) - Number(payables._sum.paidAmount ?? 0)),
         openClaims,
         pendingOrders,
         lowStockCount,
+        expenses: Number(expensesAgg._sum.amount ?? 0),
+        netProfit: round2(grossProfit - Number(expensesAgg._sum.amount ?? 0)),
+        activeInstallations,
+        energyKwh: Number(energyAgg._sum.energyKwh ?? 0),
       },
       salesByDay: [...byDay.entries()].map(([date, total]) => ({ date, total })),
       salesByCategory: [...byCategory.entries()].map(([category, total]) => ({ category, total })),
@@ -97,7 +144,7 @@ export class ReportsService {
   /** Profit margin per product over a period. */
   async profitByProduct(from?: string, to?: string) {
     const period = this.range(from, to);
-    const items = await this.prisma.invoiceItem.findMany({
+    const items = await this.prisma.invoiceItem.findMany({ relationLoadStrategy: 'join',
       where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: period }, productId: { not: null } },
       include: { product: { select: { sku: true, name: true, costPrice: true } } },
     });
@@ -108,6 +155,19 @@ export class ReportsService {
       cur.revenue = round2(cur.revenue + Number(i.lineTotal));
       cur.cost = round2(cur.cost + Number(i.product!.costPrice) * i.quantity);
       map.set(i.product!.sku, cur);
+    }
+    // Completed refunds pull the returned quantity and value back out; a
+    // resellable return also takes its cost out of COGS (it is stock again).
+    const returns = await this.prisma.returnItem.findMany({ relationLoadStrategy: 'join',
+      where: { refund: { deletedAt: null, status: 'COMPLETED', createdAt: period } },
+      include: { product: { select: { sku: true, name: true, costPrice: true } } },
+    });
+    for (const ri of returns) {
+      const cur = map.get(ri.product.sku) ?? { name: ri.product.name, qty: 0, revenue: 0, cost: 0 };
+      cur.qty -= ri.quantity;
+      cur.revenue = round2(cur.revenue - Number(ri.unitPrice) * ri.quantity);
+      if (ri.condition === 'RESELLABLE') cur.cost = round2(cur.cost - Number(ri.product.costPrice) * ri.quantity);
+      map.set(ri.product.sku, cur);
     }
     return [...map.entries()]
       .map(([sku, v]) => ({
@@ -153,7 +213,7 @@ export class ReportsService {
 
   /** Accounts receivable: open sale invoices with aging bucket. */
   async receivables() {
-    const invoices = await this.prisma.invoice.findMany({
+    const invoices = await this.prisma.invoice.findMany({ relationLoadStrategy: 'join',
       where: { type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
       include: { client: { select: { id: true, name: true } } },
       orderBy: { dueDate: 'asc' },
@@ -169,7 +229,7 @@ export class ReportsService {
 
   /** Accounts payable: open purchase invoices. */
   async payables() {
-    const invoices = await this.prisma.invoice.findMany({
+    const invoices = await this.prisma.invoice.findMany({ relationLoadStrategy: 'join',
       where: { type: 'PURCHASE', status: { notIn: ['CANCELLED', 'PAID'] } },
       include: { supplier: { select: { id: true, name: true } } },
       orderBy: { dueDate: 'asc' },
@@ -188,11 +248,18 @@ export class ReportsService {
   /** Cash flow: payments in/out per day over a period. */
   async cashFlow(from?: string, to?: string) {
     const period = this.range(from, to);
-    const payments = await this.prisma.payment.findMany({
-      where: { paymentDate: period },
-      select: { direction: true, amount: true, paymentDate: true, method: true },
-      orderBy: { paymentDate: 'asc' },
-    });
+    const [payments, cashRefunds] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: { paymentDate: period },
+        select: { direction: true, amount: true, paymentDate: true, method: true },
+        orderBy: { paymentDate: 'asc' },
+      }),
+      // Completed cash refunds are money physically leaving the till
+      this.prisma.refund.findMany({
+        where: { deletedAt: null, status: 'COMPLETED', method: 'CASH', createdAt: period },
+        select: { totalAmount: true, createdAt: true },
+      }),
+    ]);
     const byDay = new Map<string, { in: number; out: number }>();
     let totalIn = 0;
     let totalOut = 0;
@@ -208,8 +275,17 @@ export class ReportsService {
       }
       byDay.set(day, cur);
     }
+    for (const r of cashRefunds) {
+      const day = r.createdAt.toISOString().slice(0, 10);
+      const cur = byDay.get(day) ?? { in: 0, out: 0 };
+      cur.out = round2(cur.out + Number(r.totalAmount));
+      totalOut = round2(totalOut + Number(r.totalAmount));
+      byDay.set(day, cur);
+    }
     return {
-      days: [...byDay.entries()].map(([date, v]) => ({ date, ...v, net: round2(v.in - v.out) })),
+      days: [...byDay.entries()]
+        .map(([date, v]) => ({ date, ...v, net: round2(v.in - v.out) }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
       totalIn,
       totalOut,
       net: round2(totalIn - totalOut),

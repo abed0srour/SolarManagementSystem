@@ -1,9 +1,11 @@
 'use client';
+import { Package as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, History, Upload, Trash2 } from 'lucide-react';
+import { Plus, History, Upload, Archive } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, fmtDateTime } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -31,6 +33,20 @@ export default function ProductsPage() {
   const [bulkCsv, setBulkCsv] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [serialDraft, setSerialDraft] = useState('');
+
+  const addSerials = () => {
+    const parts = serialDraft.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return;
+    const tooLong = parts.filter((p) => p.length > 18);
+    if (tooLong.length) {
+      toast.error(t('products.serialTooLong', { serials: tooLong.join(', ') }));
+      return;
+    }
+    const existing: string[] = form.serialNumbers ?? [];
+    setForm({ ...form, serialNumbers: [...existing, ...parts.filter((p) => !existing.includes(p))] });
+    setSerialDraft('');
+  };
 
   useEffect(() => {
     api.get('/categories').then((r) => setCategories(r.data));
@@ -42,7 +58,8 @@ export default function ProductsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ sku: '', name: '', brand: '', model: '', subCategoryId: '', costPrice: 0, salePrice: 0, taxRatePct: 0, trackSerials: true, lowStockThreshold: 5, warrantyMonths: '', performanceWarrantyMonths: '', shelfLifeMonths: '', barcode: '', notes: '' });
+    setForm({ sku: '', name: '', brand: '', model: '', subCategoryId: '', costPrice: 0, salePrice: 0, isService: false, trackSerials: true, lowStockThreshold: 5, warrantyMonths: '', performanceWarrantyMonths: '', shelfLifeMonths: '', barcode: '', notes: '', serialNumbers: [] });
+    setSerialDraft('');
     setAttrs({});
     setOpen(true);
   };
@@ -52,7 +69,7 @@ export default function ProductsPage() {
     setForm({
       sku: row.sku, name: row.name, brand: row.brand ?? '', model: row.model ?? '',
       subCategoryId: row.subCategoryId, costPrice: Number(row.costPrice), salePrice: Number(row.salePrice),
-      taxRatePct: Number(row.taxRatePct), trackSerials: row.trackSerials, lowStockThreshold: row.lowStockThreshold,
+      isService: !!row.isService, trackSerials: row.trackSerials, lowStockThreshold: row.lowStockThreshold,
       warrantyMonths: row.warrantyMonths ?? '', performanceWarrantyMonths: row.performanceWarrantyMonths ?? '',
       shelfLifeMonths: row.shelfLifeMonths ?? '', barcode: row.barcode ?? '', notes: row.notes ?? '',
       isActive: row.isActive, priceChangeReason: '',
@@ -67,7 +84,6 @@ export default function ProductsPage() {
         ...form,
         costPrice: Number(form.costPrice),
         salePrice: Number(form.salePrice),
-        taxRatePct: Number(form.taxRatePct) || 0,
         lowStockThreshold: Number(form.lowStockThreshold) || 0,
         warrantyMonths: form.warrantyMonths === '' ? undefined : Number(form.warrantyMonths),
         performanceWarrantyMonths: form.performanceWarrantyMonths === '' ? undefined : Number(form.performanceWarrantyMonths),
@@ -78,6 +94,7 @@ export default function ProductsPage() {
         notes: form.notes || undefined,
         priceChangeReason: form.priceChangeReason || undefined,
         attributes: attrs,
+        serialNumbers: !editing && form.serialNumbers?.length ? form.serialNumbers : undefined,
       };
       if (editing) await api.patch(`/products/${editing.id}`, payload);
       else await api.post('/products', payload);
@@ -120,7 +137,7 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('products.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('products.title')} subtitle={t('subtitles.products')} />
       <DataTable
         endpoint="/products"
         refreshKey={refreshKey}
@@ -161,7 +178,7 @@ export default function ProductsPage() {
             className: 'text-end',
             render: (r) => {
               const qty = (r.stockLevels ?? []).reduce((s: number, l: any) => s + l.quantity, 0);
-              return qty <= r.lowStockThreshold ? <Badge variant="destructive">{qty}</Badge> : <span className="tabular-nums">{qty}</span>;
+              return <Badge variant={qty <= r.lowStockThreshold ? 'destructive' : 'success'}>{qty}</Badge>;
             },
           },
           {
@@ -172,8 +189,8 @@ export default function ProductsPage() {
                 <Button variant="ghost" size="icon" className="h-8 w-8" title={t('products.priceHistory')} onClick={(e) => { e.stopPropagation(); showHistory(r); }}>
                   <History />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                  <Trash2 />
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                  <Archive />
                 </Button>
               </div>
             ),
@@ -205,15 +222,51 @@ export default function ProductsPage() {
             <Field label={t('products.barcode')}><Input value={form.barcode ?? ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></Field>
             <Field label={t('products.costPrice')}><Input type="number" min={0} step="0.01" value={form.costPrice ?? 0} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} /></Field>
             <Field label={t('products.salePrice')}><Input type="number" min={0} step="0.01" value={form.salePrice ?? 0} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} /></Field>
-            <Field label={t('products.taxRate')}><Input type="number" min={0} value={form.taxRatePct ?? 0} onChange={(e) => setForm({ ...form, taxRatePct: e.target.value })} /></Field>
             <Field label={t('products.lowStockThreshold')}><Input type="number" min={0} value={form.lowStockThreshold ?? 5} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} /></Field>
             <Field label={t('products.warrantyMonths')}><Input type="number" min={0} value={form.warrantyMonths ?? ''} onChange={(e) => setForm({ ...form, warrantyMonths: e.target.value })} /></Field>
             <Field label={t('products.performanceWarrantyMonths')}><Input type="number" min={0} value={form.performanceWarrantyMonths ?? ''} onChange={(e) => setForm({ ...form, performanceWarrantyMonths: e.target.value })} /></Field>
             <Field label={t('products.shelfLifeMonths')}><Input type="number" min={0} value={form.shelfLifeMonths ?? ''} onChange={(e) => setForm({ ...form, shelfLifeMonths: e.target.value })} /></Field>
             <div className="flex items-center gap-2 pt-6">
-              <input id="trackSerials" type="checkbox" className="h-4 w-4" checked={!!form.trackSerials} onChange={(e) => setForm({ ...form, trackSerials: e.target.checked })} />
-              <label htmlFor="trackSerials" className="text-sm">{t('products.trackSerials')}</label>
+              <input id="isService" type="checkbox" className="h-4 w-4" checked={!!form.isService} onChange={(e) => setForm({ ...form, isService: e.target.checked, trackSerials: e.target.checked ? false : form.trackSerials })} />
+              <label htmlFor="isService" className="text-sm">{t('products.isService')}</label>
             </div>
+            {!form.isService && (
+              <div className="flex items-center gap-2 pt-6">
+                <input id="trackSerials" type="checkbox" className="h-4 w-4" checked={!!form.trackSerials} onChange={(e) => setForm({ ...form, trackSerials: e.target.checked })} />
+                <label htmlFor="trackSerials" className="text-sm">{t('products.trackSerials')}</label>
+              </div>
+            )}
+            {!editing && !form.isService && form.trackSerials && (
+              <Field label={t('products.initialSerials')} className="col-span-2 md:col-span-4">
+                <div className="space-y-1.5">
+                  {(form.serialNumbers ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {form.serialNumbers.map((s: string) => (
+                        <Badge key={s} variant="muted" className="gap-1 font-mono text-xs" dir="ltr">
+                          {s}
+                          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setForm({ ...form, serialNumbers: form.serialNumbers.filter((x: string) => x !== s) })}>
+                            ×
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      dir="ltr"
+                      maxLength={60}
+                      placeholder={t('products.serialsPlaceholder')}
+                      value={serialDraft}
+                      onChange={(e) => setSerialDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSerials(); } }}
+                    />
+                    <Button type="button" variant="outline" onClick={addSerials} disabled={!serialDraft.trim()}>
+                      <Plus /> {t('common.addLine')}
+                    </Button>
+                  </div>
+                </div>
+              </Field>
+            )}
             {editing && (
               <Field label={t('products.priceChangeReason')} className="md:col-span-3">
                 <Input value={form.priceChangeReason ?? ''} onChange={(e) => setForm({ ...form, priceChangeReason: e.target.value })} />
@@ -315,6 +368,7 @@ export default function ProductsPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.delete(`/products/${deleteTarget.id}`);

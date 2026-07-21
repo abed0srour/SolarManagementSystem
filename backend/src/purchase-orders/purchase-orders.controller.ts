@@ -1,6 +1,6 @@
 ﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -43,6 +43,15 @@ class PurchaseOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  hasDeliveryCost?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  deliveryCost?: number;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -99,6 +108,27 @@ class StatusDto {
   status: string;
 }
 
+class PayDto {
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
+
+  @IsIn(['CASH', 'WHISH', 'OMT'])
+  method: string;
+
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentDate?: string;
+}
+
 @Controller('purchase-orders')
 export class PurchaseOrdersController {
   constructor(private service: PurchaseOrdersService) {}
@@ -131,5 +161,10 @@ export class PurchaseOrdersController {
   @Post(':id/status')
   setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: StatusDto) {
     return this.service.setStatus(user.id, id, dto.status);
+  }
+
+  @Post(':id/pay')
+  pay(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PayDto) {
+    return this.service.pay(user.id, id, dto);
   }
 }

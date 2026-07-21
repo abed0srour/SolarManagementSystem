@@ -36,8 +36,9 @@ export class InvoicesService {
     }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.invoice.count({ where });
     return this.prisma.invoice
-      .findMany({
+      .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
           client: { select: { name: true } },
@@ -48,11 +49,11 @@ export class InvoicesService {
         skip: (page - 1) * pageSize,
         take: pageSize,
       })
-      .then(async (items) => ({ items, total: await this.prisma.invoice.count({ where }), page, pageSize }));
+      .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
   async findOne(id: string) {
-    const inv = await this.prisma.invoice.findUnique({
+    const inv = await this.prisma.invoice.findUnique({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: { include: { addresses: true } },
@@ -89,7 +90,6 @@ export class InvoicesService {
         unitPrice: i.unitPrice,
         discountType: i.discountType ?? null,
         discountValue: i.discountValue ?? 0,
-        taxRatePct: i.taxRatePct ?? 0,
         lineTotal: t.lineTotal,
         _totals: t,
         _serialNumbers: i.serialNumbers as string[] | undefined,
@@ -163,7 +163,7 @@ export class InvoicesService {
 
   /** Generate a sale invoice directly from a sales order (full or percentage deposit). */
   async fromSalesOrder(userId: string, salesOrderId: string, opts: { percent?: number; dueDate?: string }) {
-    const so = await this.prisma.salesOrder.findUnique({
+    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
       where: { id: salesOrderId },
       include: { items: { include: { product: true } } },
     });
@@ -212,13 +212,12 @@ export class InvoicesService {
         unitPrice: Number(i.unitPrice),
         discountType: i.discountType ?? undefined,
         discountValue: Number(i.discountValue),
-        taxRatePct: Number(i.taxRatePct),
       })),
       notes: invoicedSoFar > 0 ? `Final invoice for order ${so.number} (previously invoiced: ${invoicedSoFar})` : undefined,
     });
 
     // Link serial units assigned at order confirmation and start their warranty clock
-    const orderUnits = await this.prisma.productUnit.findMany({
+    const orderUnits = await this.prisma.productUnit.findMany({ relationLoadStrategy: 'join',
       where: { salesOrderId: so.id, invoiceId: null },
       include: { product: { select: { warrantyMonths: true, performanceWarrantyMonths: true } } },
     });
@@ -291,7 +290,7 @@ export class InvoicesService {
   }
 
   async cancel(userId: string, id: string) {
-    const inv = await this.prisma.invoice.findUnique({ where: { id }, include: { payments: true } });
+    const inv = await this.prisma.invoice.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { payments: true } });
     if (!inv) throw new NotFoundException('Invoice not found');
     if (Number(inv.paidAmount) > 0) throw new BadRequestException('Invoice has payments — refund them first');
     await this.prisma.invoice.update({ where: { id }, data: { status: 'CANCELLED' } });
@@ -305,7 +304,7 @@ export class InvoicesService {
 
   /** Recompute paid amount and status from payments; used by payments module. */
   async refreshPaymentStatus(tx: Prisma.TransactionClient, invoiceId: string) {
-    const inv = await tx.invoice.findUnique({
+    const inv = await tx.invoice.findUnique({ relationLoadStrategy: 'join',
       where: { id: invoiceId },
       include: { payments: { where: { deletedAt: null } } },
     });

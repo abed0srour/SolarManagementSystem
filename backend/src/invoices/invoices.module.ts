@@ -6,6 +6,6 @@ import { InvoicePdfService } from './invoice-pdf.service';
 @Module({
   controllers: [InvoicesController],
   providers: [InvoicesService, InvoicePdfService],
-  exports: [InvoicesService],
+  exports: [InvoicesService, InvoicePdfService],
 })
 export class InvoicesModule {}

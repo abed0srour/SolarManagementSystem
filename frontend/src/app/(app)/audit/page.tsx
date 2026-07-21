@@ -1,4 +1,6 @@
 'use client';
+import { ScrollText as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useTranslations } from 'next-intl';
 import { fmtDateTime } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
@@ -8,7 +10,7 @@ export default function AuditPage() {
   const t = useTranslations();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('audit.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('audit.title')} subtitle={t('subtitles.audit')} />
       <DataTable
         endpoint="/audit"
         searchable={false}

@@ -12,9 +12,12 @@ export class LineItemDto {
   @Min(1)
   quantity: number;
 
+  // Optional: sales orders ignore it entirely (the server snapshots the
+  // product's current sale price); quotations/invoices may still send it.
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  unitPrice: number;
+  unitPrice?: number;
 
   @IsOptional()
   @IsIn(['PERCENT', 'FIXED'])
@@ -24,9 +27,4 @@ export class LineItemDto {
   @IsNumber()
   @Min(0)
   discountValue?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  taxRatePct?: number;
 }

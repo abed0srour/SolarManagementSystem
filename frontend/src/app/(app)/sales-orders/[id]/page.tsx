@@ -1,0 +1,382 @@
+'use client';
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import {
+  Banknote,
+  CalendarDays,
+  CheckCircle2,
+  FileDown,
+  Truck,
+  Undo2,
+  User,
+  Warehouse as WarehouseIcon,
+  XCircle,
+  StickyNote,
+} from 'lucide-react';
+import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/api';
+import StatusChip from '../../../../components/status-chip';
+import ConfirmDialog from '../../../../components/confirm-dialog';
+import ClientInfoDialog from '../../../../components/client-info-dialog';
+import SerialPicker from '../../../../components/serial-picker';
+import Field from '../../../../components/form-field';
+import { Button } from '../../../../components/ui/button';
+import { Input } from '../../../../components/ui/input';
+import { Select } from '../../../../components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
+import { Skeleton } from '../../../../components/ui/skeleton';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../../components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../../components/ui/table';
+
+export default function SalesOrderDetailPage() {
+  const t = useTranslations();
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const [so, setSo] = useState<any>(null);
+  const [clientInfo, setClientInfo] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [serialInputs, setSerialInputs] = useState<Record<string, string[]>>({});
+  const [deliverOpen, setDeliverOpen] = useState(false);
+  const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
+  const [payOpen, setPayOpen] = useState(false);
+  const [payForm, setPayForm] = useState<any>({});
+  const [cancelOpen, setCancelOpen] = useState(false);
+
+  const load = useCallback(() => {
+    api.get(`/sales-orders/${params.id}`).then((r) => setSo(r.data)).catch((e) => toast.error(errMsg(e)));
+  }, [params.id]);
+  useEffect(load, [load]);
+
+  if (!so)
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+
+  const discountLabel = (type: string | null, value: any) =>
+    !type ? '—' : type === 'PERCENT' ? `${Number(value)}%` : fmtMoney(value);
+
+  const doConfirm = async () => {
+    try {
+      const serialAssignments = Object.entries(serialInputs)
+        .filter(([, v]) => v.length > 0)
+        .map(([productId, serialNumbers]) => ({ productId, serialNumbers }));
+      await api.post(`/sales-orders/${so.id}/confirm`, { serialAssignments: serialAssignments.length ? serialAssignments : undefined });
+      toast.success(t('common.saved'));
+      setConfirmOpen(false);
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  const doDeliver = async () => {
+    try {
+      const deliveries = Object.entries(deliverQty)
+        .filter(([, q]) => Number(q) > 0)
+        .map(([itemId, q]) => ({ itemId, quantity: Number(q) }));
+      await api.post(`/sales-orders/${so.id}/deliver`, { deliveries });
+      toast.success(t('common.saved'));
+      setDeliverOpen(false);
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  const doPay = async () => {
+    try {
+      await api.post(`/sales-orders/${so.id}/pay`, {
+        amount: Number(payForm.amount),
+        method: payForm.method,
+        reference: payForm.reference || undefined,
+        paymentDate: payForm.paymentDate || undefined,
+      });
+      toast.success(t('common.saved'));
+      setPayOpen(false);
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      {/* Header + actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-2xl font-bold">{so.number}</h1>
+        <StatusChip status={so.status} />
+        {so.status !== 'CANCELLED' && <StatusChip status={so.paymentStatus ?? 'UNPAID'} />}
+        <div className="ms-auto flex flex-wrap gap-2">
+          {so.status === 'PENDING' && (
+            <Button size="sm" onClick={() => { setSerialInputs({}); setConfirmOpen(true); }}>
+              <CheckCircle2 /> {t('orders.confirmOrder')}
+            </Button>
+          )}
+          {['CONFIRMED', 'PARTIALLY_DELIVERED'].includes(so.status) && (
+            <Button size="sm" variant="outline" onClick={() => { setDeliverQty(Object.fromEntries(so.items.map((i: any) => [i.id, i.quantity - i.deliveredQty]))); setDeliverOpen(true); }}>
+              <Truck /> {t('orders.deliver')}
+            </Button>
+          )}
+          {so.status !== 'CANCELLED' && Number(so.outstanding) > 0 && (
+            <Button size="sm" variant="outline" className="text-green-600" onClick={() => { setPayForm({ amount: so.outstanding, method: 'CASH', reference: '', paymentDate: new Date().toISOString().slice(0, 10) }); setPayOpen(true); }}>
+              <Banknote /> {t('orders.pay')}
+            </Button>
+          )}
+          {['CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED'].includes(so.status) && (
+            <Button size="sm" variant="outline" className="text-amber-600" onClick={() => router.push(`/sales-orders/${so.id}/refund`)}>
+              <Undo2 /> {t('refunds.newRefund')}
+            </Button>
+          )}
+          {so.status !== 'CANCELLED' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await downloadFile(`/sales-orders/${so.id}/invoice-pdf`, `invoice-${so.number}.pdf`);
+                  load(); // an invoice may have been generated
+                } catch (e) {
+                  toast.error(errMsg(e));
+                }
+              }}
+            >
+              <FileDown /> {t('orders.invoicePdf')}
+            </Button>
+          )}
+          {!['CANCELLED', 'DELIVERED'].includes(so.status) && (
+            <Button size="sm" variant="outline" className="text-destructive" onClick={() => setCancelOpen(true)}>
+              <XCircle /> {t('orders.cancelOrder')}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Summary tiles */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-md border bg-card p-3 text-sm">
+          <div className="text-muted-foreground">{t('common.items')}</div>
+          <div className="text-lg font-bold tabular-nums">{so.items.length}</div>
+        </div>
+        <div className="rounded-md border bg-card p-3 text-sm">
+          <div className="text-muted-foreground">{t('common.total')}</div>
+          <div className="text-lg font-bold tabular-nums">{fmtMoney(so.total)}</div>
+        </div>
+        <div className="rounded-md border bg-card p-3 text-sm">
+          <div className="text-muted-foreground">{t('orders.paid')}</div>
+          <div className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">{fmtMoney(so.paidAmount ?? 0)}</div>
+        </div>
+        <div className="rounded-md border bg-card p-3 text-sm">
+          <div className="text-muted-foreground">{t('orders.remaining')}</div>
+          <div className="text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">{fmtMoney(so.outstanding ?? 0)}</div>
+        </div>
+      </div>
+
+      {/* Order info */}
+      <Card>
+        <CardContent className="grid gap-2 pt-6 text-sm md:grid-cols-2">
+          <div className="flex items-center gap-2">
+            <User className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">{t('common.client')}:</span>
+            <button className="font-medium text-primary hover:underline" onClick={() => setClientInfo(so.clientId)}>
+              {so.client?.name}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <WarehouseIcon className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">{t('common.warehouse')}:</span>
+            <span className="font-medium">{so.warehouse?.name}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">{t('common.date')}:</span>
+            <span className="font-medium">{fmtDate(so.orderDate)}</span>
+          </div>
+          {so.notes && (
+            <div className="flex items-center gap-2">
+              <StickyNote className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{t('common.notes')}:</span>
+              <span className="font-medium">{so.notes}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Items */}
+      <Card>
+        <CardHeader><CardTitle>{t('common.items')}</CardTitle></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('common.product')}</TableHead>
+                  <TableHead className="text-end">{t('common.quantity')}</TableHead>
+                  <TableHead className="text-end">{t('common.unitPrice')}</TableHead>
+                  <TableHead className="text-end">{t('common.discount')}</TableHead>
+                  <TableHead className="text-end">{t('common.lineTotal')}</TableHead>
+                  <TableHead className="text-end">{t('orders.delivered')}</TableHead>
+                  <TableHead className="text-end">{t('refunds.refunded')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {so.items.map((i: any) => {
+                  const refundedQty = so.refundedByProduct?.[i.productId] ?? 0;
+                  return (
+                    <TableRow key={i.id}>
+                      <TableCell>
+                        <div className="font-medium">{i.product?.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">{i.product?.sku}</div>
+                      </TableCell>
+                      <TableCell className="text-end tabular-nums">{i.quantity}</TableCell>
+                      <TableCell className="text-end tabular-nums">{fmtMoney(i.unitPrice)}</TableCell>
+                      <TableCell className="text-end tabular-nums">{discountLabel(i.discountType, i.discountValue)}</TableCell>
+                      <TableCell className="text-end tabular-nums font-medium">{fmtMoney(i.lineTotal)}</TableCell>
+                      <TableCell className="text-end tabular-nums">{i.deliveredQty}/{i.quantity}</TableCell>
+                      <TableCell className="text-end tabular-nums">
+                        {refundedQty > 0 ? <span className="font-semibold text-amber-600 dark:text-amber-400">{refundedQty}</span> : '—'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <div className="w-64 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('common.subtotal')}</span><span className="tabular-nums">{fmtMoney(so.subtotal)}</span></div>
+              {so.discountType && (
+                <div className="flex justify-between"><span className="text-muted-foreground">{t('common.discount')}</span><span className="tabular-nums">{discountLabel(so.discountType, so.discountValue)}</span></div>
+              )}
+              {Number(so.shippingFee) > 0 && (
+                <div className="flex justify-between"><span className="text-muted-foreground">{t('common.shipping')}</span><span className="tabular-nums">{fmtMoney(so.shippingFee)}</span></div>
+              )}
+              <div className="flex justify-between border-t pt-1 text-base font-bold"><span>{t('common.total')}</span><span className="tabular-nums">{fmtMoney(so.total)}</span></div>
+              {Number(so.refundedTotal) > 0 && (
+                <>
+                  <div className="flex justify-between text-amber-600 dark:text-amber-400"><span>{t('refunds.refunded')}</span><span className="tabular-nums">−{fmtMoney(so.refundedTotal)}</span></div>
+                  <div className="flex justify-between font-semibold"><span>{t('refunds.netAfterRefunds')}</span><span className="tabular-nums">{fmtMoney(Number(so.total) - Number(so.refundedTotal))}</span></div>
+                </>
+              )}
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('orders.paid')}</span><span className="tabular-nums">{fmtMoney(so.paidAmount ?? 0)}</span></div>
+              <div className="flex justify-between font-semibold"><span>{t('orders.remaining')}</span><span className="tabular-nums">{fmtMoney(so.outstanding ?? 0)}</span></div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
+
+      {/* Confirm with serials */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t('orders.confirmOrder')} — {so.number}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {so.items.map((i: any) => (
+              <div key={i.id}>
+                <div className="mb-1 text-sm font-medium">{i.product?.name} × {i.quantity}</div>
+                {i.product?.trackSerials && (
+                  <SerialPicker
+                    productId={i.productId}
+                    max={i.quantity}
+                    value={serialInputs[i.productId] ?? []}
+                    onChange={(serials) => setSerialInputs({ ...serialInputs, [i.productId]: serials })}
+                    placeholder={t('orders.pickSerials')}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={doConfirm}>{t('common.confirm')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deliver */}
+      <Dialog open={deliverOpen} onOpenChange={setDeliverOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t('orders.deliver')} — {so.number}</DialogTitle></DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('common.product')}</TableHead>
+                <TableHead className="text-end">{t('orders.delivered')}</TableHead>
+                <TableHead className="w-28">{t('common.quantity')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {so.items.map((i: any) => (
+                <TableRow key={i.id}>
+                  <TableCell>{i.product?.name}</TableCell>
+                  <TableCell className="text-end tabular-nums">{i.deliveredQty}/{i.quantity}</TableCell>
+                  <TableCell>
+                    <Input type="number" min={0} max={i.quantity - i.deliveredQty} value={deliverQty[i.id] ?? 0} onChange={(e) => setDeliverQty({ ...deliverQty, [i.id]: Number(e.target.value) })} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeliverOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={doDeliver}>{t('common.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pay */}
+      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t('orders.pay')} — {so.number}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-between rounded-md bg-muted p-3 text-sm">
+              <span>{t('common.total')}: <b className="tabular-nums">{fmtMoney(so.total)}</b></span>
+              <span>{t('orders.paid')}: <b className="tabular-nums">{fmtMoney(so.paidAmount ?? 0)}</b></span>
+              <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(so.outstanding ?? 0)}</b></span>
+            </div>
+            <Field label={t('common.amount')}>
+              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+            </Field>
+            <Field label={t('common.method')}>
+              <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                {['CASH', 'WHISH', 'OMT'].map((m) => (
+                  <option key={m} value={m}>{t(`payments.${m}`)}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t('payments.paymentDate')}>
+              <Input type="date" value={payForm.paymentDate ?? ''} onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })} />
+            </Field>
+            <Field label={t('common.reference')}>
+              <Input value={payForm.reference ?? ''} onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })} />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={doPay} disabled={!Number(payForm.amount)}>{t('orders.pay')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        description={t('orders.confirmCancels')}
+        requireText={t('common.deleteWord')}
+        onConfirm={async () => {
+          try {
+            await api.post(`/sales-orders/${so.id}/cancel`);
+            toast.success(t('common.saved'));
+            load();
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
+    </div>
+  );
+}

@@ -1,8 +1,10 @@
 'use client';
+import { Truck as PageIcon } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Archive } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -59,7 +61,7 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('suppliers.title')}</h1>
+      <PageHeader icon={PageIcon} title={t('suppliers.title')} subtitle={t('subtitles.suppliers')} />
       <DataTable
         endpoint="/suppliers"
         refreshKey={refreshKey}
@@ -73,17 +75,16 @@ export default function SuppliersPage() {
           { key: 'name', label: t('common.name'), sortable: true },
           { key: 'contactName', label: t('suppliers.contactName') },
           { key: 'phone', label: t('common.phone') },
-          { key: 'email', label: t('common.email') },
-          { key: 'leadTimeDays', label: t('suppliers.leadTime'), className: 'text-end' },
+          { key: 'address', label: t('suppliers.location'), render: (r) => r.address ?? '—' },
           {
-            key: 'outstandingPayable', label: t('suppliers.payable'), className: 'text-end',
-            render: (r) => <span className={`tabular-nums ${r.outstandingPayable > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : ''}`}>{fmtMoney(r.outstandingPayable)}</span>,
+            key: 'outstandingPayable', label: t('orders.remaining'), className: 'text-end',
+            render: (r) => <span className={`tabular-nums ${r.outstandingPayable > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>{fmtMoney(r.outstandingPayable)}</span>,
           },
           {
             key: 'actions', label: '',
             render: (r) => (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                <Trash2 />
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                <Archive />
               </Button>
             ),
           },
@@ -117,6 +118,7 @@ export default function SuppliersPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             await api.delete(`/suppliers/${deleteTarget.id}`);

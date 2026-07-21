@@ -1,4 +1,6 @@
 'use client';
+import { Warehouse as PageIcon, TriangleAlert, CircleCheck } from 'lucide-react';
+import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -77,7 +79,7 @@ export default function InventoryPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">{t('inventory.title')}</h1>
+        <PageHeader icon={PageIcon} title={t('inventory.title')} subtitle={t('subtitles.inventory')} />
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => { setForm({}); setAdjustOpen(true); }}>
             <SlidersHorizontal /> {t('inventory.adjust')}
@@ -125,7 +127,12 @@ export default function InventoryPage() {
               },
               {
                 key: 'totalQty', label: t('inventory.onHand'), className: 'text-end',
-                render: (r) => (r.isLow ? <Badge variant="destructive">{r.totalQty}</Badge> : <span className="tabular-nums">{r.totalQty}</span>),
+                render: (r) => (
+                  <span className={`inline-flex items-center gap-1 tabular-nums font-semibold ${r.isLow ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>
+                    {r.isLow ? <TriangleAlert className="h-3.5 w-3.5" /> : <CircleCheck className="h-3.5 w-3.5" />}
+                    {r.totalQty}
+                  </span>
+                ),
               },
               { key: 'lowStockThreshold', label: t('products.lowStockThreshold'), className: 'text-end' },
             ]}
@@ -159,10 +166,9 @@ export default function InventoryPage() {
               { key: 'serialNumber', label: t('inventory.serialNumber'), render: (r) => <span className="font-mono text-xs">{r.serialNumber}</span> },
               { key: 'product', label: t('common.product'), render: (r) => `${r.product?.name} [${r.product?.sku}]` },
               { key: 'status', label: t('common.status'), render: (r) => <StatusChip status={r.status} /> },
-              { key: 'warehouse', label: t('common.warehouse'), render: (r) => r.warehouse?.name ?? '—' },
               { key: 'manufactureDate', label: t('inventory.manufactureDate'), render: (r) => fmtDate(r.manufactureDate) },
+              { key: 'warrantyStartDate', label: t('inventory.startDay'), render: (r) => fmtDate(r.warrantyStartDate) },
               { key: 'warrantyEndDate', label: t('warranty.warrantyEnd'), render: (r) => fmtDate(r.warrantyEndDate) },
-              { key: 'invoice', label: t('payments.invoice'), render: (r) => r.invoice?.number ?? '—' },
             ]}
           />
         </TabsContent>
