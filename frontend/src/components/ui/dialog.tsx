@@ -50,20 +50,41 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute end-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
 DialogContent.displayName = 'DialogContent';
 
-const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-start', className)} {...props} />
+/*
+ * Header and footer stick to the edges of the scrolling content, so on a long
+ * form the title stays readable and Save/Cancel stay reachable without
+ * scrolling to the bottom. The negative margins let their backgrounds span the
+ * dialog's full width despite its p-5 padding.
+ */
+const DialogHeader = ({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      'sticky top-0 z-20 -mx-5 -mt-5 flex flex-col space-y-1.5 border-b bg-card px-5 pb-3 pe-12 pt-5 text-start',
+      className,
+    )}
+    {...props}
+  >
+    {children}
+    {/* Lives in the header so it stays put while the body scrolls. */}
+    <DialogPrimitive.Close className="absolute end-4 top-4 rounded-sm p-1 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus:outline-none">
+      <X className="h-4 w-4" />
+      <span className="sr-only">Close</span>
+    </DialogPrimitive.Close>
+  </div>
 );
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />
+  <div
+    className={cn(
+      'sticky bottom-0 z-20 -mx-5 -mb-5 flex flex-col-reverse gap-2 border-t bg-card px-5 pb-5 pt-3 sm:flex-row sm:justify-end',
+      className,
+    )}
+    {...props}
+  />
 );
 
 const DialogTitle = React.forwardRef<

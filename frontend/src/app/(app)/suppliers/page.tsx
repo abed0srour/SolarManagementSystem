@@ -1,11 +1,12 @@
 'use client';
-import { Truck as PageIcon } from 'lucide-react';
+import { Truck as PageIcon, RotateCcw } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, Archive } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
+import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import Field from '../../../components/form-field';
@@ -21,6 +22,7 @@ export default function SuppliersPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [archived, setArchived] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
@@ -59,13 +61,28 @@ export default function SuppliersPage() {
     }
   };
 
+  /** Archiving is reversible: restoring is the exact inverse of the soft delete. */
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/suppliers/${row.id}/restore`);
+      invalidateCache('suppliers');
+      toast.success(t('common.restored'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('suppliers.title')} subtitle={t('subtitles.suppliers')} />
       <DataTable
         endpoint="/suppliers"
+        archived={archived}
+        onArchivedChange={setArchived}
         refreshKey={refreshKey}
-        onRowClick={openEdit}
+        // Archived rows are read-only — restore before editing.
+        onRowClick={archived ? undefined : openEdit}
         toolbar={
           <Button onClick={openCreate}>
             <Plus /> {t('suppliers.newSupplier')}
@@ -82,11 +99,16 @@ export default function SuppliersPage() {
           },
           {
             key: 'actions', label: '',
-            render: (r) => (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                <Archive />
-              </Button>
-            ),
+            render: (r) =>
+              archived ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
+                  <RotateCcw />
+                </Button>
+              ) : (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                  <Archive />
+                </Button>
+              ),
           },
         ]}
       />
@@ -117,12 +139,16 @@ export default function SuppliersPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
+        usagePath={deleteTarget ? `/suppliers/${deleteTarget.id}/usage` : undefined}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
-            await api.delete(`/suppliers/${deleteTarget.id}`);
-            toast.success(t('common.deleted'));
+            const { data } = await api.delete(`/suppliers/${deleteTarget.id}`);
+            // Say which of the two things actually happened — purged is
+            // irreversible, archived is not.
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            invalidateCache('suppliers');
             setRefreshKey((k) => k + 1);
           } catch (e) {
             toast.error(errMsg(e));

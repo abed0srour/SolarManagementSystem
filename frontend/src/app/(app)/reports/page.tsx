@@ -7,6 +7,7 @@ import { useTheme } from 'next-themes';
 import { FileDown, FileSpreadsheet } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { api, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
+import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { seriesColors, chartInk } from '../../../lib/charts';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
@@ -29,12 +30,15 @@ function ExportButtons({ report }: { report: string }) {
   );
 }
 
+/**
+ * Cache-first report loader — every report on this page goes through here, so
+ * a revisited tab paints from localStorage with no skeleton while the fresh
+ * figures load behind it. `null` (not `undefined`) on a cold load, to match
+ * what the report components already check for.
+ */
 function useReport(path: string) {
-  const [data, setData] = useState<any>(null);
-  useEffect(() => {
-    api.get(path).then((r) => setData(r.data));
-  }, [path]);
-  return data;
+  const { data } = useLocalFirstData<any>(`reports:${path}`, () => api.get(path).then((r) => r.data));
+  return data ?? null;
 }
 
 function ReportSkeleton() {

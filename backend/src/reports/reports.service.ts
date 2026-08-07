@@ -76,12 +76,16 @@ export class ReportsService {
     for (const item of saleItems) {
       const cat = item.product?.subCategory.category.name ?? 'Other';
       byCategory.set(cat, round2((byCategory.get(cat) ?? 0) + Number(item.lineTotal)));
-      const key = item.product!.sku;
-      const cur = byProduct.get(key) ?? { name: item.product!.name, qty: 0, revenue: 0 };
-      cur.qty += item.quantity;
+      // Bundle headers and their sub-items have no product, so they cannot be
+      // attributed to a SKU or costed. Their revenue still lands in the
+      // category total above via the "Other" bucket.
+      if (!item.product) continue;
+      const key = item.product.sku;
+      const cur = byProduct.get(key) ?? { name: item.product.name, qty: 0, revenue: 0 };
+      cur.qty += Number(item.quantity);
       cur.revenue = round2(cur.revenue + Number(item.lineTotal));
       byProduct.set(key, cur);
-      cogs += Number(item.product!.costPrice) * item.quantity;
+      cogs += Number(item.product.costPrice) * Number(item.quantity);
     }
     const revenue = Number(salesAgg._sum.total ?? 0);
 
@@ -94,7 +98,7 @@ export class ReportsService {
 
     // Low stock count
     const lowStockCount = products.filter(
-      (p) => p.stockLevels.reduce((s, l) => s + l.quantity, 0) <= p.lowStockThreshold,
+      (p) => p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0) <= p.lowStockThreshold,
     ).length;
 
     // Top clients by billed revenue in the period
@@ -150,11 +154,12 @@ export class ReportsService {
     });
     const map = new Map<string, { name: string; qty: number; revenue: number; cost: number }>();
     for (const i of items) {
-      const cur = map.get(i.product!.sku) ?? { name: i.product!.name, qty: 0, revenue: 0, cost: 0 };
-      cur.qty += i.quantity;
+      if (!i.product) continue; // bundle headers and sub-items have no SKU to report against
+      const cur = map.get(i.product.sku) ?? { name: i.product.name, qty: 0, revenue: 0, cost: 0 };
+      cur.qty += Number(i.quantity);
       cur.revenue = round2(cur.revenue + Number(i.lineTotal));
-      cur.cost = round2(cur.cost + Number(i.product!.costPrice) * i.quantity);
-      map.set(i.product!.sku, cur);
+      cur.cost = round2(cur.cost + Number(i.product.costPrice) * Number(i.quantity));
+      map.set(i.product.sku, cur);
     }
     // Completed refunds pull the returned quantity and value back out; a
     // resellable return also takes its cost out of COGS (it is stock again).
@@ -193,7 +198,7 @@ export class ReportsService {
       },
     });
     const rows = products.map((p) => {
-      const qty = p.stockLevels.reduce((s, l) => s + l.quantity, 0);
+      const qty = p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0);
       return {
         sku: p.sku,
         name: p.name,
@@ -324,10 +329,10 @@ export class ReportsService {
       where: { isActive: true },
       select: { id: true, sku: true, name: true, lowStockThreshold: true, stockLevels: { select: { quantity: true } } },
     });
-    const soldMap = new Map(items.map((i) => [i.productId, i._sum.quantity ?? 0]));
+    const soldMap = new Map(items.map((i) => [i.productId, Number(i._sum.quantity ?? 0)]));
     return products
       .map((p) => {
-        const stock = p.stockLevels.reduce((s, l) => s + l.quantity, 0);
+        const stock = p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0);
         const sold90 = soldMap.get(p.id) ?? 0;
         const dailyVelocity = sold90 / 90;
         const daysOfStock = dailyVelocity > 0 ? Math.floor(stock / dailyVelocity) : null;

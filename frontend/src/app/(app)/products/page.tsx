@@ -1,115 +1,93 @@
 'use client';
-import { Package as PageIcon } from 'lucide-react';
+import { Package as PageIcon, RotateCcw } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, History, Upload, Archive } from 'lucide-react';
+import { Plus, History, Upload, Archive, Pencil, FileUp } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, fmtDateTime } from '../../../lib/api';
+import { csvBool, csvNumber, parseCsv } from '../../../lib/csv';
+import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
-import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { Textarea } from '../../../components/ui/textarea';
-import { Badge } from '../../../components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 
 export default function ProductsPage() {
   const t = useTranslations();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState<any>({});
-  const [attrs, setAttrs] = useState<Record<string, any>>({});
   const [historyFor, setHistoryFor] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importCsv, setImportCsv] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkCsv, setBulkCsv] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const [serialDraft, setSerialDraft] = useState('');
-
-  const addSerials = () => {
-    const parts = serialDraft.split(',').map((s) => s.trim()).filter(Boolean);
-    if (!parts.length) return;
-    const tooLong = parts.filter((p) => p.length > 18);
-    if (tooLong.length) {
-      toast.error(t('products.serialTooLong', { serials: tooLong.join(', ') }));
-      return;
-    }
-    const existing: string[] = form.serialNumbers ?? [];
-    setForm({ ...form, serialNumbers: [...existing, ...parts.filter((p) => !existing.includes(p))] });
-    setSerialDraft('');
-  };
+  const [archived, setArchived] = useState(false);
 
   useEffect(() => {
-    api.get('/categories').then((r) => setCategories(r.data));
+    api.get('/categories').then((r) => setCategories(r.data)).catch(() => {});
   }, []);
-
-  const subCategories = categories.flatMap((c) => c.subCategories.map((s: any) => ({ ...s, categoryName: c.name })));
-  const selectedSub = subCategories.find((s) => s.id === form.subCategoryId);
-  const attrDefs: any[] = selectedSub?.attributeDefs ?? [];
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm({ sku: '', name: '', brand: '', model: '', subCategoryId: '', costPrice: 0, salePrice: 0, isService: false, trackSerials: true, lowStockThreshold: 5, warrantyMonths: '', performanceWarrantyMonths: '', shelfLifeMonths: '', barcode: '', notes: '', serialNumbers: [] });
-    setSerialDraft('');
-    setAttrs({});
-    setOpen(true);
-  };
-
-  const openEdit = (row: any) => {
-    setEditing(row);
-    setForm({
-      sku: row.sku, name: row.name, brand: row.brand ?? '', model: row.model ?? '',
-      subCategoryId: row.subCategoryId, costPrice: Number(row.costPrice), salePrice: Number(row.salePrice),
-      isService: !!row.isService, trackSerials: row.trackSerials, lowStockThreshold: row.lowStockThreshold,
-      warrantyMonths: row.warrantyMonths ?? '', performanceWarrantyMonths: row.performanceWarrantyMonths ?? '',
-      shelfLifeMonths: row.shelfLifeMonths ?? '', barcode: row.barcode ?? '', notes: row.notes ?? '',
-      isActive: row.isActive, priceChangeReason: '',
-    });
-    setAttrs(row.attributes ?? {});
-    setOpen(true);
-  };
-
-  const save = async () => {
-    try {
-      const payload: any = {
-        ...form,
-        costPrice: Number(form.costPrice),
-        salePrice: Number(form.salePrice),
-        lowStockThreshold: Number(form.lowStockThreshold) || 0,
-        warrantyMonths: form.warrantyMonths === '' ? undefined : Number(form.warrantyMonths),
-        performanceWarrantyMonths: form.performanceWarrantyMonths === '' ? undefined : Number(form.performanceWarrantyMonths),
-        shelfLifeMonths: form.shelfLifeMonths === '' ? undefined : Number(form.shelfLifeMonths),
-        brand: form.brand || undefined,
-        model: form.model || undefined,
-        barcode: form.barcode || undefined,
-        notes: form.notes || undefined,
-        priceChangeReason: form.priceChangeReason || undefined,
-        attributes: attrs,
-        serialNumbers: !editing && form.serialNumbers?.length ? form.serialNumbers : undefined,
-      };
-      if (editing) await api.patch(`/products/${editing.id}`, payload);
-      else await api.post('/products', payload);
-      toast.success(t('common.saved'));
-      setOpen(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
 
   const showHistory = async (row: any) => {
     setHistoryFor(row);
     const { data } = await api.get(`/products/${row.id}/price-history`);
     setHistory(data);
+  };
+
+  /**
+   * Parsed preview of the pasted/uploaded CSV. Header names are normalised by
+   * `parseCsv`, so `Sale Price`, `sale_price` and `SALEPRICE` all resolve.
+   */
+  const importRows = useMemo(() => {
+    if (!importCsv.trim()) return [];
+    return parseCsv(importCsv).map((r) => ({
+      sku: r.sku ?? '',
+      name: r.name ?? '',
+      brand: r.brand || undefined,
+      model: r.model || undefined,
+      category: r.category || undefined,
+      subCategory: r.subcategory || r.subcat || undefined,
+      barcode: r.barcode || undefined,
+      notes: r.notes || undefined,
+      salePrice: csvNumber(r.saleprice) ?? 0,
+      costPrice: csvNumber(r.costprice),
+      lowStockThreshold: csvNumber(r.lowstockthreshold),
+      // Accept either unit; years wins when both are present.
+      warrantyMonths:
+        csvNumber(r.warrantyyears) !== undefined
+          ? Math.round(csvNumber(r.warrantyyears)! * 12)
+          : csvNumber(r.warrantymonths),
+      isService: csvBool(r.isservice),
+    }));
+  }, [importCsv]);
+
+  const runImport = async () => {
+    setImporting(true);
+    try {
+      const { data } = await api.post('/products/import', { rows: importRows });
+      setImportResult(data);
+      if (data.created > 0) {
+        toast.success(t('products.importedCount', { count: data.created }));
+        setRefreshKey((k) => k + 1); // also flushes the cached product queries
+      }
+      if (data.created === 0 && data.failed > 0) toast.error(t('validation.fixErrors'));
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setImporting(false);
+    }
   };
 
   const runBulk = async () => {
@@ -135,15 +113,28 @@ export default function ProductsPage() {
     }
   };
 
+  /** Archiving is reversible: restoring is the exact inverse of the soft delete. */
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/products/${row.id}/restore`);
+      invalidateCache('products');
+      toast.success(t('common.restored'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('products.title')} subtitle={t('subtitles.products')} />
       <DataTable
         endpoint="/products"
+        archived={archived}
+        onArchivedChange={setArchived}
         refreshKey={refreshKey}
         initialSearch={searchParams.get('search') ?? undefined}
         extraParams={categoryFilter ? { categoryId: categoryFilter } : undefined}
-        onRowClick={openEdit}
         filters={
           <Select className="w-44" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
@@ -156,10 +147,13 @@ export default function ProductsPage() {
         }
         toolbar={
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setImportOpen(true); setImportCsv(''); setImportResult(null); }}>
+              <FileUp /> {t('products.importProducts')}
+            </Button>
             <Button variant="outline" onClick={() => { setBulkOpen(true); setBulkCsv(''); }}>
               <Upload /> {t('products.bulkPrices')}
             </Button>
-            <Button onClick={openCreate}>
+            <Button onClick={() => router.push('/products/new')}>
               <Plus /> {t('products.newProduct')}
             </Button>
           </div>
@@ -168,150 +162,38 @@ export default function ProductsPage() {
           { key: 'sku', label: t('products.sku'), sortable: true, render: (r) => <span className="font-mono text-xs">{r.sku}</span> },
           { key: 'name', label: t('common.name'), sortable: true },
           { key: 'brand', label: t('products.brand'), sortable: true },
+          { key: 'model', label: t('products.model'), sortable: true },
           { key: 'cat', label: t('products.category'), render: (r) => `${r.subCategory?.category?.name ?? ''} / ${r.subCategory?.name ?? ''}` },
           { key: 'costPrice', label: t('products.costPrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.costPrice)}</span> },
           { key: 'salePrice', label: t('products.salePrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.salePrice)}</span> },
           { key: 'priceUpdatedAt', label: t('products.priceAsOf'), sortable: true, render: (r) => fmtDate(r.priceUpdatedAt) },
           {
-            key: 'stock',
-            label: t('products.stock'),
-            className: 'text-end',
-            render: (r) => {
-              const qty = (r.stockLevels ?? []).reduce((s: number, l: any) => s + l.quantity, 0);
-              return <Badge variant={qty <= r.lowStockThreshold ? 'destructive' : 'success'}>{qty}</Badge>;
-            },
-          },
-          {
             key: 'actions',
             label: '',
-            render: (r) => (
+            render: (r) =>
+              // An archived product is read-only: restore it before editing.
+              archived ? (
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={() => restore(r)}>
+                    <RotateCcw />
+                  </Button>
+                </div>
+              ) : (
               <div className="flex justify-end gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" title={t('products.priceHistory')} onClick={(e) => { e.stopPropagation(); showHistory(r); }}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={() => router.push(`/products/${r.id}/edit`)}>
+                  <Pencil />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" title={t('products.priceHistory')} onClick={() => showHistory(r)}>
                   <History />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={() => setDeleteTarget(r)}>
                   <Archive />
                 </Button>
               </div>
-            ),
+              ),
           },
         ]}
       />
-
-      {/* Create / edit */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent wide>
-          <DialogHeader>
-            <DialogTitle>{editing ? t('products.editProduct') : t('products.newProduct')}</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Field label={t('products.sku')}><Input value={form.sku ?? ''} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></Field>
-            <Field label={t('common.name')} className="md:col-span-2"><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-            <Field label={t('products.brand')}><Input value={form.brand ?? ''} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></Field>
-            <Field label={t('products.model')}><Input value={form.model ?? ''} onChange={(e) => setForm({ ...form, model: e.target.value })} /></Field>
-            <Field label={t('products.subCategory')} className="md:col-span-2">
-              <Select value={form.subCategoryId ?? ''} onChange={(e) => setForm({ ...form, subCategoryId: e.target.value })}>
-                <option value="">—</option>
-                {subCategories.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.categoryName} / {s.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label={t('products.barcode')}><Input value={form.barcode ?? ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></Field>
-            <Field label={t('products.costPrice')}><Input type="number" min={0} step="0.01" value={form.costPrice ?? 0} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} /></Field>
-            <Field label={t('products.salePrice')}><Input type="number" min={0} step="0.01" value={form.salePrice ?? 0} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} /></Field>
-            <Field label={t('products.lowStockThreshold')}><Input type="number" min={0} value={form.lowStockThreshold ?? 5} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} /></Field>
-            <Field label={t('products.warrantyMonths')}><Input type="number" min={0} value={form.warrantyMonths ?? ''} onChange={(e) => setForm({ ...form, warrantyMonths: e.target.value })} /></Field>
-            <Field label={t('products.performanceWarrantyMonths')}><Input type="number" min={0} value={form.performanceWarrantyMonths ?? ''} onChange={(e) => setForm({ ...form, performanceWarrantyMonths: e.target.value })} /></Field>
-            <Field label={t('products.shelfLifeMonths')}><Input type="number" min={0} value={form.shelfLifeMonths ?? ''} onChange={(e) => setForm({ ...form, shelfLifeMonths: e.target.value })} /></Field>
-            <div className="flex items-center gap-2 pt-6">
-              <input id="isService" type="checkbox" className="h-4 w-4" checked={!!form.isService} onChange={(e) => setForm({ ...form, isService: e.target.checked, trackSerials: e.target.checked ? false : form.trackSerials })} />
-              <label htmlFor="isService" className="text-sm">{t('products.isService')}</label>
-            </div>
-            {!form.isService && (
-              <div className="flex items-center gap-2 pt-6">
-                <input id="trackSerials" type="checkbox" className="h-4 w-4" checked={!!form.trackSerials} onChange={(e) => setForm({ ...form, trackSerials: e.target.checked })} />
-                <label htmlFor="trackSerials" className="text-sm">{t('products.trackSerials')}</label>
-              </div>
-            )}
-            {!editing && !form.isService && form.trackSerials && (
-              <Field label={t('products.initialSerials')} className="col-span-2 md:col-span-4">
-                <div className="space-y-1.5">
-                  {(form.serialNumbers ?? []).length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {form.serialNumbers.map((s: string) => (
-                        <Badge key={s} variant="muted" className="gap-1 font-mono text-xs" dir="ltr">
-                          {s}
-                          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setForm({ ...form, serialNumbers: form.serialNumbers.filter((x: string) => x !== s) })}>
-                            ×
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <Input
-                      dir="ltr"
-                      maxLength={60}
-                      placeholder={t('products.serialsPlaceholder')}
-                      value={serialDraft}
-                      onChange={(e) => setSerialDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSerials(); } }}
-                    />
-                    <Button type="button" variant="outline" onClick={addSerials} disabled={!serialDraft.trim()}>
-                      <Plus /> {t('common.addLine')}
-                    </Button>
-                  </div>
-                </div>
-              </Field>
-            )}
-            {editing && (
-              <Field label={t('products.priceChangeReason')} className="md:col-span-3">
-                <Input value={form.priceChangeReason ?? ''} onChange={(e) => setForm({ ...form, priceChangeReason: e.target.value })} />
-              </Field>
-            )}
-            <Field label={t('common.notes')} className="col-span-2 md:col-span-4">
-              <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </Field>
-          </div>
-
-          {attrDefs.length > 0 && (
-            <div>
-              <div className="mb-2 text-sm font-semibold">{t('products.specs')}</div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                {attrDefs.map((a) => (
-                  <Field key={a.id} label={a.unit ? `${a.label} (${a.unit})` : a.label}>
-                    {a.type === 'SELECT' ? (
-                      <Select value={attrs[a.name] ?? ''} onChange={(e) => setAttrs({ ...attrs, [a.name]: e.target.value })}>
-                        <option value="">—</option>
-                        {(a.options ?? []).map((o: string) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : a.type === 'BOOLEAN' ? (
-                      <input type="checkbox" className="h-4 w-4" checked={!!attrs[a.name]} onChange={(e) => setAttrs({ ...attrs, [a.name]: e.target.checked })} />
-                    ) : (
-                      <Input
-                        type={a.type === 'NUMBER' ? 'number' : a.type === 'DATE' ? 'date' : 'text'}
-                        value={attrs[a.name] ?? ''}
-                        onChange={(e) => setAttrs({ ...attrs, [a.name]: a.type === 'NUMBER' ? Number(e.target.value) : e.target.value })}
-                      />
-                    )}
-                  </Field>
-                ))}
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save}>{t('common.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Price history */}
       <Dialog open={!!historyFor} onOpenChange={(v) => !v && setHistoryFor(null)}>
@@ -350,6 +232,96 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Import products from CSV */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent wide>
+          <DialogHeader>
+            <DialogTitle>{t('products.importProducts')}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t('products.importHint')}</p>
+            <div className="rounded-md border bg-muted/30 p-3 text-xs">
+              <div className="mb-1 font-medium">{t('products.importColumns')}</div>
+              <code className="block overflow-x-auto whitespace-pre font-mono" dir="ltr">
+                sku,name,brand,model,category,subCategory,salePrice,barcode,lowStockThreshold,warrantyYears,isService,notes
+              </code>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => setImportCsv(String(reader.result ?? ''));
+                  reader.readAsText(file);
+                  // Allow re-picking the same file after a failed import.
+                  e.target.value = '';
+                }}
+              />
+              <Button variant="outline" onClick={() => fileRef.current?.click()}>
+                <Upload /> {t('products.chooseFile')}
+              </Button>
+              {importRows.length > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  {t('products.rowsDetected', { count: importRows.length })}
+                </span>
+              )}
+            </div>
+
+            <Textarea
+              rows={7}
+              dir="ltr"
+              className="font-mono text-xs"
+              placeholder={'sku,name,brand,model,category,subCategory,salePrice\nPAN-550,Longi 550W,Longi,LR5-72,Solar Panels,Monocrystalline,120'}
+              value={importCsv}
+              onChange={(e) => setImportCsv(e.target.value)}
+            />
+
+            {importResult && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span className="text-emerald-600 dark:text-emerald-400">{t('products.imported')}: {importResult.created}</span>
+                  <span className="text-muted-foreground">{t('products.skipped')}: {importResult.skipped}</span>
+                  <span className={importResult.failed ? 'text-destructive' : 'text-muted-foreground'}>
+                    {t('products.failedRows')}: {importResult.failed}
+                  </span>
+                </div>
+                {importResult.results.some((r: any) => r.status !== 'created') && (
+                  <div className="max-h-40 overflow-y-auto rounded-md border">
+                    <Table>
+                      <TableBody>
+                        {importResult.results
+                          .filter((r: any) => r.status !== 'created')
+                          .map((r: any) => (
+                            <TableRow key={r.row}>
+                              <TableCell className="w-14 text-xs text-muted-foreground">#{r.row}</TableCell>
+                              <TableCell className="w-28 font-mono text-xs">{r.sku || '—'}</TableCell>
+                              <TableCell className="text-xs">{r.message}</TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>{t('common.close')}</Button>
+            <Button onClick={runImport} disabled={importRows.length === 0 || importing}>
+              {importing ? t('common.loading') : t('products.importCount', { count: importRows.length })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Bulk price */}
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
         <DialogContent>
@@ -367,12 +339,16 @@ export default function ProductsPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
+        usagePath={deleteTarget ? `/products/${deleteTarget.id}/usage` : undefined}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
-            await api.delete(`/products/${deleteTarget.id}`);
-            toast.success(t('common.deleted'));
+            const { data } = await api.delete(`/products/${deleteTarget.id}`);
+            // Say which of the two things actually happened — purged is
+            // irreversible, archived is not.
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            invalidateCache('products');
             setRefreshKey((k) => k + 1);
           } catch (e) {
             toast.error(errMsg(e));

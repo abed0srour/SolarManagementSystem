@@ -1,6 +1,7 @@
 ﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { isUnused, SafeDeleteResult, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class CategoriesService {
@@ -34,12 +35,29 @@ export class CategoriesService {
     return cat;
   }
 
-  async deleteCategory(userId: string, id: string) {
+  /**
+   * Delete a category: permanently when no sub-category row has ever pointed at
+   * it, otherwise archived. See `common/safe-delete.ts`.
+   *
+   * Two different counts on purpose — the guard below rejects the delete when
+   * *live* sub-categories exist, while the purge decision counts every row
+   * including soft-deleted ones, because those still hold a foreign key and
+   * would make a real delete fail.
+   */
+  async deleteCategory(userId: string, id: string): Promise<SafeDeleteResult> {
     const subCount = await this.prisma.subCategory.count({ where: { categoryId: id, deletedAt: null } });
     if (subCount > 0) throw new BadRequestException('Category has sub-categories; delete or move them first');
+
+    const archivedSubs = await this.prisma.subCategory.count({ where: { categoryId: id } });
+    if (isUnused({ subCategories: archivedSubs })) {
+      await this.prisma.category.delete({ where: { id } });
+      await this.audit.log(userId, 'PURGE', 'Category', id);
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+    const used = usedBy({ subCategories: archivedSubs });
     await this.prisma.category.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'Category', id);
-    return { success: true };
+    await this.audit.log(userId, 'DELETE', 'Category', id, { usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
   }
 
   async createSubCategory(userId: string, data: { categoryId: string; name: string; description?: string }) {
@@ -69,12 +87,25 @@ export class CategoriesService {
     return sub;
   }
 
-  async deleteSubCategory(userId: string, id: string) {
+  /**
+   * Delete a sub-category: permanently when no product row has ever pointed at
+   * it, otherwise archived. Attribute definitions cascade with it, so they do
+   * not count as usage. See the note in `deleteCategory` about the two counts.
+   */
+  async deleteSubCategory(userId: string, id: string): Promise<SafeDeleteResult> {
     const productCount = await this.prisma.product.count({ where: { subCategoryId: id, deletedAt: null } });
     if (productCount > 0) throw new BadRequestException('Sub-category has products; move them first');
+
+    const archivedProducts = await this.prisma.product.count({ where: { subCategoryId: id } });
+    if (isUnused({ products: archivedProducts })) {
+      await this.prisma.subCategory.delete({ where: { id } });
+      await this.audit.log(userId, 'PURGE', 'SubCategory', id);
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+    const used = usedBy({ products: archivedProducts });
     await this.prisma.subCategory.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'SubCategory', id);
-    return { success: true };
+    await this.audit.log(userId, 'DELETE', 'SubCategory', id, { usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
   }
 
   async createAttribute(

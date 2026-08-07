@@ -10,7 +10,7 @@ import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
+import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, toItemsPayload } from '../../../components/line-items-editor';
 import ClientInfoDialog from '../../../components/client-info-dialog';
 import { ClientPicker, SupplierPicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
@@ -146,7 +146,7 @@ export default function InvoicesPage() {
           <LineItemsEditor lines={lines} onChange={setLines} priceField={form.type === 'PURCHASE' ? 'costPrice' : 'salePrice'} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save} disabled={(form.type === 'SALE' ? !form.client : !form.supplier) || toItemsPayload(lines).length === 0}>
+            <Button onClick={save} disabled={(form.type === 'SALE' ? !form.client : !form.supplier) || toItemsPayload(lines).length === 0 || hasInvalidLine(lines)}>
               {t('common.save')}
             </Button>
           </DialogFooter>

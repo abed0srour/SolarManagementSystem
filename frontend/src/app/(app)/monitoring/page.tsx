@@ -1,13 +1,13 @@
 'use client';
 import { Activity as PageIcon } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { Activity, BatteryCharging, Leaf, PiggyBank, Sun, Zap } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { api, fmtMoney } from '../../../lib/api';
+import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { seriesColors, chartInk } from '../../../lib/charts';
 import StatusChip from '../../../components/status-chip';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -37,11 +37,10 @@ export default function MonitoringPage() {
   const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
   const colors = seriesColors[mode];
   const ink = chartInk[mode];
-  const [data, setData] = useState<any>(null);
-
-  useEffect(() => {
-    api.get('/installations/fleet/stats').then((r) => setData(r.data));
-  }, []);
+  // Cache-first: fleet stats paint from localStorage, then refresh behind it.
+  const { data } = useLocalFirstData<any>('monitoring:fleet-stats', () =>
+    api.get('/installations/fleet/stats').then((r) => r.data),
+  );
 
   if (!data)
     return (

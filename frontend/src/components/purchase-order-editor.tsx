@@ -56,18 +56,6 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
 
   const setLine = (idx: number, patch: Partial<PoLine>) => setLines(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
-  const quickAdd = (product: any) => {
-    const idx = lines.findIndex((l) => l.product?.id === product.id);
-    if (idx >= 0) {
-      setLine(idx, { quantity: lines[idx].quantity + 1 });
-    } else {
-      const blankIdx = lines.findIndex((l) => !l.product);
-      const newLine = { product, quantity: 1, unitCost: Number(product.costPrice) || 0 };
-      if (blankIdx >= 0) setLine(blankIdx, newLine);
-      else setLines([...lines, newLine]);
-    }
-  };
-
   const totalQty = lines.filter((l) => l.product).reduce((s, l) => s + Number(l.quantity || 0), 0);
   const subtotal = lines.filter((l) => l.product).reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unitCost || 0), 0);
   const deliveryCost = form.hasDeliveryCost ? Number(form.deliveryCost) || 0 : 0;
@@ -170,13 +158,6 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
       <Card>
         <CardHeader><CardTitle>{t('common.items')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {editable && (
-            <div className="max-w-md">
-              <Field label={t('orders.quickAddProduct')}>
-                <ProductPicker value={null} onChange={(p) => p && quickAdd(p)} placeholder={t('orders.quickAddProductPlaceholder')} />
-              </Field>
-            </div>
-          )}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

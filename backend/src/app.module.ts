@@ -27,6 +27,7 @@ import { AuditModule } from './audit/audit.module';
 import { InstallationsModule } from './installations/installations.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { WorkersModule } from './workers/workers.module';
 import { SolarCalculatorModule } from './solar-calculator/solar-calculator.module';
 import { BackupModule } from './backup/backup.module';
 
@@ -59,6 +60,7 @@ import { BackupModule } from './backup/backup.module';
     InstallationsModule,
     MaintenanceModule,
     ExpensesModule,
+    WorkersModule,
     SolarCalculatorModule,
     BackupModule,
   ],

@@ -10,7 +10,7 @@ import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
+import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, toItemsPayload } from '../../../components/line-items-editor';
 import ClientInfoDialog from '../../../components/client-info-dialog';
 import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
@@ -54,8 +54,9 @@ export default function QuotationsPage() {
         product: i.product ? { id: i.productId, name: i.product.name, sku: i.product.sku, salePrice: i.unitPrice } : { id: i.productId, name: i.description ?? 'item', sku: '', salePrice: i.unitPrice },
         quantity: i.quantity,
         unitPrice: Number(i.unitPrice),
-        discountType: i.discountType ?? '',
-        discountValue: Number(i.discountValue),
+        // The product's current list price, so a saved markup still shows as one.
+        basePrice: Number(i.product?.salePrice ?? i.unitPrice),
+        costPrice: Number(i.product?.costPrice ?? 0),
       })),
     );
     setOpen(true);
@@ -183,7 +184,7 @@ export default function QuotationsPage() {
           <LineItemsEditor lines={lines} onChange={setLines} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save} disabled={!form.client || toItemsPayload(lines).length === 0}>{t('common.save')}</Button>
+            <Button onClick={save} disabled={!form.client || toItemsPayload(lines).length === 0 || hasInvalidLine(lines)}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

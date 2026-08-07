@@ -1,26 +1,28 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { clearSession, getRefreshToken, getToken, setSession } from './auth';
 
 export const api = axios.create({ baseURL: '/api' });
 
 api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 let refreshing: Promise<string | null> | null = null;
 
 async function tryRefresh(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('refreshToken');
+  const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
   try {
     const { data } = await axios.post('/api/auth/refresh', { refreshToken });
     const payload = data?.data ?? data;
-    localStorage.setItem('token', payload.accessToken);
-    localStorage.setItem('refreshToken', payload.refreshToken);
-    localStorage.setItem('user', JSON.stringify(payload.user));
+    // No `remember` argument: keep the tier the session already lives in.
+    setSession({
+      accessToken: payload.accessToken,
+      refreshToken: payload.refreshToken,
+      user: payload.user,
+    });
     return payload.accessToken as string;
   } catch {
     return null;
@@ -53,9 +55,7 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original);
       }
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
+      clearSession();
       window.location.href = '/login';
     }
     return Promise.reject(err);

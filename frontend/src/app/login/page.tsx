@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { SunMedium, Languages, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, errMsg } from '../../lib/api';
+import { getRememberedEmail, purgeLegacyCredentials, setRememberedEmail, setSession } from '../../lib/auth';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -28,18 +29,15 @@ export default function LoginPage() {
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
-  // Prefill saved credentials when "Remember me" was used before
+  // Prefill the email when "Remember me" was used before. The password is
+  // never persisted — purgeLegacyCredentials() also deletes the old cleartext
+  // `rememberedLogin` blob left behind by previous versions.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('rememberedLogin');
-      if (saved) {
-        const { email: e, password: p } = JSON.parse(saved);
-        if (e) setEmail(e);
-        if (p) setPassword(p);
-        setRemember(true);
-      }
-    } catch {
-      /* ignore corrupt saved data */
+    const migrated = purgeLegacyCredentials();
+    const saved = getRememberedEmail() ?? migrated;
+    if (saved) {
+      setEmail(saved);
+      setRemember(true);
     }
   }, []);
 
@@ -49,12 +47,14 @@ export default function LoginPage() {
     try {
       if (mode === 'login') {
         const { data } = await api.post('/auth/login', { email, password });
-        if (remember) localStorage.setItem('rememberedLogin', JSON.stringify({ email, password }));
-        else localStorage.removeItem('rememberedLogin');
-        localStorage.setItem('token', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        router.replace('/dashboard');
+        setRememberedEmail(remember ? email : null);
+        setSession(
+          { accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user },
+          remember,
+        );
+        // Honour ?next= so middleware can bounce the admin back where they were.
+        const next = new URLSearchParams(window.location.search).get('next');
+        router.replace(next && next.startsWith('/') ? next : '/dashboard');
       } else if (mode === 'forgot') {
         const { data } = await api.post('/auth/forgot-password', { email });
         if (data.resetToken) {

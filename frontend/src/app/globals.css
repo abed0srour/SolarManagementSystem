@@ -49,6 +49,59 @@
   }
 }
 
+/*
+ * Accent themes.
+ *
+ * Only `--primary` and `--ring` change: every button, active border, badge and
+ * focus ring already resolves through those two variables, so an accent swap
+ * repaints the whole app without touching a single component.
+ *
+ * These blocks come after `.dark` on purpose. `[data-accent]` and `.dark` have
+ * equal specificity, so source order decides the light case; the paired
+ * `.dark[data-accent]` selector is more specific and wins in dark mode.
+ *
+ * Cedar Blue is the default and deliberately has no block — it is the base
+ * `:root` / `.dark` values above, so an unset attribute renders correctly
+ * before the accent script runs.
+ */
+@layer base {
+  [data-accent='emerald'] {
+    --primary: 152 58% 32%;
+    --ring: 152 58% 38%;
+  }
+  .dark[data-accent='emerald'] {
+    --primary: 152 52% 45%;
+    --ring: 152 52% 45%;
+  }
+
+  [data-accent='rose'] {
+    --primary: 347 68% 45%;
+    --ring: 347 68% 50%;
+  }
+  .dark[data-accent='rose'] {
+    --primary: 347 74% 58%;
+    --ring: 347 74% 58%;
+  }
+
+  [data-accent='violet'] {
+    --primary: 262 58% 47%;
+    --ring: 262 58% 53%;
+  }
+  .dark[data-accent='violet'] {
+    --primary: 262 68% 63%;
+    --ring: 262 68% 63%;
+  }
+
+  [data-accent='sunset'] {
+    --primary: 24 82% 44%;
+    --ring: 24 82% 50%;
+  }
+  .dark[data-accent='sunset'] {
+    --primary: 24 88% 55%;
+    --ring: 24 88% 55%;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

@@ -1,5 +1,6 @@
 ﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHmac, randomInt, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
@@ -77,7 +78,18 @@ export class SalesOrdersService {
         client: { include: { addresses: true } },
         warehouse: true,
         quotation: { select: { id: true, number: true } },
-        items: { include: { product: { select: { sku: true, name: true, trackSerials: true } } } },
+        // Top-level lines only, each carrying its bundle components — otherwise
+        // sub-items would also appear as loose lines in the order view.
+        items: {
+          where: { parentItemId: null },
+          include: {
+            product: { select: { sku: true, name: true, trackSerials: true, costPrice: true, salePrice: true } },
+            subItems: {
+              orderBy: { id: 'asc' },
+              include: { product: { select: { sku: true, name: true } } },
+            },
+          },
+        },
         invoices: { select: { id: true, number: true, status: true, total: true, paidAmount: true } },
         serviceJobs: { select: { id: true, number: true, status: true, type: true } },
         createdBy: { select: { name: true } },
@@ -104,31 +116,305 @@ export class SalesOrdersService {
   }
 
   /**
-   * Builds order lines. The unit price is always the product's current sale
-   * price (server-enforced — clients cannot override it); discounts are the
-   * only way to reduce what the customer pays.
+   * Builds order lines.
+   *
+   * The product's sale price is the default, but a line may override it — both
+   * downwards and upwards, so an item can be marked up above list price for a
+   * particular order. An omitted `unitPrice` falls back to the product's
+   * current sale price; a negative one is rejected. Line discounts then apply
+   * on top of whatever unit price the line ended up with.
    */
   private async buildItems(items: any[]) {
+    // Bundle headers and their sub-items are typed by hand, so only real
+    // catalogue lines need a price looked up.
+    const productIds = items
+      .flatMap((i) => [i.productId, ...(i.subItems ?? []).map((s: any) => s.productId)])
+      .filter(Boolean);
     const products = await this.prisma.product.findMany({
-      where: { id: { in: items.map((i) => i.productId) } },
-      select: { id: true, salePrice: true },
+      where: { id: { in: productIds } },
+      select: { id: true, salePrice: true, name: true, sku: true },
     });
     const priceById = new Map(products.map((p) => [p.id, Number(p.salePrice)]));
+    const nameById = new Map(products.map((p) => [p.id, p.name]));
+
+    const priceOf = (i: any): number => {
+      const base = i.productId ? priceById.get(i.productId) : undefined;
+      if (i.productId && base === undefined) throw new NotFoundException(`Product ${i.productId} not found`);
+      const unitPrice = i.unitPrice === undefined || i.unitPrice === null ? (base ?? 0) : Number(i.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new BadRequestException('Unit price must be zero or greater');
+      }
+      return unitPrice;
+    };
+
     return items.map((i) => {
-      const unitPrice = priceById.get(i.productId);
-      if (unitPrice === undefined) throw new NotFoundException(`Product ${i.productId} not found`);
-      const t = calcLine({ ...i, unitPrice });
+      const isComposite = Boolean(i.isComposite);
+      const subs = isComposite ? (i.subItems ?? []) : [];
+
+      // Sub-items are priced individually so the internal pick-list shows what
+      // each component is worth, even when the customer only sees one figure.
+      const builtSubs = subs.map((s: any) => {
+        const unitPrice = priceOf(s);
+        const quantity = Number(s.quantity ?? 0);
+        if (!Number.isFinite(quantity) || quantity < 0) {
+          throw new BadRequestException('Sub-item quantity must be zero or greater');
+        }
+        // Components are catalogue products; the name is snapshotted so the
+        // pick-list and invoice still read correctly if the product is renamed.
+        const description = s.description?.trim() || (s.productId ? nameById.get(s.productId) : undefined);
+        if (!description) throw new BadRequestException('Each bundle component needs a product');
+        return {
+          productId: s.productId ?? null,
+          description,
+          quantity,
+          unit: s.unit ?? null,
+          unitPrice,
+          lineTotal: round2(quantity * unitPrice),
+        };
+      });
+
+      if (isComposite && !i.description) {
+        throw new BadRequestException('A bundle needs a name');
+      }
+
+      // autoPrice (the default) sums the components; turning it off lets the
+      // admin quote a round number for the package regardless of its contents.
+      const autoPrice = i.autoPrice !== false;
+      const componentsTotal = round2(builtSubs.reduce((s: number, b: any) => s + b.lineTotal, 0));
+      const unitPrice = isComposite && autoPrice ? componentsTotal : priceOf(i);
+      const quantity = isComposite ? Number(i.quantity ?? 1) : Number(i.quantity);
+
+      const t = calcLine({ ...i, quantity, unitPrice });
       return {
-        productId: i.productId,
-        description: i.description,
-        quantity: i.quantity,
+        productId: isComposite ? null : (i.productId ?? null),
+        description: i.description ?? null,
+        quantity,
+        unit: i.unit ?? null,
         unitPrice,
         discountType: i.discountType ?? null,
         discountValue: i.discountValue ?? 0,
         lineTotal: t.lineTotal,
+        isComposite,
+        autoPrice,
         _totals: t,
+        _subItems: builtSubs,
       };
     });
+  }
+
+  /**
+   * Alphabet for pickup codes: digits and capitals minus the pairs that get
+   * misread off a printed receipt — 0/O and 1/I/L. The customer reads this
+   * aloud or the warehouse types it, so ambiguity is the enemy.
+   */
+  private static readonly CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+
+  /**
+   * Short, unique code printed on the POS receipt.
+   *
+   * Generated server-side and checked against the unique index, so a collision
+   * can never surface as a customer arriving with a code that matches someone
+   * else's order. 31^8 ≈ 850 billion combinations.
+   */
+  private async generatePickupCode(tx: Prisma.TransactionClient, length = 8): Promise<string> {
+    const alphabet = SalesOrdersService.CODE_ALPHABET;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');
+      const taken = await tx.salesOrder.findUnique({ where: { pickupCode: code }, select: { id: true } });
+      if (!taken) return code;
+    }
+    throw new BadRequestException('Could not generate a pickup code, please try again');
+  }
+
+  /**
+   * Mint the signed token that goes inside the receipt's QR code.
+   *
+   * Signed with the server's JWT secret, so a QR that verifies is provably one
+   * we issued — a customer cannot forge one, and a photographed code from
+   * someone else's receipt still only resolves to *that* order.
+   *
+   * `typ: 'pickup'` stops a login access token being presented as a pickup QR
+   * and vice versa: both are signed with the same secret, so without a type
+   * claim one would validate as the other.
+   */
+  async issuePickupToken(orderId: string): Promise<{ token: string; expiresAt: Date }> {
+    const expiresAt = new Date(Date.now() + SalesOrdersService.PICKUP_TOKEN_HOURS * 3600 * 1000);
+    const expMinutes = Math.floor(expiresAt.getTime() / 60000);
+    const body = `${SalesOrdersService.uuidToB64(orderId)}.${expMinutes.toString(36)}`;
+    return { token: `${body}.${SalesOrdersService.sign(body)}`, expiresAt };
+  }
+
+  /** QR codes are valid for a day; reprinting the receipt mints a fresh one. */
+  private static readonly PICKUP_TOKEN_HOURS = 24;
+
+  /**
+   * A UUID is 16 bytes; its canonical text form wastes 14 characters on dashes
+   * and hex expansion. Base64url puts it in 22.
+   */
+  private static uuidToB64(uuid: string): string {
+    return Buffer.from(uuid.replace(/-/g, ''), 'hex').toString('base64url');
+  }
+
+  private static b64ToUuid(b64: string): string | null {
+    const hex = Buffer.from(b64, 'base64url').toString('hex');
+    if (hex.length !== 32) return null;
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  /**
+   * Truncated HMAC-SHA256 over the token body.
+   *
+   * 16 bytes is 128 bits of authentication — far beyond forging — and keeps the
+   * whole token near 50 characters. That length is what lets the printed QR be
+   * small: payload size drives the module count, so a compact token means a
+   * coarse grid that survives a thermal head and a phone camera. A full JWT was
+   * 208 characters and needed a dense grid that had to be printed large.
+   */
+  private static sign(body: string): string {
+    const secret = process.env.JWT_SECRET ?? '';
+    return createHmac('sha256', secret).update(body).digest().subarray(0, 16).toString('base64url');
+  }
+
+  /**
+   * Verify a scanned QR and return what the warehouse needs to decide.
+   *
+   * Never throws for an expired or forged code — the scanner screen has to be
+   * able to say *why* a code failed, and "this QR expired yesterday" is a very
+   * different conversation with a customer than "this is not our QR".
+   */
+  async verifyPickupToken(token: string) {
+    const invalid = { valid: false as const, reason: 'INVALID', message: 'This QR code was not issued by this system' };
+
+    const parts = token.trim().split('.');
+    // A 3-part token of the wrong shape (a JWT, say) fails here before any
+    // crypto runs, so a login token can never be mistaken for a pickup code.
+    if (parts.length !== 3 || parts[0].length !== 22 || parts[2].length !== 22) return invalid;
+
+    const [idPart, expPart, sig] = parts;
+    const expected = SalesOrdersService.sign(`${idPart}.${expPart}`);
+    // Constant-time compare: a fast-exit comparison leaks how much of a forged
+    // signature was right, which is enough to reconstruct one byte at a time.
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return invalid;
+
+    const expMinutes = parseInt(expPart, 36);
+    if (!Number.isFinite(expMinutes)) return invalid;
+    if (Date.now() > expMinutes * 60000) {
+      return { valid: false as const, reason: 'EXPIRED', message: 'This QR code has expired' };
+    }
+
+    const orderId = SalesOrdersService.b64ToUuid(idPart);
+    if (!orderId) return invalid;
+
+    const order = await this.findOne(orderId).catch(() => null);
+    if (!order) return { valid: false, reason: 'NOT_FOUND', message: 'The order on this QR no longer exists' };
+
+    let blocked: string | null = null;
+    if (order.claimedAt) blocked = 'Already collected';
+    else if (order.status === 'CANCELLED') blocked = 'Order was cancelled';
+    else if (order.status === 'PENDING') blocked = 'Order is not confirmed yet';
+
+    return {
+      valid: true,
+      issuedFor: order.id,
+      expiresAt: new Date(expMinutes * 60000),
+      claimable: blocked === null,
+      reason: blocked,
+      order,
+    };
+  }
+
+  /** Release goods against a scanned QR rather than a typed code. */
+  async claimByToken(userId: string, token: string, notes?: string) {
+    const check = await this.verifyPickupToken(token);
+    if (!check.valid) throw new BadRequestException(check.message);
+    if (!check.claimable) throw new BadRequestException(check.reason!);
+    // Re-uses the code path so the same transaction guard prevents a double
+    // claim, whichever way the order was presented.
+    return this.claim(userId, (check.order as any).pickupCode, notes);
+  }
+
+  /**
+   * Find an order from the code on a customer's receipt.
+   *
+   * Returns the order plus a `claimable` verdict rather than throwing, so the
+   * warehouse screen can explain *why* something cannot be released (already
+   * collected, cancelled, not yet confirmed) instead of just failing.
+   */
+  async findByPickupCode(code: string) {
+    const order = await this.prisma.salesOrder.findUnique({
+      relationLoadStrategy: 'join',
+      where: { pickupCode: code.trim().toUpperCase() },
+      include: {
+        client: { select: { id: true, name: true, phone: true } },
+        warehouse: { select: { name: true } },
+        claimedBy: { select: { name: true } },
+        items: {
+          where: { parentItemId: null },
+          include: {
+            product: { select: { sku: true, name: true } },
+            subItems: { include: { product: { select: { sku: true, name: true } } } },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('No order matches this code');
+
+    const paid = await this.prisma.invoice.aggregate({
+      where: { salesOrderId: order.id, status: { not: 'CANCELLED' } },
+      _sum: { total: true, paidAmount: true },
+    });
+    const outstanding = round2(Number(paid._sum.total ?? 0) - Number(paid._sum.paidAmount ?? 0));
+
+    let reason: string | null = null;
+    if (order.claimedAt) reason = 'Already collected';
+    else if (order.status === 'CANCELLED') reason = 'Order was cancelled';
+    else if (order.status === 'PENDING') reason = 'Order is not confirmed yet';
+
+    return { ...order, outstanding, claimable: reason === null, reason };
+  }
+
+  /**
+   * Hand the goods over. Stamps who released them and when.
+   *
+   * The re-check inside the transaction is what actually prevents a receipt
+   * being used twice — two warehouse staff could load the same code at the same
+   * moment and both see it as claimable.
+   */
+  async claim(userId: string, code: string, notes?: string) {
+    const normalised = code.trim().toUpperCase();
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.salesOrder.findUnique({ where: { pickupCode: normalised } });
+      if (!order) throw new NotFoundException('No order matches this code');
+      if (order.claimedAt) throw new BadRequestException('This receipt was already collected');
+      if (order.status === 'CANCELLED') throw new BadRequestException('Order was cancelled');
+      if (order.status === 'PENDING') throw new BadRequestException('Order is not confirmed yet');
+
+      const claimed = await tx.salesOrder.update({
+        where: { id: order.id },
+        data: { claimedAt: new Date(), claimedById: userId, claimNotes: notes },
+      });
+      await this.audit.log(userId, 'CLAIM', 'SalesOrder', order.id, { number: order.number, pickupCode: normalised });
+      return { success: true, number: claimed.number, claimedAt: claimed.claimedAt };
+    });
+  }
+
+  /** Write a bundle's components once the parent line has an id to hang them on. */
+  private async writeSubItems(tx: Prisma.TransactionClient, salesOrderId: string, built: any[]) {
+    if (!built.some((b) => b._subItems?.length)) return;
+    const parents = await tx.salesOrderItem.findMany({
+      where: { salesOrderId, isComposite: true, parentItemId: null },
+      select: { id: true, description: true },
+    });
+    for (const b of built) {
+      if (!b._subItems?.length) continue;
+      const parent = parents.find((p) => p.description === b.description);
+      if (!parent) continue;
+      await tx.salesOrderItem.createMany({
+        data: b._subItems.map((s: any) => ({ ...s, salesOrderId, parentItemId: parent.id })),
+      });
+    }
   }
 
   async create(userId: string, dto: any) {
@@ -144,22 +430,29 @@ export class SalesOrdersService {
       dto.shippingFee ?? 0,
     );
     const number = await this.numbering.next('SALES_ORDER');
-    const so = await this.prisma.salesOrder.create({
-      data: {
-        number,
-        clientId: dto.clientId,
-        quotationId: dto.quotationId,
-        warehouseId: dto.warehouseId,
-        status: 'PENDING',
-        discountType: dto.discountType ?? null,
-        discountValue: dto.discountValue ?? 0,
-        shippingFee: dto.shippingFee ?? 0,
-        notes: dto.notes,
-        ...totals,
-        createdById: userId,
-        items: { create: built.map(({ _totals, ...item }) => item) },
-      },
-      include: { items: true },
+    const so = await this.prisma.$transaction(async (tx) => {
+      const pickupCode = await this.generatePickupCode(tx);
+      const created = await tx.salesOrder.create({
+        data: {
+          number,
+          pickupCode,
+          clientId: dto.clientId,
+          quotationId: dto.quotationId,
+          warehouseId: dto.warehouseId,
+          status: 'PENDING',
+          discountType: dto.discountType ?? null,
+          discountValue: dto.discountValue ?? 0,
+          shippingFee: dto.shippingFee ?? 0,
+          notes: dto.notes,
+          showSubItemsOnInvoice: dto.showSubItemsOnInvoice ?? false,
+          ...totals,
+          createdById: userId,
+          items: { create: built.map(({ _totals, _subItems, ...item }) => item) },
+        },
+        include: { items: true },
+      });
+      await this.writeSubItems(tx, created.id, built);
+      return created;
     });
     await this.audit.log(userId, 'CREATE', 'SalesOrder', so.id, { number });
     return so;
@@ -171,31 +464,39 @@ export class SalesOrdersService {
     if (existing.status !== 'PENDING')
       throw new BadRequestException('Only pending orders can be edited (cancel and recreate otherwise)');
 
+    let built: any[] | undefined;
     let itemsData = undefined as any;
     let totals = {} as any;
     if (dto.items) {
-      const built = await this.buildItems(dto.items);
+      built = await this.buildItems(dto.items);
       totals = calcDocTotals(
         built.map((b) => b._totals),
         dto.discountType ?? (existing.discountType as any),
         dto.discountValue ?? Number(existing.discountValue),
         dto.shippingFee ?? Number(existing.shippingFee),
       );
-      itemsData = { deleteMany: {}, create: built.map(({ _totals, ...item }) => item) };
+      // `deleteMany: {}` clears sub-items too — they cascade from their parent
+      // and are rewritten below from the incoming payload.
+      itemsData = { deleteMany: {}, create: built.map(({ _totals, _subItems, ...item }) => item) };
     }
-    const so = await this.prisma.salesOrder.update({
-      where: { id },
-      data: {
-        clientId: dto.clientId,
-        warehouseId: dto.warehouseId,
-        discountType: dto.discountType,
-        discountValue: dto.discountValue,
-        shippingFee: dto.shippingFee,
-        notes: dto.notes,
-        ...totals,
-        ...(itemsData ? { items: itemsData } : {}),
-      },
-      include: { items: true },
+    const so = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.salesOrder.update({
+        where: { id },
+        data: {
+          clientId: dto.clientId,
+          warehouseId: dto.warehouseId,
+          discountType: dto.discountType,
+          discountValue: dto.discountValue,
+          shippingFee: dto.shippingFee,
+          notes: dto.notes,
+          ...(dto.showSubItemsOnInvoice === undefined ? {} : { showSubItemsOnInvoice: dto.showSubItemsOnInvoice }),
+          ...totals,
+          ...(itemsData ? { items: itemsData } : {}),
+        },
+        include: { items: true },
+      });
+      if (built) await this.writeSubItems(tx, id, built);
+      return updated;
     });
     await this.audit.log(userId, 'UPDATE', 'SalesOrder', id);
     return so;
@@ -229,11 +530,15 @@ export class SalesOrdersService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of so.items) {
+        // Bundle headers hold no product of their own — their components do,
+        // and each component is a real catalogue item, so it draws stock just
+        // like a top-level line.
+        if (!item.productId || item.isComposite) continue;
         if (item.product?.isService) continue; // services carry no stock
         await this.stock.adjustStock(tx, {
           productId: item.productId,
           warehouseId: so.warehouseId,
-          delta: -item.quantity,
+          delta: -Number(item.quantity),
           type: 'OUT',
           userId,
           reason: `Sales order ${so.number} confirmed`,
@@ -271,7 +576,7 @@ export class SalesOrdersService {
       for (const d of deliveries) {
         const item = so.items.find((i) => i.id === d.itemId);
         if (!item) throw new BadRequestException(`Item ${d.itemId} not on this order`);
-        if (item.deliveredQty + d.quantity > item.quantity)
+        if (item.deliveredQty + d.quantity > Number(item.quantity))
           throw new BadRequestException(`Delivery exceeds ordered quantity for item ${d.itemId}`);
         await tx.salesOrderItem.update({
           where: { id: d.itemId },
@@ -279,7 +584,11 @@ export class SalesOrdersService {
         });
       }
       const updated = await tx.salesOrderItem.findMany({ where: { salesOrderId: id } });
-      const allDelivered = updated.every((i) => i.deliveredQty >= i.quantity);
+      // Sub-items are shipped as part of their bundle, so they are not tracked
+      // for delivery in their own right.
+      const allDelivered = updated
+        .filter((i) => !i.parentItemId)
+        .every((i) => i.deliveredQty >= Number(i.quantity));
       await tx.salesOrder.update({
         where: { id },
         data: { status: allDelivered ? 'DELIVERED' : 'PARTIALLY_DELIVERED' },
@@ -386,11 +695,13 @@ export class SalesOrdersService {
       }
       if (wasStockDeducted) {
         for (const item of so.items) {
+          // Mirrors confirm(): bundle components moved stock, headers did not.
+          if (!item.productId || item.isComposite) continue;
           if (item.product?.isService) continue;
           await this.stock.adjustStock(tx, {
             productId: item.productId,
             warehouseId: so.warehouseId,
-            delta: item.quantity,
+            delta: Number(item.quantity),
             type: 'IN',
             userId,
             reason: `Sales order ${so.number} cancelled — stock restored`,

@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CheckCircle2,
   FileDown,
+  Printer,
   Truck,
   Undo2,
   User,
@@ -147,6 +148,10 @@ export default function SalesOrderDetailPage() {
               <FileDown /> {t('orders.invoicePdf')}
             </Button>
           )}
+          {/* Opens the thermal receipt and triggers print in one step. */}
+          <Button size="sm" variant="outline" onClick={() => router.push(`/sales-orders/${so.id}/receipt?print=1`)}>
+            <Printer /> {t('orders.posReceipt')}
+          </Button>
           {!['CANCELLED', 'DELIVERED'].includes(so.status) && (
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => setCancelOpen(true)}>
               <XCircle /> {t('orders.cancelOrder')}

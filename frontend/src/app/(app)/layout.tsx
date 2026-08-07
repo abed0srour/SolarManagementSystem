@@ -8,9 +8,12 @@ import {
   SunMedium, LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
-  ChevronRight, User, HardHat, Activity, Calculator, Wallet,
+  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '../../lib/api';
+import { clearSession, getRefreshToken, getToken, getUser } from '../../lib/auth';
+import { clearCache, readCache, refreshAllCaches, writeCache } from '../../lib/cache';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -51,6 +54,8 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
     items: [
       { key: 'suppliers', href: '/suppliers', icon: Truck },
       { key: 'purchaseOrders', href: '/purchase-orders', icon: PackagePlus },
+      { key: 'scan', href: '/warehouse/scan', icon: QrCode },
+      { key: 'claim', href: '/warehouse/claim', icon: PackageCheck },
       { key: 'expenses', href: '/expenses', icon: Wallet },
     ],
   },
@@ -72,7 +77,9 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
   {
     group: 'system',
     items: [
+      { key: 'workers', href: '/workers', icon: HardHat },
       { key: 'settings', href: '/settings', icon: Settings },
+      { key: 'themes', href: '/settings/themes', icon: Palette },
       { key: 'auditLog', href: '/audit', icon: History },
     ],
   },
@@ -97,16 +104,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<any>({});
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    // Middleware already turned anonymous visitors away; this is the in-tab
+    // fallback for a session cleared after the page was served.
+    if (!getToken()) {
       router.replace('/login');
       return;
     }
-    setUserName(JSON.parse(localStorage.getItem('user') ?? '{}')?.name ?? '');
+    setUserName(getUser()?.name ?? '');
     setReady(true);
     // Branding (store name, tagline, logo) comes from the admin settings.
-    api.get('/settings').then((r) => {
-      const c = r.data.company ?? {};
+    // Painted from cache first so the header never flashes empty, then
+    // revalidated in the background.
+    const applyBranding = (c: any) => {
       setCompany(c);
       if (c.logoUrl) {
         let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
@@ -118,7 +127,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         link.href = c.logoUrl;
       }
       if (c.name) document.title = c.name;
-    }).catch(() => {});
+    };
+    const cachedSettings = readCache<any>('settings');
+    if (cachedSettings) applyBranding(cachedSettings.data?.company ?? {});
+    api
+      .get('/settings')
+      .then((r) => {
+        writeCache('settings', r.data);
+        applyBranding(r.data.company ?? {});
+      })
+      .catch(() => {});
     const load = () =>
       api
         .get('/notifications', { params: { unreadOnly: 'true', pageSize: 12 } })
@@ -144,15 +162,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
 
   const logout = async () => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    api.post('/auth/logout', { refreshToken }).catch(() => {});
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+    api.post('/auth/logout', { refreshToken: getRefreshToken() }).catch(() => {});
+    clearSession();
+    // Cached business data outlives the session otherwise.
+    clearCache();
     router.replace('/login');
   };
 
-  const activeItem = NAV.flatMap((s) => s.items).find((i) => pathname.startsWith(i.href));
+  /*
+   * Longest match wins. A plain `startsWith` would light up both Settings and
+   * Themes on /settings/themes, since one route is a prefix of the other.
+   */
+  const activeHref = NAV.flatMap((s) => s.items)
+    .map((i) => i.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  const activeItem = NAV.flatMap((s) => s.items).find((i) => i.href === activeHref);
 
   const sidebar = (
     <nav className="flex h-full flex-col overflow-y-auto border-e bg-card">
@@ -177,7 +202,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const Icon = item.icon;
-                const active = pathname.startsWith(item.href);
+                const active = item.href === activeHref;
                 return (
                   <Link
                     key={item.href}
@@ -248,6 +273,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="flex-1" />
+          {/* Sync now — drops every cached module and refetches from the database */}
+          <Button
+            variant="ghost"
+            size="icon"
+            title={t('common.syncNow')}
+            onClick={() => {
+              refreshAllCaches();
+              toast.success(t('common.syncing'));
+            }}
+          >
+            <RefreshCw />
+          </Button>
           {/* Language */}
           <Button variant="ghost" size="icon" onClick={switchLocale} title={t('common.language')}>
             <Languages />
@@ -276,7 +313,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {notifs.map((n) => (
                 <DropdownMenuItem
                   key={n.id}
-                  className="whitespace-normal"
+                  // Divider between entries — wrapped messages ran together
+                  // otherwise. The last one's border doubles as the rule above
+                  // the "mark all read" action below.
+                  className="whitespace-normal border-b border-border/60"
                   onClick={() => {
                     api.post(`/notifications/${n.id}/read`).then(() => {
                       setNotifs((p) => p.filter((x) => x.id !== n.id));
@@ -289,7 +329,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               ))}
               {notifs.length > 0 && (
                 <>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => {
                       api.post('/notifications/read-all').then(() => {
@@ -317,7 +356,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{userName}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/settings?tab=security')}>
+              <DropdownMenuItem onClick={() => router.push('/profile')}>
+                <User /> {t('auth.profile')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/settings')}>
                 <Settings /> {t('nav.settings')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={logout}>

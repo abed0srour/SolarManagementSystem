@@ -1,7 +1,9 @@
 ﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class ProductsService {
@@ -16,12 +18,15 @@ export class ProductsService {
     subCategoryId?: string;
     brand?: string;
     isActive?: string;
+    archived?: string;
     sortBy?: string;
     sortDir?: string;
     page?: number;
     pageSize?: number;
   }) {
-    const where: Prisma.ProductWhereInput = { deletedAt: null };
+    // `archived=true` shows the archive instead of the active list — the
+    // same query, with the soft-delete filter inverted.
+    const where: Prisma.ProductWhereInput = query.archived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -76,81 +81,123 @@ export class ProductsService {
     return product;
   }
 
+  /**
+   * Sub-category every service is filed under, created on first use.
+   *
+   * `Product.subCategoryId` is a required relation, but asking the admin to file
+   * an installation under "Batteries / Lithium" is meaningless. Services get
+   * their own bucket instead, so the form can drop the picker entirely and
+   * reports still group them sensibly. Restores the rows if they were archived,
+   * since the unique constraints (`Category.name`, `SubCategory[categoryId,name]`)
+   * apply to soft-deleted rows too.
+   */
+  private async serviceSubCategoryId(tx: Prisma.TransactionClient): Promise<string> {
+    const category = await tx.category.upsert({
+      where: { name: 'Services' },
+      update: { deletedAt: null },
+      create: { name: 'Services', description: 'Labour and services — installation, maintenance, delivery' },
+    });
+    const sub = await tx.subCategory.upsert({
+      where: { categoryId_name: { categoryId: category.id, name: 'General' } },
+      update: { deletedAt: null },
+      create: { categoryId: category.id, name: 'General' },
+    });
+    return sub.id;
+  }
+
+  /**
+   * Strip fields that make no sense for a service. A service is sold as labour:
+   * it has no stock, no serials, no warranty period and no physical specs, so
+   * those columns are forced to their empty values rather than left to whatever
+   * the form last held.
+   */
+  private static serviceDefaults() {
+    return {
+      trackSerials: false,
+      lowStockThreshold: 0,
+      brand: null,
+      model: null,
+      barcode: null,
+      warrantyMonths: null,
+      performanceWarrantyMonths: null,
+      shelfLifeMonths: null,
+      attributes: {},
+    };
+  }
+
+  /**
+   * Create a product definition. Deliberately has no effect on stock.
+   *
+   * This used to accept `serialNumbers` and turn them into in-stock units plus
+   * an `IN` movement, so defining a product silently invented inventory that
+   * was never bought. Stock now has exactly one origin: goods received against
+   * a purchase order (`PurchaseOrdersService.receiveGoods`, which takes serials
+   * per line and checks them against the received quantity) or an explicit
+   * stock adjustment.
+   */
   async create(userId: string, data: any) {
-    const serialNumbers: string[] = data.isService
-      ? []
-      : (data.serialNumbers ?? []).map((s: string) => s.trim()).filter(Boolean);
-    const tooLong = serialNumbers.filter((s) => s.length > 18);
-    if (tooLong.length)
-      throw new BadRequestException(`Serial numbers must be 18 characters or less: ${tooLong.join(', ')}`);
+    const isService = data.isService ?? false;
+    if (!isService && !data.subCategoryId) {
+      // Otherwise the required relation fails with an opaque constraint error.
+      throw new BadRequestException('Pick a sub-category, or mark this as a service');
+    }
+    // A stocked product has no meaningful cost until it is bought: the first
+    // goods receipt sets it via weighted average, and because a new product has
+    // no stock on hand that calculation reduces to the received unit cost — so
+    // anything typed here would be overwritten anyway. Services keep a manual
+    // cost, as no purchase order ever touches them.
+    const costPrice = data.costPrice ?? 0;
 
     const product = await this.prisma.$transaction(async (tx) => {
+      // A service only carries name, SKU and the two prices; everything else is
+      // either meaningless or resolved for it.
       const p = await tx.product.create({
-        data: {
-          sku: data.sku,
-          name: data.name,
-          brand: data.brand,
-          model: data.model,
-          subCategoryId: data.subCategoryId,
-          attributes: data.attributes ?? {},
-          costPrice: data.costPrice,
-          salePrice: data.salePrice,
-          isService: data.isService ?? false,
-          trackSerials: data.isService ? false : (data.trackSerials ?? true),
-          lowStockThreshold: data.lowStockThreshold ?? 5,
-          warrantyMonths: data.warrantyMonths,
-          performanceWarrantyMonths: data.performanceWarrantyMonths,
-          shelfLifeMonths: data.shelfLifeMonths,
-          barcode: data.barcode,
-          notes: data.notes,
-        },
+        data: isService
+          ? {
+              sku: data.sku,
+              name: data.name,
+              costPrice,
+              salePrice: data.salePrice,
+              notes: data.notes,
+              isService: true,
+              subCategoryId: data.subCategoryId || (await this.serviceSubCategoryId(tx)),
+              ...ProductsService.serviceDefaults(),
+            }
+          : {
+              sku: data.sku,
+              name: data.name,
+              brand: data.brand,
+              model: data.model,
+              subCategoryId: data.subCategoryId,
+              attributes: data.attributes ?? {},
+              costPrice,
+              salePrice: data.salePrice,
+              isService: false,
+              trackSerials: data.trackSerials ?? true,
+              lowStockThreshold: data.lowStockThreshold ?? 5,
+              warrantyMonths: data.warrantyMonths,
+              performanceWarrantyMonths: data.performanceWarrantyMonths,
+              shelfLifeMonths: data.shelfLifeMonths,
+              barcode: data.barcode,
+              notes: data.notes,
+            },
       });
       await tx.priceHistory.create({
         data: {
           productId: p.id,
-          newCostPrice: data.costPrice,
+          newCostPrice: costPrice,
           newSalePrice: data.salePrice,
           reason: 'Initial price',
           changedById: userId,
         },
       });
 
-      // Serial numbers attached at creation become in-stock units right away.
-      if (serialNumbers.length) {
-        const warehouse =
-          (await tx.warehouse.findFirst({ where: { isDefault: true } })) ?? (await tx.warehouse.findFirst());
-        if (!warehouse) throw new BadRequestException('Create a warehouse before registering serial numbers');
-        await tx.productUnit.createMany({
-          data: serialNumbers.map((serialNumber) => ({
-            productId: p.id,
-            warehouseId: warehouse.id,
-            serialNumber,
-            status: 'IN_STOCK' as const,
-          })),
-        });
-        await tx.stockLevel.upsert({
-          where: { productId_warehouseId: { productId: p.id, warehouseId: warehouse.id } },
-          update: { quantity: { increment: serialNumbers.length } },
-          create: { productId: p.id, warehouseId: warehouse.id, quantity: serialNumbers.length },
-        });
-        await tx.stockMovement.create({
-          data: {
-            productId: p.id,
-            warehouseId: warehouse.id,
-            type: 'IN',
-            quantity: serialNumbers.length,
-            reason: 'Initial serial numbers registered at product creation',
-            userId,
-          },
-        });
-      }
       return p;
     });
 
     await this.audit.log(userId, 'CREATE', 'Product', product.id, {
       sku: product.sku,
       name: product.name,
-      serials: serialNumbers.length || undefined,
     });
     return product;
   }
@@ -163,28 +210,44 @@ export class ProductsService {
       (data.costPrice !== undefined && Number(data.costPrice) !== Number(existing.costPrice)) ||
       (data.salePrice !== undefined && Number(data.salePrice) !== Number(existing.salePrice));
 
-    const product = await this.prisma.product.update({
-      where: { id },
-      data: {
+    // `isService` may be absent from a partial update — fall back to the stored value.
+    const isService = data.isService ?? existing.isService;
+
+    const product = await this.prisma.$transaction(async (tx) => {
+      const base = {
         sku: data.sku,
         name: data.name,
-        brand: data.brand,
-        model: data.model,
-        subCategoryId: data.subCategoryId,
-        attributes: data.attributes,
         costPrice: data.costPrice,
         salePrice: data.salePrice,
-        isService: data.isService,
-        trackSerials: data.trackSerials,
-        lowStockThreshold: data.lowStockThreshold,
-        warrantyMonths: data.warrantyMonths,
-        performanceWarrantyMonths: data.performanceWarrantyMonths,
-        shelfLifeMonths: data.shelfLifeMonths,
-        barcode: data.barcode,
         notes: data.notes,
         isActive: data.isActive,
+        isService: data.isService,
         ...(priceChanged ? { priceUpdatedAt: new Date() } : {}),
-      },
+      };
+      return tx.product.update({
+        where: { id },
+        data: isService
+          ? {
+              ...base,
+              // Clears stock/warranty/spec fields left over from a product that
+              // has just been switched to a service.
+              subCategoryId: data.subCategoryId || (await this.serviceSubCategoryId(tx)),
+              ...ProductsService.serviceDefaults(),
+            }
+          : {
+              ...base,
+              brand: data.brand,
+              model: data.model,
+              subCategoryId: data.subCategoryId,
+              attributes: data.attributes,
+              trackSerials: data.trackSerials,
+              lowStockThreshold: data.lowStockThreshold,
+              warrantyMonths: data.warrantyMonths,
+              performanceWarrantyMonths: data.performanceWarrantyMonths,
+              shelfLifeMonths: data.shelfLifeMonths,
+              barcode: data.barcode,
+            },
+      });
     });
 
     if (priceChanged) {
@@ -245,11 +308,202 @@ export class ProductsService {
     return { results };
   }
 
-  /** Soft delete — the product stays referenced by past invoices/orders but disappears from lists. */
-  async remove(userId: string, id: string) {
+  /**
+   * Create products in bulk from parsed CSV rows.
+   *
+   * Every row is independent: one bad line reports an error and the rest still
+   * import, so a 200-row catalogue is never rejected wholesale for a typo. An
+   * existing SKU is skipped rather than overwritten — silently replacing a
+   * product the admin already priced would be worse than telling them.
+   *
+   * Sub-categories are matched by name (case-insensitive), optionally narrowed
+   * by category name, because a CSV from a supplier has names, not our ids.
+   */
+  async importProducts(
+    userId: string,
+    rows: {
+      sku?: string; name?: string; brand?: string; model?: string;
+      category?: string; subCategory?: string; salePrice?: number; costPrice?: number;
+      barcode?: string; lowStockThreshold?: number; warrantyMonths?: number;
+      isService?: boolean; notes?: string;
+    }[],
+  ) {
+    const results: { row: number; sku: string; status: 'created' | 'skipped' | 'error'; message?: string }[] = [];
+
+    for (const [i, row] of rows.entries()) {
+      const line = i + 1;
+      const sku = String(row.sku ?? '').trim();
+      const name = String(row.name ?? '').trim();
+      try {
+        if (!sku) {
+          results.push({ row: line, sku: '', status: 'error', message: 'SKU is required' });
+          continue;
+        }
+        if (!name) {
+          results.push({ row: line, sku, status: 'error', message: 'Name is required' });
+          continue;
+        }
+        const salePrice = Number(row.salePrice ?? 0);
+        if (!Number.isFinite(salePrice) || salePrice < 0) {
+          results.push({ row: line, sku, status: 'error', message: 'Sale price must be zero or greater' });
+          continue;
+        }
+
+        if (await this.prisma.product.findUnique({ where: { sku }, select: { id: true } })) {
+          results.push({ row: line, sku, status: 'skipped', message: 'SKU already exists' });
+          continue;
+        }
+
+        const isService = row.isService === true;
+        let subCategoryId: string | undefined;
+        if (!isService) {
+          const wanted = String(row.subCategory ?? '').trim();
+          if (!wanted) {
+            results.push({ row: line, sku, status: 'error', message: 'Sub-category is required' });
+            continue;
+          }
+          const category = String(row.category ?? '').trim();
+          const sub = await this.prisma.subCategory.findFirst({
+            where: {
+              deletedAt: null,
+              name: { equals: wanted, mode: 'insensitive' },
+              ...(category ? { category: { name: { equals: category, mode: 'insensitive' } } } : {}),
+            },
+            select: { id: true },
+          });
+          if (!sub) {
+            results.push({ row: line, sku, status: 'error', message: `Sub-category "${wanted}" not found` });
+            continue;
+          }
+          subCategoryId = sub.id;
+        }
+
+        // Reuse create() so imports obey exactly the same rules as the form —
+        // service defaults, cost handling, initial price history.
+        await this.create(userId, {
+          sku,
+          name,
+          brand: row.brand?.trim() || undefined,
+          model: row.model?.trim() || undefined,
+          barcode: row.barcode?.trim() || undefined,
+          notes: row.notes?.trim() || undefined,
+          subCategoryId,
+          isService,
+          salePrice,
+          costPrice: row.costPrice === undefined ? undefined : Number(row.costPrice),
+          lowStockThreshold: row.lowStockThreshold === undefined ? undefined : Number(row.lowStockThreshold),
+          warrantyMonths: row.warrantyMonths === undefined ? undefined : Number(row.warrantyMonths),
+        });
+        results.push({ row: line, sku, status: 'created' });
+      } catch (e: any) {
+        results.push({ row: line, sku, status: 'error', message: e?.message ?? 'Could not import this row' });
+      }
+    }
+
+    const created = results.filter((r) => r.status === 'created').length;
+    const skipped = results.filter((r) => r.status === 'skipped').length;
+    const failed = results.filter((r) => r.status === 'error').length;
+    await this.audit.log(userId, 'IMPORT', 'Product', undefined, { created, skipped, failed });
+    return { created, skipped, failed, results };
+  }
+
+  /**
+   * Alphabet for generated SKUs: digits and capitals minus the pairs that get
+   * misread off a printed label or dictated over the phone — 0/O, 1/I/L.
+   */
+  private static readonly SKU_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+
+  /**
+   * A short, unique, random SKU — six characters, e.g. `K7F3MQ`.
+   *
+   * Generated server-side rather than in the browser so it can be checked
+   * against the unique index before being handed out; a client-side guess
+   * would only surface a collision as a failed save. Soft-deleted products
+   * still occupy their SKU, so `findUnique` covers them too.
+   */
+  async generateSku(length = 6): Promise<{ sku: string }> {
+    const alphabet = ProductsService.SKU_ALPHABET;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const sku = Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');
+      const taken = await this.prisma.product.findUnique({ where: { sku }, select: { id: true } });
+      if (!taken) return { sku };
+    }
+    // 31^6 ≈ 887M combinations, so ten collisions in a row means something is
+    // wrong rather than unlucky.
+    throw new BadRequestException('Could not generate a unique SKU, please try again');
+  }
+
+  /**
+   * Count the references that mean a product has actually been used.
+   *
+   * Deliberately excluded: `priceHistory` (one row is written by `create`),
+   * `stockLevels` at zero quantity, `supplierProducts` and `compatibilityLinks`
+   * — all bookkeeping a product can have without ever being traded, and all
+   * cascade-deleted with it. A stock level holding real quantity does count:
+   * physical stock exists even if no movement was recorded.
+   */
+  /**
+   * Whether this record can be deleted outright, for the confirm dialog to ask
+   * the right question before anything is destroyed. `remove()` re-checks this
+   * server-side, so a stale answer here can never cause a wrongful delete.
+   */
+  async usage(id: string): Promise<UsageReport> {
+    const counts = await this.productUsage(id);
+    return { used: !isUnused(counts), usedBy: usedBy(counts) };
+  }
+
+  private async productUsage(id: string): Promise<Record<string, number>> {
+    const [
+      purchaseOrderItems, salesOrderItems, invoiceItems, quotationItems,
+      returnItems, warrantyClaims, stockMovements, units, stockOnHand,
+    ] = await this.prisma.$transaction([
+      this.prisma.purchaseOrderItem.count({ where: { productId: id } }),
+      this.prisma.salesOrderItem.count({ where: { productId: id } }),
+      this.prisma.invoiceItem.count({ where: { productId: id } }),
+      this.prisma.quotationItem.count({ where: { productId: id } }),
+      this.prisma.returnItem.count({ where: { productId: id } }),
+      this.prisma.warrantyClaim.count({ where: { productId: id } }),
+      this.prisma.stockMovement.count({ where: { productId: id } }),
+      this.prisma.productUnit.count({ where: { productId: id } }),
+      this.prisma.stockLevel.count({ where: { productId: id, quantity: { gt: 0 } } }),
+    ]);
+    return {
+      purchaseOrderItems, salesOrderItems, invoiceItems, quotationItems,
+      returnItems, warrantyClaims, stockMovements, units, stockOnHand,
+    };
+  }
+
+  /**
+   * Bring an archived product back into active use. Archiving only sets
+   * `deletedAt` and clears `isActive`, so restoring is the exact inverse:
+   * nothing was destroyed, and every document that referenced it still does.
+   */
+  async restore(userId: string, id: string) {
+    const row = await this.prisma.product.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Product not found');
+    if (!row.deletedAt) return { success: true, alreadyActive: true };
+    await this.prisma.product.update({ where: { id }, data: { deletedAt: null, isActive: true } });
+    await this.audit.log(userId, 'RESTORE', 'Product', id);
+    return { success: true, alreadyActive: false };
+  }
+
+  /**
+   * Delete a product: permanently when it was never used, otherwise archived so
+   * existing documents keep resolving. See `common/safe-delete.ts`.
+   */
+  async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const counts = await this.productUsage(id);
+    if (isUnused(counts)) {
+      // Cascades take priceHistory, stockLevels, supplierProducts and
+      // compatibility links with it.
+      await this.prisma.product.delete({ where: { id } });
+      await this.audit.log(userId, 'PURGE', 'Product', id);
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+    const used = usedBy(counts);
     await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Product', id);
-    return { success: true };
+    await this.audit.log(userId, 'DELETE', 'Product', id, { usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
   }
 
   priceHistory(productId: string) {

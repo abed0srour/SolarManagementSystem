@@ -2,10 +2,26 @@
 import type { Response } from 'express';
 import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, MinLength, ValidateNested } from 'class-validator';
 import { SalesOrdersService } from './sales-orders.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 import { LineItemDto } from '../common/line-item.dto';
+
+class VerifyTokenDto {
+  @IsString()
+  @MinLength(10)
+  token: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+class ClaimDto {
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
 
 class SalesOrderDto {
   @IsString()
@@ -33,6 +49,11 @@ class SalesOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Itemise bundle contents on the customer's invoice. Off by default. */
+  @IsOptional()
+  @IsBoolean()
+  showSubItemsOnInvoice?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -123,6 +144,41 @@ export class SalesOrdersController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
+  }
+
+  /** Receipt printing: mint the signed token that goes inside the QR. */
+  @Get(':id/pickup-token')
+  pickupToken(@Param('id') id: string) {
+    return this.service.issuePickupToken(id);
+  }
+
+  /**
+   * Warehouse scanner: check a scanned QR.
+   *
+   * POST rather than GET because a signed token is long and would otherwise sit
+   * in server logs and browser history as a URL.
+   */
+  @Post('pickup/verify')
+  verifyPickup(@Body() dto: VerifyTokenDto) {
+    return this.service.verifyPickupToken(dto.token);
+  }
+
+  /** Warehouse scanner: release the goods against a verified QR. */
+  @Post('pickup/claim-token')
+  claimByToken(@CurrentUser() user: AuthUser, @Body() dto: VerifyTokenDto) {
+    return this.service.claimByToken(user.id, dto.token, dto.notes);
+  }
+
+  /** Warehouse: look up an order from the code on a customer's receipt. */
+  @Get('pickup/:code')
+  byPickupCode(@Param('code') code: string) {
+    return this.service.findByPickupCode(code);
+  }
+
+  /** Warehouse: release the goods against a verified receipt. */
+  @Post('pickup/:code/claim')
+  claim(@CurrentUser() user: AuthUser, @Param('code') code: string, @Body() dto: ClaimDto) {
+    return this.service.claim(user.id, code, dto.notes);
   }
 
   @Post()

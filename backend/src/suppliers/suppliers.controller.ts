@@ -99,6 +99,12 @@ export class SuppliersController {
     return this.service.updateSupplierReturn(user.id, id, dto);
   }
 
+  /** Tells the confirm dialog whether Delete or Archive applies. */
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.usage(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
@@ -112,6 +118,12 @@ export class SuppliersController {
   @Patch(':id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: Partial<SupplierDto & { isActive: boolean }>) {
     return this.service.update(user.id, id, dto);
+  }
+
+  /** Bring an archived record back into the active list. */
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 
   @Delete(':id')

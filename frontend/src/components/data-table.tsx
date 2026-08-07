@@ -1,8 +1,10 @@
 'use client';
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 import { api } from '../lib/api';
+import { invalidateCache } from '../lib/cache';
+import { useLocalStorageCache } from '../lib/use-local-storage-cache';
 import { cn } from '../lib/utils';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -28,48 +30,82 @@ interface Props {
   onRowClick?: (row: any) => void;
   refreshKey?: number;
   initialSearch?: string;
+  /**
+   * Pass both to show the Active/Archive switch. The page owns the state so it
+   * can swap its row actions (Edit/Archive vs Restore) to match the view.
+   */
+  archived?: boolean;
+  onArchivedChange?: (archived: boolean) => void;
 }
 
 export default function DataTable({
   endpoint, columns, searchable = true, extraParams, toolbar, filters, onRowClick, refreshKey, initialSearch,
+  archived = false, onArchivedChange,
 }: Props) {
   const t = useTranslations();
-  const [rows, setRows] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState(initialSearch ?? '');
   const [debounced, setDebounced] = useState(initialSearch ?? '');
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search), 350);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    api
-      .get(endpoint, {
-        params: { page, pageSize, search: debounced || undefined, sortBy, sortDir: sortBy ? sortDir : undefined, ...extraParams },
-      })
-      .then((r) => {
-        if (Array.isArray(r.data)) {
-          setRows(r.data);
-          setTotal(r.data.length);
-        } else {
-          setRows(r.data.items ?? []);
-          setTotal(r.data.total ?? 0);
-        }
-      })
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
+  const query = useMemo(
+    () => ({
+      page,
+      pageSize,
+      search: debounced || undefined,
+      sortBy,
+      sortDir: sortBy ? sortDir : undefined,
+      // Only sent when viewing the archive, so active lists keep their existing
+      // cache keys and stay warm.
+      archived: archived ? 'true' : undefined,
+      ...extraParams,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint, page, pageSize, debounced, sortBy, sortDir, JSON.stringify(extraParams), refreshKey]);
+    [page, pageSize, debounced, sortBy, sortDir, archived, JSON.stringify(extraParams)],
+  );
 
-  useEffect(load, [load]);
+  // Switching view resets paging — page 4 of the active list rarely exists in
+  // the archive.
+  useEffect(() => {
+    setPage(1);
+  }, [archived]);
+
+  /** Resource name, e.g. `/purchase-orders` -> `purchase-orders`. */
+  const resource = endpoint.replace(/^\/+/, '');
+  // One cache entry per distinct query, all sharing the `resource` prefix so a
+  // single invalidation clears every page/sort/filter combination at once.
+  const cacheKey = `${resource}:${JSON.stringify(query)}`;
+
+  const fetcher = useCallback(async () => {
+    const r = await api.get(endpoint, { params: query });
+    return Array.isArray(r.data)
+      ? { rows: r.data as any[], total: r.data.length }
+      : { rows: (r.data.items ?? []) as any[], total: (r.data.total ?? 0) as number };
+  }, [endpoint, query]);
+
+  const { data, loading, validating } = useLocalStorageCache(cacheKey, fetcher);
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+
+  // Pages bump `refreshKey` after a create/update/delete. Treat that as the
+  // write signal: drop every cached query for this resource and refetch. The
+  // invalidation bus also reaches other tabs and any other mounted table on
+  // the same resource.
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    invalidateCache(resource);
+  }, [refreshKey, resource]);
 
   const toggleSort = (key: string) => {
     if (sortBy === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -99,6 +135,31 @@ export default function DataTable({
           </div>
         )}
         {filters}
+        {/*
+          Active / Archive switch. A segmented control rather than a checkbox so
+          it is obvious which set is on screen — an archive that looks like the
+          normal list is how records get "deleted twice". Uses logical padding
+          so it mirrors correctly in Arabic.
+        */}
+        {onArchivedChange && (
+          <div className="inline-flex rounded-md border p-0.5" role="group">
+            {[false, true].map((mode) => (
+              <button
+                key={String(mode)}
+                type="button"
+                onClick={() => onArchivedChange(mode)}
+                className={cn(
+                  'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                  archived === mode
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {mode ? t('common.archived') : t('common.active')}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1" />
         {toolbar}
       </div>
@@ -179,7 +240,7 @@ export default function DataTable({
           </Select>
         </div>
         <div className="flex items-center gap-2">
-          <span>
+          <span className={cn('transition-opacity', validating && 'opacity-50')}>
             {t('common.page')} {page} {t('common.of')} {totalPages} · {total}
           </span>
           <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

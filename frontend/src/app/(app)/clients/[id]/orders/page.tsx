@@ -67,7 +67,7 @@ export default function ClientOrdersPage() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-bold">{t('clients.ordersOf', { name: client.name })}</h1>
         <div className="ms-auto">
-          <Button onClick={() => router.push(`/sales-orders?clientId=${client.id}`)}>
+          <Button onClick={() => router.push(`/clients/${client.id}/new-order`)}>
             <ShoppingCart /> {t('clients.createOrder')}
           </Button>
         </div>

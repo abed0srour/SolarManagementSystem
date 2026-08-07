@@ -1,5 +1,5 @@
 'use client';
-import { Users as PageIcon } from 'lucide-react';
+import { Users as PageIcon, RotateCcw } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, Archive, ShoppingCart, Pencil, ClipboardList } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
+import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import Field from '../../../components/form-field';
@@ -33,6 +34,7 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [archived, setArchived] = useState(false);
   const [sort, setSort] = useState('newest');
 
   const openCreate = () => {
@@ -72,11 +74,25 @@ export default function ClientsPage() {
     }
   };
 
+  /** Archiving is reversible: restoring is the exact inverse of the soft delete. */
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/clients/${row.id}/restore`);
+      invalidateCache('clients');
+      toast.success(t('common.restored'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('clients.title')} subtitle={t('subtitles.clients')} />
       <DataTable
         endpoint="/clients"
+        archived={archived}
+        onArchivedChange={setArchived}
         refreshKey={refreshKey}
         initialSearch={searchParams.get('search') ?? undefined}
         extraParams={SORTS[sort]}
@@ -116,12 +132,19 @@ export default function ClientsPage() {
           },
           {
             key: 'actions', label: '',
-            render: (r) => (
+            render: (r) =>
+              archived ? (
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
+                    <RotateCcw />
+                  </Button>
+                </div>
+              ) : (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" title={t('clients.viewOrders')} onClick={(e) => { e.stopPropagation(); router.push(`/clients/${r.id}/orders`); }}>
                   <ClipboardList />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('clients.createOrder')} onClick={(e) => { e.stopPropagation(); router.push(`/sales-orders?clientId=${r.id}`); }}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('clients.createOrder')} onClick={(e) => { e.stopPropagation(); router.push(`/clients/${r.id}/new-order`); }}>
                   <ShoppingCart />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 dark:text-amber-400" title={t('common.edit')} onClick={(e) => { e.stopPropagation(); openEdit(r); }}>
@@ -131,7 +154,7 @@ export default function ClientsPage() {
                   <Archive />
                 </Button>
               </div>
-            ),
+              ),
           },
         ]}
       />
@@ -174,12 +197,16 @@ export default function ClientsPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
+        usagePath={deleteTarget ? `/clients/${deleteTarget.id}/usage` : undefined}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
-            await api.delete(`/clients/${deleteTarget.id}`);
-            toast.success(t('common.deleted'));
+            const { data } = await api.delete(`/clients/${deleteTarget.id}`);
+            // Say which of the two things actually happened — purged is
+            // irreversible, archived is not.
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            invalidateCache('clients');
             setRefreshKey((k) => k + 1);
           } catch (e) {
             toast.error(errMsg(e));

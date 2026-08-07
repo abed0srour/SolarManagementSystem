@@ -101,7 +101,7 @@ export class RefundsService {
     for (const item of dto.items) {
       const invoicedQty = invoice.items
         .filter((i) => i.productId === item.productId)
-        .reduce((s, i) => s + i.quantity, 0);
+        .reduce((s, i) => s + Number(i.quantity), 0);
       const previouslyReturned = await this.prisma.returnItem.aggregate({
         where: {
           productId: item.productId,

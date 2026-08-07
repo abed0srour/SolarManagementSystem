@@ -32,16 +32,22 @@ class CreateProductDto {
   @IsString()
   model?: string;
 
+  // Optional at this layer because services are filed automatically under the
+  // "Services" sub-category. ProductsService rejects a non-service without one.
+  @IsOptional()
   @IsString()
-  subCategoryId: string;
+  subCategoryId?: string;
 
   @IsOptional()
   @IsObject()
   attributes?: Record<string, any>;
 
+  // Optional for stocked products: the first goods receipt sets the real cost
+  // via weighted average. Services still send it, since no purchase ever will.
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  costPrice: number;
+  costPrice?: number;
 
   @IsNumber()
   @Min(0)
@@ -95,7 +101,7 @@ class UpdateProductDto extends CreateProductDto {
 
   @IsOptional()
   @IsString()
-  declare subCategoryId: string;
+  declare subCategoryId?: string;
 
   @IsOptional()
   @IsNumber()
@@ -138,6 +144,33 @@ class BulkPriceDto {
   reason?: string;
 }
 
+/**
+ * One CSV line. Everything is optional at this layer so a malformed row is
+ * reported per-row by the service rather than rejecting the whole file.
+ */
+class ImportRowDto {
+  @IsOptional() @IsString() sku?: string;
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() brand?: string;
+  @IsOptional() @IsString() model?: string;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsString() subCategory?: string;
+  @IsOptional() @IsString() barcode?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsNumber() salePrice?: number;
+  @IsOptional() @IsNumber() costPrice?: number;
+  @IsOptional() @IsNumber() lowStockThreshold?: number;
+  @IsOptional() @IsNumber() warrantyMonths?: number;
+  @IsOptional() @IsBoolean() isService?: boolean;
+}
+
+class ImportDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportRowDto)
+  rows: ImportRowDto[];
+}
+
 class CompatibilityDto {
   @IsString()
   compatibleWithId: string;
@@ -161,6 +194,18 @@ export class ProductsController {
     return this.service.brands();
   }
 
+  // Must stay above `@Get(':id')`, or 'generate-sku' is read as an id.
+  @Get('generate-sku')
+  generateSku() {
+    return this.service.generateSku();
+  }
+
+  /** Tells the confirm dialog whether Delete or Archive applies. */
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.usage(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
@@ -181,9 +226,20 @@ export class ProductsController {
     return this.service.bulkPriceUpdate(user.id, dto.rows, dto.reason);
   }
 
+  @Post('import')
+  importProducts(@CurrentUser() user: AuthUser, @Body() dto: ImportDto) {
+    return this.service.importProducts(user.id, dto.rows);
+  }
+
   @Patch(':id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.service.update(user.id, id, dto);
+  }
+
+  /** Bring an archived record back into the active list. */
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 
   @Delete(':id')

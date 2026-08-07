@@ -11,10 +11,8 @@ import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import LineItemsEditor, { LineItem, emptyLine, toItemsPayload } from '../../../components/line-items-editor';
 import ClientInfoDialog from '../../../components/client-info-dialog';
 import SerialPicker from '../../../components/serial-picker';
-import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
@@ -27,10 +25,6 @@ export default function SalesOrdersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState<any>({});
-  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [statusFilter, setStatusFilter] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [confirmFor, setConfirmFor] = useState<any>(null);
@@ -63,64 +57,12 @@ export default function SalesOrdersPage() {
     }
   };
 
-  const openCreate = (client: any = null) => {
-    setEditing(null);
-    setForm({ client, warehouse: null, discountType: '', discountValue: 0, shippingFee: 0, notes: '' });
-    setLines([emptyLine()]);
-    setOpen(true);
-  };
-
-  // "Create order" from the Clients page lands here with ?clientId=…
+  // Legacy entry point: /sales-orders?clientId=… now redirects to the client's
+  // own new-order page, which is where that flow lives.
   useEffect(() => {
     const clientId = searchParams.get('clientId');
-    if (!clientId) return;
-    api.get(`/clients/${clientId}/brief`).then((r) => openCreate(r.data)).catch(() => openCreate());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
-
-  const openEdit = async (row: any) => {
-    const { data } = await api.get(`/sales-orders/${row.id}`);
-    setEditing(data);
-    setForm({
-      client: data.client,
-      warehouse: data.warehouse,
-      discountType: data.discountType ?? '',
-      discountValue: Number(data.discountValue),
-      shippingFee: Number(data.shippingFee),
-      notes: data.notes ?? '',
-    });
-    setLines(
-      (data.items ?? []).map((i: any) => ({
-        product: { id: i.productId, name: i.product?.name ?? '', sku: i.product?.sku ?? '', salePrice: i.unitPrice, trackSerials: i.product?.trackSerials },
-        quantity: i.quantity,
-        unitPrice: Number(i.unitPrice),
-        discountType: i.discountType ?? '',
-        discountValue: Number(i.discountValue),
-      })),
-    );
-    setOpen(true);
-  };
-
-  const save = async () => {
-    try {
-      const payload = {
-        clientId: form.client?.id,
-        warehouseId: form.warehouse?.id,
-        discountType: form.discountType || undefined,
-        discountValue: form.discountType ? Number(form.discountValue) : undefined,
-        shippingFee: Number(form.shippingFee) || 0,
-        notes: form.notes || undefined,
-        items: toItemsPayload(lines),
-      };
-      if (editing) await api.patch(`/sales-orders/${editing.id}`, payload);
-      else await api.post('/sales-orders', payload);
-      toast.success(t('common.saved'));
-      setOpen(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
+    if (clientId) router.replace(`/clients/${clientId}/new-order`);
+  }, [searchParams, router]);
 
   const openConfirm = async (row: any) => {
     const { data } = await api.get(`/sales-orders/${row.id}`);
@@ -185,7 +127,7 @@ export default function SalesOrdersPage() {
           </>
         }
         toolbar={
-          <Button onClick={() => openCreate()}>
+          <Button onClick={() => router.push('/sales-orders/new')}>
             <Plus /> {t('orders.newSalesOrder')}
           </Button>
         }
@@ -219,7 +161,7 @@ export default function SalesOrdersPage() {
             render: (r) => (
               <div className="flex justify-end gap-1">
                 {r.status === 'PENDING' && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={(e) => { e.stopPropagation(); openEdit(r); }}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={(e) => { e.stopPropagation(); router.push(`/sales-orders/${r.id}/edit`); }}>
                     <Pencil />
                   </Button>
                 )}
@@ -287,47 +229,6 @@ export default function SalesOrdersPage() {
         ]}
       />
 
-      {/* Create / edit */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent wide>
-          <DialogHeader>
-            <DialogTitle>{editing ? editing.number : t('orders.newSalesOrder')}</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Field label={t('common.client')} className="md:col-span-2">
-              <ClientPicker value={form.client} onChange={(c) => setForm({ ...form, client: c })} />
-            </Field>
-            <Field label={t('common.warehouse')} className="md:col-span-2">
-              <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} />
-            </Field>
-            <Field label={`${t('common.discount')} (${t('common.total')})`}>
-              <Select value={form.discountType ?? ''} onChange={(e) => setForm({ ...form, discountType: e.target.value })}>
-                <option value="">{t('common.none')}</option>
-                <option value="PERCENT">{t('common.percent')}</option>
-                <option value="FIXED">{t('common.fixed')}</option>
-              </Select>
-            </Field>
-            {form.discountType && (
-              <Field label={t('common.discount')}>
-                <Input type="number" min={0} value={form.discountValue ?? 0} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} />
-              </Field>
-            )}
-            <Field label={t('common.shipping')}>
-              <Input type="number" min={0} value={form.shippingFee ?? 0} onChange={(e) => setForm({ ...form, shippingFee: e.target.value })} />
-            </Field>
-            <Field label={t('common.notes')}>
-              <Input value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </Field>
-          </div>
-          <LineItemsEditor lines={lines} onChange={setLines} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save} disabled={!form.client || !form.warehouse || toItemsPayload(lines).length === 0 || (editing && editing.status !== 'PENDING')}>
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Confirm w/ serials */}
       <Dialog open={!!confirmFor} onOpenChange={(v) => !v && setConfirmFor(null)}>

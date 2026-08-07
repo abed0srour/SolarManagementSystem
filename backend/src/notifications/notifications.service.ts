@@ -63,7 +63,7 @@ export class NotificationsService {
       select: { id: true, name: true, sku: true, lowStockThreshold: true, stockLevels: { select: { quantity: true } } },
     });
     for (const p of products) {
-      const qty = p.stockLevels.reduce((s, l) => s + l.quantity, 0);
+      const qty = p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0);
       if (qty <= p.lowStockThreshold) {
         await this.notifyOnce('LOW_STOCK', `Low stock: ${p.name} [${p.sku}] — ${qty} left (threshold ${p.lowStockThreshold})`, 'Product', p.id);
       }

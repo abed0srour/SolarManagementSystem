@@ -285,7 +285,7 @@ export class PurchaseOrdersService {
       where: { productId: params.productId },
       _sum: { quantity: true },
     });
-    const onHand = Math.max(agg._sum.quantity ?? 0, 0);
+    const onHand = Math.max(Number(agg._sum.quantity ?? 0), 0);
     const oldCost = Number(product.costPrice);
     const totalQty = onHand + params.receivedQty;
     const newCost =

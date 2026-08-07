@@ -121,7 +121,15 @@ export class InvoicePdfService {
         client: { include: { addresses: true } },
         supplier: true,
         salesOrder: { select: { number: true } },
-        items: { include: { product: { select: { sku: true } } } },
+        // Only top-level lines are billed. A bundle's components hang off their
+        // parent and are printed only when the client asked for a breakdown.
+        items: {
+          where: { parentItemId: null },
+          include: {
+            product: { select: { sku: true } },
+            subItems: { orderBy: { id: 'asc' } },
+          },
+        },
       },
     });
     if (!inv) throw new NotFoundException('Invoice not found');
@@ -134,6 +142,12 @@ export class InvoicePdfService {
     const fonts = { font, bold };
     const width = page.getWidth();
     const money = (n: any) => `$${Number(n).toFixed(2)}`;
+    // Quantities are decimal now (12.5 m of cable), but whole numbers must not
+    // print as "8.000" on a customer's invoice.
+    const qty = (n: any) => {
+      const v = Number(n);
+      return Number.isInteger(v) ? String(v) : String(parseFloat(v.toFixed(3)));
+    };
     const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
       page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
@@ -175,10 +189,34 @@ export class InvoicePdfService {
       }
       const desc = item.description.length > 55 ? item.description.slice(0, 55) + '…' : item.description;
       page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
-      rightAt(String(item.quantity), colQty, y, 10.5, font);
+      rightAt(qty(item.quantity), colQty, y, 10.5, font);
       rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
       rightAt(money(item.lineTotal), colAmount, y, 10.5, font);
       y -= 12;
+
+      /*
+       * A bundle prints as one line by default — the customer sees "AC & DC
+       * Protection Components" and a single price, not thirty fittings. The
+       * breakdown is printed only when the invoice carries the opt-in flag,
+       * and then without prices, because the components' value is already in
+       * the parent's amount and repeating it would look like double billing.
+       */
+      if (inv.showSubItemsOnInvoice && item.subItems?.length) {
+        for (const sub of item.subItems) {
+          if (y < 120) {
+            page = pdf.addPage([595, 842]);
+            y = 780;
+          }
+          const unit = sub.unit ? ` ${sub.unit}` : '';
+          const label = `• ${sub.description}  (${qty(sub.quantity)}${unit})`;
+          page.drawText(label.length > 70 ? label.slice(0, 70) + '…' : label, {
+            x: 62, y, size: 9, font, color: GRAY,
+          });
+          y -= 13;
+        }
+        y -= 4;
+      }
+
       page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
       y -= 20;
     }

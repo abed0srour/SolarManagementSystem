@@ -34,7 +34,7 @@ export class StockService {
       update: {},
       create: { productId, warehouseId, quantity: 0 },
     });
-    if (level.quantity + delta < 0) {
+    if (Number(level.quantity) + delta < 0) {
       const [product, warehouse] = await Promise.all([
         tx.product.findUnique({ where: { id: productId } }),
         tx.warehouse.findUnique({ where: { id: warehouseId } }),
@@ -89,7 +89,7 @@ export class StockService {
       orderBy: { name: 'asc' },
     });
     const rows = products.map((p) => {
-      const totalQty = p.stockLevels.reduce((s, l) => s + l.quantity, 0);
+      const totalQty = p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0);
       const reserved = p.stockLevels.reduce((s, l) => s + l.reserved, 0);
       return { ...p, totalQty, reserved, isLow: totalQty <= p.lowStockThreshold };
     });

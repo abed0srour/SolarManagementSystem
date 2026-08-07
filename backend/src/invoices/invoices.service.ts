@@ -87,12 +87,15 @@ export class InvoicesService {
         productId: i.productId ?? null,
         description: i.description ?? '',
         quantity: i.quantity,
+        unit: i.unit ?? null,
         unitPrice: i.unitPrice,
         discountType: i.discountType ?? null,
         discountValue: i.discountValue ?? 0,
         lineTotal: t.lineTotal,
+        isComposite: i.isComposite ?? false,
         _totals: t,
         _serialNumbers: i.serialNumbers as string[] | undefined,
+        _sourceItemId: i._sourceItemId as string | undefined,
       };
     });
     const totals = calcDocTotals(
@@ -122,9 +125,10 @@ export class InvoicesService {
           discountValue: dto.discountValue ?? 0,
           shippingFee: dto.shippingFee ?? 0,
           notes: dto.notes,
+          showSubItemsOnInvoice: dto.showSubItemsOnInvoice ?? false,
           ...totals,
           createdById: userId,
-          items: { create: built.map(({ _totals, _serialNumbers, ...item }: any) => item) },
+          items: { create: built.map(({ _totals, _serialNumbers, _sourceItemId, ...item }: any) => item) },
         },
       });
 
@@ -159,6 +163,46 @@ export class InvoicesService {
 
     await this.audit.log(userId, 'CREATE', 'Invoice', invoice.id, { number, total: totals.total });
     return this.findOne(invoice.id);
+  }
+
+  /**
+   * Copy a sales order's bundle sub-items onto the freshly created invoice.
+   *
+   * They are attached after the fact rather than inside `create`, because they
+   * must hang off the invoice line that was generated for their parent, whose
+   * id only exists once the invoice is written. They carry a zero line total:
+   * the money is already in the bundle header, and counting it again would
+   * double the invoice.
+   */
+  private async copyBundleSubItems(orderItems: any[], invoiceId: string) {
+    const parents = orderItems.filter((i) => i.isComposite && !i.parentItemId);
+    if (!parents.length) return;
+
+    const invoiceLines = await this.prisma.invoiceItem.findMany({
+      where: { invoiceId, isComposite: true },
+      select: { id: true, description: true },
+    });
+
+    for (const parent of parents) {
+      const children = orderItems.filter((c) => c.parentItemId === parent.id);
+      if (!children.length) continue;
+      const parentLabel = parent.description ?? parent.product?.name ?? 'Item';
+      const invoiceParent = invoiceLines.find((l) => l.description === parentLabel);
+      if (!invoiceParent) continue;
+
+      await this.prisma.invoiceItem.createMany({
+        data: children.map((c) => ({
+          invoiceId,
+          parentItemId: invoiceParent.id,
+          productId: c.productId ?? null,
+          description: c.description ?? c.product?.name ?? 'Component',
+          quantity: c.quantity,
+          unit: c.unit ?? null,
+          unitPrice: c.unitPrice,
+          lineTotal: 0,
+        })),
+      });
+    }
   }
 
   /** Generate a sale invoice directly from a sales order (full or percentage deposit). */
@@ -205,16 +249,27 @@ export class InvoicesService {
       discountType: so.discountType,
       discountValue: Number(so.discountValue),
       shippingFee: Number(so.shippingFee),
-      items: so.items.map((i) => ({
-        productId: i.productId,
-        description: i.description ?? i.product.name,
-        quantity: i.quantity,
-        unitPrice: Number(i.unitPrice),
-        discountType: i.discountType ?? undefined,
-        discountValue: Number(i.discountValue),
-      })),
+      showSubItemsOnInvoice: so.showSubItemsOnInvoice,
+      // Only top-level lines become invoice lines. A bundle's sub-items are
+      // carried across as children of their parent (see linkSubItems below), so
+      // the invoice total counts the bundle once rather than twice.
+      items: so.items
+        .filter((i) => !i.parentItemId)
+        .map((i) => ({
+          productId: i.productId ?? undefined,
+          description: i.description ?? i.product?.name ?? 'Item',
+          quantity: Number(i.quantity),
+          unit: i.unit ?? undefined,
+          unitPrice: Number(i.unitPrice),
+          discountType: i.discountType ?? undefined,
+          discountValue: Number(i.discountValue),
+          isComposite: i.isComposite,
+          _sourceItemId: i.id,
+        })),
       notes: invoicedSoFar > 0 ? `Final invoice for order ${so.number} (previously invoiced: ${invoicedSoFar})` : undefined,
     });
+
+    await this.copyBundleSubItems(so.items, inv.id);
 
     // Link serial units assigned at order confirmation and start their warranty clock
     const orderUnits = await this.prisma.productUnit.findMany({ relationLoadStrategy: 'join',

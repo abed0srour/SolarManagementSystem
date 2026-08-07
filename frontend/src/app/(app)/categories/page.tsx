@@ -1,11 +1,12 @@
 'use client';
 import { FolderTree as PageIcon } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, errMsg } from '../../../lib/api';
+import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
@@ -24,16 +25,17 @@ type DialogState =
 
 export default function CategoriesPage() {
   const t = useTranslations();
-  const [categories, setCategories] = useState<any[] | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dialog, setDialog] = useState<DialogState>(null);
   const [form, setForm] = useState<any>({});
   const [deleteFn, setDeleteFn] = useState<(() => Promise<void>) | null>(null);
 
-  const load = useCallback(() => {
-    api.get('/categories').then((r) => setCategories(r.data));
-  }, []);
-  useEffect(load, [load]);
+  // Cache-first, rendered straight from the cached value so a warm visit paints
+  // with no intermediate state. `refresh` re-fetches from the API and rewrites
+  // localStorage; every mutation below calls it.
+  const { data: categories, refresh: load } = useLocalFirstData<any[]>('categories', () =>
+    api.get('/categories').then((r) => r.data),
+  );
 
   const openDialog = (state: DialogState) => {
     setForm(

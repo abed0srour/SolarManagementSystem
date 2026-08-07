@@ -2,6 +2,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class ClientsService {
@@ -10,8 +11,10 @@ export class ClientsService {
     private audit: AuditService,
   ) {}
 
-  async findAll(query: { search?: string; type?: string; tier?: string; sortBy?: string; sortDir?: string; page?: number; pageSize?: number }) {
-    const where: Prisma.ClientWhereInput = { deletedAt: null };
+  async findAll(query: { search?: string; type?: string; tier?: string; sortBy?: string; sortDir?: string; page?: number; pageSize?: number; archived?: string }) {
+    // `archived=true` shows the archive instead of the active list — the
+    // same query, with the soft-delete filter inverted.
+    const where: Prisma.ClientWhereInput = query.archived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -150,10 +153,60 @@ export class ClientsService {
     return this.prisma.client.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { addresses: true } });
   }
 
-  /** Soft delete — history (invoices, payments) stays intact. */
-  async remove(userId: string, id: string) {
+  /**
+   * Delete a client: permanently when they have no history at all, otherwise
+   * archived so invoices and payments keep resolving.
+   *
+   * `addresses` is excluded — it is captured on the client form itself, so a
+   * client entered by mistake usually has one, and it cascades with the client.
+   * See `common/safe-delete.ts`.
+   */
+  private async clientUsage(id: string) {
+    const [quotations, salesOrders, invoices, payments, refunds, warrantyClaims, serviceJobs, installations] =
+      await this.prisma.$transaction([
+        this.prisma.quotation.count({ where: { clientId: id } }),
+        this.prisma.salesOrder.count({ where: { clientId: id } }),
+        this.prisma.invoice.count({ where: { clientId: id } }),
+        this.prisma.payment.count({ where: { clientId: id } }),
+        this.prisma.refund.count({ where: { clientId: id } }),
+        this.prisma.warrantyClaim.count({ where: { clientId: id } }),
+        this.prisma.serviceJob.count({ where: { clientId: id } }),
+        this.prisma.installation.count({ where: { clientId: id } }),
+      ]);
+    return { quotations, salesOrders, invoices, payments, refunds, warrantyClaims, serviceJobs, installations };
+  }
+
+  /**
+   * Bring an archived client back into active use. Archiving only sets
+   * `deletedAt` and clears `isActive`, so restoring is the exact inverse:
+   * nothing was destroyed, and every document that referenced it still does.
+   */
+  async restore(userId: string, id: string) {
+    const row = await this.prisma.client.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Client not found');
+    if (!row.deletedAt) return { success: true, alreadyActive: true };
+    await this.prisma.client.update({ where: { id }, data: { deletedAt: null, isActive: true } });
+    await this.audit.log(userId, 'RESTORE', 'Client', id);
+    return { success: true, alreadyActive: false };
+  }
+
+  /** Can this be deleted outright? `remove()` re-checks server-side. */
+  async usage(id: string): Promise<UsageReport> {
+    const counts = await this.clientUsage(id);
+    return { used: !isUnused(counts), usedBy: usedBy(counts) };
+  }
+
+  async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const counts = await this.clientUsage(id);
+
+    if (isUnused(counts)) {
+      await this.prisma.client.delete({ where: { id } });
+      await this.audit.log(userId, 'PURGE', 'Client', id);
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+    const used = usedBy(counts);
     await this.prisma.client.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Client', id);
-    return { success: true };
+    await this.audit.log(userId, 'DELETE', 'Client', id, { usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
   }
 }

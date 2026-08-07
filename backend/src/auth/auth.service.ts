@@ -149,6 +149,54 @@ export class AuthService {
     return { success: true };
   }
 
+  /**
+   * The admin's own profile card: identity plus a couple of security facts
+   * worth seeing at a glance. Never returns the password hash.
+   */
+  async profile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, role: true, isActive: true, createdAt: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    const [lastLogin, activeSessions] = await Promise.all([
+      this.prisma.loginHistory.findFirst({
+        where: { userId, success: true },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, ip: true, userAgent: true },
+      }),
+      this.prisma.refreshToken.count({ where: { userId, revokedAt: null, expiresAt: { gt: new Date() } } }),
+    ]);
+    return { ...user, lastLogin, activeSessions };
+  }
+
+  /** Rename the account. Email changes go through the verification-code flow. */
+  async updateProfile(userId: string, data: { name?: string }) {
+    const name = data.name?.trim();
+    if (!name) throw new BadRequestException('Name cannot be empty');
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+    await this.audit.log(userId, 'UPDATE_PROFILE', 'User', userId, { name });
+    return user;
+  }
+
+  /**
+   * Sign out everywhere by revoking every refresh token. The current access
+   * token stays valid until it expires — it is short-lived and unrevocable by
+   * design — so this ends other sessions rather than this one.
+   */
+  async revokeOtherSessions(userId: string) {
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.log(userId, 'REVOKE_SESSIONS', 'User', userId, { count });
+    return { success: true, revoked: count };
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();

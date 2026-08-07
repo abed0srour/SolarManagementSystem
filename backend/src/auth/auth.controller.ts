@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Ip, Post, Query, Headers } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Patch, Post, Query, Headers } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
@@ -38,6 +38,12 @@ class ResetPasswordDto {
   @IsString()
   @MinLength(8)
   newPassword: string;
+}
+
+class UpdateProfileDto {
+  @IsString()
+  @MinLength(1)
+  name: string;
 }
 
 class ChangePasswordDto {
@@ -121,6 +127,21 @@ export class AuthController {
   @Get('login-history')
   loginHistory(@Query() query: any) {
     return this.authService.loginHistory(query);
+  }
+
+  @Get('profile')
+  profile(@CurrentUser() user: AuthUser) {
+    return this.authService.profile(user.id);
+  }
+
+  @Patch('profile')
+  updateProfile(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto) {
+    return this.authService.updateProfile(user.id, dto);
+  }
+
+  @Post('revoke-sessions')
+  revokeSessions(@CurrentUser() user: AuthUser) {
+    return this.authService.revokeOtherSessions(user.id);
   }
 
   @Post('change-password')

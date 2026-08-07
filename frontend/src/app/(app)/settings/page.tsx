@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
+import { setUser } from '../../../lib/auth';
+import { invalidateCache } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -116,6 +118,8 @@ export default function SettingsPage() {
   const saveSetting = async (key: string, value: any) => {
     try {
       await api.put(`/settings/${key}`, value);
+      // Branding and company details are read from cache on every page load.
+      invalidateCache('settings');
       toast.success(t('common.saved'));
     } catch (e) {
       toast.error(errMsg(e));
@@ -179,7 +183,7 @@ export default function SettingsPage() {
     setEm((p) => ({ ...p, busy: true }));
     try {
       const { data } = await api.post('/auth/confirm-email-change', { code: em.code });
-      if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.user) setUser(data.user);
       toast.success(t('common.saved'));
       setEm({ currentPassword: '', newEmail: '', code: '', codeSent: false, busy: false });
     } catch (e) {
@@ -231,6 +235,10 @@ export default function SettingsPage() {
                 </Field>
                 <Field label={t('common.address')} className="md:col-span-2">
                   <Input required value={company.address ?? ''} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
+                </Field>
+                {/* Printed on POS receipts and invoices when set. */}
+                <Field label={t('settings.taxNumber')}>
+                  <Input dir="ltr" value={company.taxNumber ?? ''} onChange={(e) => setCompany({ ...company, taxNumber: e.target.value })} />
                 </Field>
               </div>
               <div className="rounded-md border bg-muted/30 p-4">

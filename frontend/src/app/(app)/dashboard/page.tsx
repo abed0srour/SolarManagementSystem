@@ -1,13 +1,16 @@
 'use client';
-import { LayoutDashboard as PageIcon } from 'lucide-react';
+import { LayoutDashboard as PageIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts';
 import { api, fmtMoney } from '../../../lib/api';
+import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { seriesColors, chartInk } from '../../../lib/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
@@ -24,20 +27,69 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
+type Granularity = 'day' | 'month' | 'year';
+
+/** Local calendar date as yyyy-mm-dd — `toISOString` would shift by the timezone. */
+function iso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function todayIso(): string {
+  return iso(new Date());
+}
+
+/**
+ * Turn a granularity and an anchor date into the inclusive range the API wants.
+ * The server treats `to` as end-of-day, so a single day is from === to.
+ */
+function periodRange(gran: Granularity, anchor: string): { from: string; to: string; label: string } {
+  const d = new Date(`${anchor}T00:00:00`);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+
+  if (gran === 'day') {
+    return { from: anchor, to: anchor, label: d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) };
+  }
+  if (gran === 'month') {
+    // Day 0 of the next month is the last day of this one — handles February.
+    return {
+      from: iso(new Date(y, m, 1)),
+      to: iso(new Date(y, m + 1, 0)),
+      label: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+    };
+  }
+  return { from: iso(new Date(y, 0, 1)), to: iso(new Date(y, 11, 31)), label: String(y) };
+}
+
+/** Step one day, month or year in either direction. */
+function shift(gran: Granularity, anchor: string, dir: -1 | 1): string {
+  const d = new Date(`${anchor}T00:00:00`);
+  if (gran === 'day') d.setDate(d.getDate() + dir);
+  else if (gran === 'month') d.setMonth(d.getMonth() + dir, 1);
+  else d.setFullYear(d.getFullYear() + dir, 0, 1);
+  return iso(d);
+}
+
 export default function DashboardPage() {
   const t = useTranslations();
   const { resolvedTheme } = useTheme();
-  const [days, setDays] = useState(30);
-  const [data, setData] = useState<any>(null);
+  // Granularity plus an anchor date. Every figure on this page — revenue, COGS,
+  // expenses, profit — is already computed from the server's from/to window, so
+  // narrowing to one day needs nothing but the right range.
+  const [gran, setGran] = useState<Granularity>('month');
+  const [anchor, setAnchor] = useState(() => todayIso());
 
   const mode = resolvedTheme === 'dark' ? 'dark' : 'light';
   const colors = seriesColors[mode];
   const ink = chartInk[mode];
 
-  useEffect(() => {
-    const from = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString().slice(0, 10);
-    api.get('/reports/dashboard', { params: { from } }).then((r) => setData(r.data));
-  }, [days]);
+  const { from, to, label } = useMemo(() => periodRange(gran, anchor), [gran, anchor]);
+
+  // Cache-first: a previously viewed period paints immediately, then refreshes
+  // in the background. Each period is its own cache entry.
+  const { data } = useLocalFirstData<any>(`dashboard:${gran}:${from}`, () =>
+    api.get('/reports/dashboard', { params: { from, to } }).then((r) => r.data),
+  );
 
   if (!data)
     return (
@@ -66,13 +118,53 @@ export default function DashboardPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <PageHeader icon={PageIcon} title={t('dashboard.title')} subtitle={t('subtitles.dashboard')} />
-        <Select className="w-44" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-          <option value={7}>{t('dashboard.last7')}</option>
-          <option value={30}>{t('dashboard.last30')}</option>
-          <option value={90}>{t('dashboard.last90')}</option>
-          <option value={365}>{t('dashboard.last365')}</option>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select className="w-32" value={gran} onChange={(e) => setGran(e.target.value as Granularity)}>
+            <option value="day">{t('dashboard.perDay')}</option>
+            <option value="month">{t('dashboard.perMonth')}</option>
+            <option value="year">{t('dashboard.perYear')}</option>
+          </Select>
+
+          {/* Native pickers: a real calendar for a day, a month picker for a month. */}
+          {gran === 'day' && (
+            <Input type="date" className="w-40" value={anchor} onChange={(e) => e.target.value && setAnchor(e.target.value)} />
+          )}
+          {gran === 'month' && (
+            <Input
+              type="month"
+              className="w-36"
+              value={anchor.slice(0, 7)}
+              onChange={(e) => e.target.value && setAnchor(`${e.target.value}-01`)}
+            />
+          )}
+          {gran === 'year' && (
+            <Input
+              type="number"
+              className="w-24 text-center tabular-nums"
+              value={anchor.slice(0, 4)}
+              onChange={(e) => e.target.value.length === 4 && setAnchor(`${e.target.value}-01-01`)}
+            />
+          )}
+
+          {/* Step through periods without reaching for the picker each time. */}
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-9 w-9" title={t('dashboard.previousPeriod')} onClick={() => setAnchor(shift(gran, anchor, -1))}>
+              <ChevronLeft className="rtl:rotate-180" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-9 w-9" title={t('dashboard.nextPeriod')} onClick={() => setAnchor(shift(gran, anchor, 1))}>
+              <ChevronRight className="rtl:rotate-180" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-9" onClick={() => setAnchor(todayIso())}>
+              {t('dashboard.today')}
+            </Button>
+          </div>
+        </div>
       </div>
+
+      {/* Spells out exactly which period every figure below covers. */}
+      <p className="text-sm text-muted-foreground">
+        {t('dashboard.showingPeriod')}: <span className="font-medium text-foreground">{label}</span>
+      </p>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label={t('dashboard.revenue')} value={fmtMoney(k.revenue)} sub={t('dashboard.invoicesCount', { count: k.invoiceCount })} />
