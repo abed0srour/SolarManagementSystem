@@ -1,14 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { randomBytes } from 'crypto';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
 import { UploadsController } from './uploads.controller';
 import { UploadsService } from './uploads.service';
-
-const UPLOAD_DIR = join(process.cwd(), 'uploads');
-if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_MIME = [
   'image/jpeg',
@@ -23,16 +17,17 @@ const ALLOWED_MIME = [
   'text/csv',
 ];
 
+/**
+ * Files are buffered in memory and handed to StorageService, rather than written
+ * straight to a directory by multer.
+ *
+ * Serverless has no writable working directory, so `diskStorage` would fail
+ * there — and the 10 MB cap already bounds what a request can hold in memory.
+ */
 @Module({
   imports: [
     MulterModule.register({
-      storage: diskStorage({
-        destination: UPLOAD_DIR,
-        filename: (_req, file, cb) => {
-          const unique = randomBytes(8).toString('hex');
-          cb(null, `${Date.now()}-${unique}${extname(file.originalname).toLowerCase()}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
       fileFilter: (_req, file, cb) => {
         if (ALLOWED_MIME.includes(file.mimetype)) cb(null, true);

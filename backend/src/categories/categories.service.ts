@@ -1,7 +1,7 @@
 ﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
-import { isUnused, SafeDeleteResult, usedBy } from '../common/safe-delete';
+import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class CategoriesService {
@@ -33,6 +33,36 @@ export class CategoriesService {
     const cat = await this.prisma.category.update({ where: { id }, data });
     await this.audit.log(userId, 'UPDATE', 'Category', id, data);
     return cat;
+  }
+
+  /**
+   * What the confirm dialog needs to decide between Delete and Archive.
+   * `deleteCategory` re-checks all of this server-side.
+   */
+  async categoryUsage(id: string): Promise<UsageReport> {
+    const [liveSubs, archivedSubs] = await Promise.all([
+      this.prisma.subCategory.count({ where: { categoryId: id, deletedAt: null } }),
+      this.prisma.subCategory.count({ where: { categoryId: id } }),
+    ]);
+    const counts = { subCategories: archivedSubs };
+    return {
+      used: !isUnused(counts),
+      usedBy: usedBy(counts),
+      blockedReason: liveSubs > 0 ? 'HAS_SUBCATEGORIES' : undefined,
+    };
+  }
+
+  async subCategoryUsage(id: string): Promise<UsageReport> {
+    const [liveProducts, archivedProducts] = await Promise.all([
+      this.prisma.product.count({ where: { subCategoryId: id, deletedAt: null } }),
+      this.prisma.product.count({ where: { subCategoryId: id } }),
+    ]);
+    const counts = { products: archivedProducts };
+    return {
+      used: !isUnused(counts),
+      usedBy: usedBy(counts),
+      blockedReason: liveProducts > 0 ? 'HAS_PRODUCTS' : undefined,
+    };
   }
 
   /**

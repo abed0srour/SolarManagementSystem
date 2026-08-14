@@ -81,8 +81,19 @@ export class QuotationsController {
     return this.service.convertToOrder(user.id, id, dto.warehouseId);
   }
 
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.usage(id);
+  }
+
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.remove(user.id, id);
+  }
+
+  /** Bring an archived record back into the active list. */
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 }

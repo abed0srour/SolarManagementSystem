@@ -8,7 +8,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import Field from '../../../components/form-field';
 import { ClientPicker, SupplierPicker, InvoicePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
@@ -27,7 +27,6 @@ export default function PaymentsPage() {
   const [directionFilter, setDirectionFilter] = useState('');
   const [dueSchedules, setDueSchedules] = useState<any[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/payments/due-schedules').then((r) => setDueSchedules(r.data)).catch(() => {});
@@ -75,8 +74,14 @@ export default function PaymentsPage() {
               <TableBody>
                 {dueSchedules.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-mono text-xs">{s.invoice?.number}</TableCell>
-                    <TableCell>{s.invoice?.client?.name}</TableCell>
+                    <TableCell>
+                      <EntityLink href={linkTo.invoice(s.invoiceId ?? s.invoice?.id)} mono>{s.invoice?.number}</EntityLink>
+                    </TableCell>
+                    <TableCell>
+                      <EntityLink href={linkTo.client(s.invoice?.clientId ?? s.invoice?.client?.id)}>
+                        {s.invoice?.client?.name}
+                      </EntityLink>
+                    </TableCell>
                     <TableCell>#{s.installmentNo}</TableCell>
                     <TableCell>
                       {fmtDate(s.dueDate)} {s.isOverdue && <Badge variant="destructive">{t('status.OVERDUE')}</Badge>}
@@ -114,11 +119,35 @@ export default function PaymentsPage() {
           },
           {
             key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`,
-            render: (r) => r.client?.name && r.clientId ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
-            ) : (r.supplier?.name ?? '—'),
+            render: (r) =>
+              r.clientId ? (
+                <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>
+              ) : (
+                r.supplier?.name ?? <span className="text-muted-foreground">—</span>
+              ),
           },
-          { key: 'invoice', label: t('payments.invoice'), render: (r) => r.invoice?.number ?? '—' },
+          {
+            /*
+             * A payment settles an invoice, but the order is what staff and
+             * customers name out loud, so it leads and the invoice sits under it.
+             */
+            key: 'order', label: t('nav.salesOrders'),
+            render: (r) =>
+              r.invoice ? (
+                <div className="leading-tight">
+                  <EntityLink href={linkTo.salesOrder(r.invoice.salesOrder?.id)} mono>
+                    {r.invoice.salesOrder?.number}
+                  </EntityLink>
+                  <div>
+                    <EntityLink href={linkTo.invoice(r.invoiceId)} mono className="text-[11px] text-muted-foreground hover:text-primary">
+                      {r.invoice.number}
+                    </EntityLink>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
+          },
           { key: 'method', label: t('common.method'), render: (r) => t(`payments.${r.method}`) },
           { key: 'paymentDate', label: t('common.date'), render: (r) => fmtDate(r.paymentDate) },
           { key: 'amount', label: t('common.amount'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.amount, r.currency)}</span> },
@@ -185,8 +214,6 @@ export default function PaymentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
 
       <ConfirmDialog
         open={!!deleteTarget}

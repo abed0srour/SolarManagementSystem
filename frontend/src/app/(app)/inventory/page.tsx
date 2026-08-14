@@ -4,11 +4,12 @@ import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, ArrowLeftRight, SlidersHorizontal } from 'lucide-react';
+import { Plus, ArrowLeftRight, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtDate, fmtDateTime } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
+import ConfirmDialog from '../../../components/confirm-dialog';
 import { ProductPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -24,6 +25,7 @@ export default function InventoryPage() {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [whOpen, setWhOpen] = useState(false);
+  const [deleteWh, setDeleteWh] = useState<any>(null);
   const [form, setForm] = useState<any>({});
 
   const loadWh = () => api.get('/inventory/warehouses').then((r) => setWarehouses(r.data));
@@ -38,6 +40,11 @@ export default function InventoryPage() {
         warehouseId: form.warehouse?.id,
         delta: Number(form.delta),
         reason: form.reason,
+        // Blank means "same as current average", which is the no-op case.
+        unitCost:
+          Number(form.delta) > 0 && form.unitCost !== '' && form.unitCost !== undefined
+            ? Number(form.unitCost)
+            : undefined,
       });
       toast.success(t('common.saved'));
       setAdjustOpen(false);
@@ -186,6 +193,19 @@ export default function InventoryPage() {
                   <span className="font-medium">{w.name}</span>
                   {w.isDefault && <Badge>{t('inventory.default')}</Badge>}
                   <span className="text-sm text-muted-foreground">{w.address}</span>
+                  <div className="flex-1" />
+                  {/* The default warehouse and the last one standing cannot be
+                      removed — the server enforces both, so no button here. */}
+                  {!w.isDefault && warehouses.length > 1 && (
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteWh(w)}
+                      title={t('common.delete')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -200,7 +220,17 @@ export default function InventoryPage() {
           <div className="space-y-3">
             <Field label={t('common.product')}><ProductPicker value={form.product ?? null} onChange={(p) => setForm({ ...form, product: p })} /></Field>
             <Field label={t('common.warehouse')}><WarehousePicker value={form.warehouse ?? null} onChange={(w) => setForm({ ...form, warehouse: w })} /></Field>
-            <Field label={t('inventory.delta')}><Input type="number" value={form.delta ?? ''} onChange={(e) => setForm({ ...form, delta: e.target.value })} /></Field>
+            <Field label={t('inventory.delta')}><Input type="number" step="0.001" value={form.delta ?? ''} onChange={(e) => setForm({ ...form, delta: e.target.value })} /></Field>
+            {/* Only offered when adding: removing units never moves the average cost. */}
+            {Number(form.delta) > 0 && (
+              <Field label={t('inventory.unitCost')} hint={t('inventory.unitCostHint')}>
+                <Input
+                  type="number" step="0.01" min="0" placeholder={t('inventory.unitCostPlaceholder')}
+                  value={form.unitCost ?? ''}
+                  onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
+                />
+              </Field>
+            )}
             <Field label={t('products.reason')}><Input value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
           </div>
           <DialogFooter>
@@ -249,6 +279,23 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteWh}
+        onOpenChange={(o) => !o && setDeleteWh(null)}
+        requireText={t('common.deleteWord')}
+        usagePath={deleteWh ? `/inventory/warehouses/${deleteWh.id}/usage` : undefined}
+        onConfirm={async () => {
+          try {
+            const { data } = await api.delete(`/inventory/warehouses/${deleteWh.id}`);
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            loadWh();
+            setRefreshKey((k) => k + 1);
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
     </div>
   );
 }

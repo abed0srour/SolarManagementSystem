@@ -83,4 +83,10 @@ export class ExpensesController {
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.remove(user.id, id);
   }
+
+  /** Bring an archived record back into the active list. */
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
+  }
 }

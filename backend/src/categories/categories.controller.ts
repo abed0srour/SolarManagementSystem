@@ -78,6 +78,16 @@ export class CategoriesController {
     return this.service.updateCategory(user.id, id, dto);
   }
 
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.categoryUsage(id);
+  }
+
+  @Get('sub/:id/usage')
+  subUsage(@Param('id') id: string) {
+    return this.service.subCategoryUsage(id);
+  }
+
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.deleteCategory(user.id, id);

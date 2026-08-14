@@ -30,7 +30,7 @@ export class ServiceJobsService {
     return this.prisma.serviceJob
       .findMany({ relationLoadStrategy: 'join',
         where,
-        include: { client: { select: { name: true } }, salesOrder: { select: { number: true } } },
+        include: { client: { select: { id: true, name: true } }, salesOrder: { select: { id: true, number: true } } },
         orderBy: [{ scheduledDate: 'asc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,

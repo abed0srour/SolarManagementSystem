@@ -34,6 +34,10 @@ export class PaymentsService {
         { reference: { contains: query.search, mode: 'insensitive' } },
         { client: { name: { contains: query.search, mode: 'insensitive' } } },
         { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+        // Staff look a receipt up by the document the customer quotes at the
+        // counter, which is the order or invoice number, not the payment number.
+        { invoice: { number: { contains: query.search, mode: 'insensitive' } } },
+        { invoice: { salesOrder: { number: { contains: query.search, mode: 'insensitive' } } } },
       ];
     }
     const page = Number(query.page) || 1;

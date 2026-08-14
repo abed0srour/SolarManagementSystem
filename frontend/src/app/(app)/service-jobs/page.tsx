@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
 import { api, errMsg, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import { ClientPicker } from '../../../components/entity-picker';
@@ -90,7 +91,7 @@ export default function ServiceJobsPage() {
           { key: 'type', label: t('serviceJobs.jobType'), render: (r) => t(`serviceJobs.${r.type}`) },
           { key: 'technicianName', label: t('serviceJobs.technician') },
           { key: 'scheduledDate', label: t('serviceJobs.scheduledDate'), render: (r) => fmtDate(r.scheduledDate) },
-          { key: 'salesOrder', label: t('orders.salesTitle'), render: (r) => r.salesOrder?.number ?? '—' },
+          { key: 'salesOrder', label: t('orders.salesTitle'), render: (r) => <EntityLink href={linkTo.salesOrder(r.salesOrderId ?? r.salesOrder?.id)} mono>{r.salesOrder?.number}</EntityLink> },
           { key: 'status', label: t('common.status'), render: (r) => <StatusChip status={r.status} /> },
         ]}
       />

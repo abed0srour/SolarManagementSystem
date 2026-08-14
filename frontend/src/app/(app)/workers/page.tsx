@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { HardHat as PageIcon, Plus, Pencil, Archive, CalendarPlus, Wallet } from 'lucide-react';
+import { HardHat as PageIcon, Plus, Pencil, Archive, CalendarPlus, RotateCcw } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -186,7 +186,7 @@ export default function WorkersPage() {
               archived ? (
                 <div className="flex justify-end">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={() => restore(r)}>
-                    <Wallet />
+                    <RotateCcw />
                   </Button>
                 </div>
               ) : (

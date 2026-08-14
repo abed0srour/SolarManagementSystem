@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Eye, Plus } from 'lucide-react';
 import { api, errMsg, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import { ClientPicker, ProductPicker } from '../../../components/entity-picker';
@@ -135,7 +136,7 @@ export default function WarrantyPage() {
               { key: 'product', label: t('common.product'), render: (r) => `${r.product?.name} [${r.product?.sku}]` },
               { key: 'client', label: t('common.client'), render: (r) => r.invoice?.client?.name ?? '—' },
               { key: 'phone', label: t('common.phone'), render: (r) => r.invoice?.client?.phone ?? '—' },
-              { key: 'invoice', label: t('payments.invoice'), render: (r) => r.invoice?.number ?? '—' },
+              { key: 'invoice', label: t('payments.invoice'), render: (r) => <EntityLink href={linkTo.invoice(r.invoiceId ?? r.invoice?.id)} mono>{r.invoice?.number}</EntityLink> },
               { key: 'warrantyEndDate', label: t('warranty.warrantyEnd'), render: (r) => fmtDate(r.warrantyEndDate) },
             ]}
           />

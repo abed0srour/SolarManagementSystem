@@ -9,7 +9,7 @@ import { Check, X, PackageCheck, Eye, ShoppingCart, History } from 'lucide-react
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import Field from '../../../components/form-field';
 import { WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
@@ -26,7 +26,6 @@ export default function RefundsPage() {
   const [completeFor, setCompleteFor] = useState<any>(null);
   const [completeWh, setCompleteWh] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState('');
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
   const [orderBefore, setOrderBefore] = useState<any>(null);
 
   // Order items are never mutated by a refund, so the order document IS the
@@ -82,13 +81,11 @@ export default function RefundsPage() {
           { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           {
             key: 'order', label: t('nav.salesOrders'), className: 'w-28',
-            render: (r) => <span className="font-mono text-xs">{r.invoice?.salesOrder?.number ?? '—'}</span>,
+            render: (r) => <EntityLink href={linkTo.salesOrder(r.invoice?.salesOrder?.id)} mono>{r.invoice?.salesOrder?.number}</EntityLink>,
           },
           {
             key: 'client', label: t('common.client'),
-            render: (r) => r.client?.name ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
-            ) : '—',
+            render: (r) => <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>,
           },
           { key: 'createdAt', label: t('common.date'), className: 'w-24', render: (r) => fmtDate(r.createdAt) },
           {
@@ -248,8 +245,6 @@ export default function RefundsPage() {
           )}
         </DialogContent>
       </Dialog>
-
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
 
       {/* Complete refund */}
       <Dialog open={!!completeFor} onOpenChange={(v) => !v && setCompleteFor(null)}>

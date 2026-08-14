@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
 import { round2 } from '../common/calc';
+import { SafeDeleteResult } from '../common/safe-delete';
 
 @Injectable()
 export class ExpensesService {
@@ -13,8 +14,10 @@ export class ExpensesService {
     private numbering: NumberingService,
   ) {}
 
-  findAll(query: { category?: string; from?: string; to?: string; search?: string; page?: number; pageSize?: number }) {
-    const where: Prisma.ExpenseWhereInput = { deletedAt: null };
+  findAll(query: { category?: string; from?: string; to?: string; search?: string; page?: number; pageSize?: number; archived?: string }) {
+    // `archived=true` shows the archive instead of the active list.
+    const where: Prisma.ExpenseWhereInput =
+      query.archived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
     if (query.category) where.category = query.category as any;
     if (query.from || query.to) {
       where.expenseDate = {
@@ -105,9 +108,30 @@ export class ExpensesService {
     return expense;
   }
 
-  async remove(userId: string, id: string) {
+  /**
+   * Expenses are always archived, never purged.
+   *
+   * Nothing in the database points at an expense, so the usual "nothing
+   * references it, delete it for real" rule would purge every one. But an
+   * expense is money that actually left the business, and reports already
+   * exclude archived rows — so archiving costs nothing in the numbers and buys
+   * back a wrong deletion, which purging cannot.
+   */
+  async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const expense = await this.prisma.expense.findUnique({ where: { id } });
+    if (!expense) throw new NotFoundException('Expense not found');
     await this.prisma.expense.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'Expense', id);
-    return { deleted: true };
+    await this.audit.log(userId, 'DELETE', 'Expense', id, { number: expense.number });
+    return { success: true, mode: 'ARCHIVED', usedBy: {} };
+  }
+
+  /** Bring an archived expense back into the active list — and back into reports. */
+  async restore(userId: string, id: string) {
+    const expense = await this.prisma.expense.findUnique({ where: { id } });
+    if (!expense) throw new NotFoundException('Expense not found');
+    if (!expense.deletedAt) return { success: true, alreadyActive: true };
+    await this.prisma.expense.update({ where: { id }, data: { deletedAt: null } });
+    await this.audit.log(userId, 'RESTORE', 'Expense', id, { number: expense.number });
+    return { success: true, alreadyActive: false };
   }
 }

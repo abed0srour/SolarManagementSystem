@@ -37,6 +37,12 @@ export interface UsageReport {
   used: boolean;
   /** Non-zero business references, e.g. `{ invoiceItems: 3 }`. */
   usedBy: Record<string, number>;
+  /**
+   * Set when the record cannot be removed at all — not even archived — such as
+   * a category whose sub-categories are still live. Without this the dialog
+   * would offer Archive and only discover the refusal after the user confirmed.
+   */
+  blockedReason?: string;
 }
 
 export interface SafeDeleteResult {

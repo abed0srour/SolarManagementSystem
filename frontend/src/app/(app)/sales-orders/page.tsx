@@ -11,7 +11,7 @@ import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import SerialPicker from '../../../components/serial-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -32,7 +32,6 @@ export default function SalesOrdersPage() {
   const [deliverFor, setDeliverFor] = useState<any>(null);
   const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
   const [cancelTarget, setCancelTarget] = useState<any>(null);
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<any>(null);
   const [payForm, setPayForm] = useState<any>({});
 
@@ -135,11 +134,7 @@ export default function SalesOrdersPage() {
           { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           {
             key: 'client', label: t('common.client'),
-            render: (r) => r.client?.name ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>
-                {r.client.name}
-              </button>
-            ) : '—',
+            render: (r) => <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>,
           },
           { key: 'orderDate', label: t('common.date'), className: 'w-24 whitespace-nowrap', render: (r) => fmtDate(r.orderDate) },
           { key: 'total', label: t('common.total'), className: 'w-28 text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total)}</span> },
@@ -218,7 +213,7 @@ export default function SalesOrdersPage() {
                     <MessageCircle />
                   </Button>
                 )}
-                {!['CANCELLED', 'DELIVERED'].includes(r.status) && (
+                {r.cancellable && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title={t('orders.cancelOrder')} onClick={(e) => { e.stopPropagation(); setCancelTarget(r); }}>
                     <XCircle />
                   </Button>
@@ -323,8 +318,6 @@ export default function SalesOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
 
       <ConfirmDialog
         open={!!cancelTarget}

@@ -1,21 +1,56 @@
 ﻿import { PrismaClient, AttributeType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { randomInt } from 'crypto';
 
 const prisma = new PrismaClient();
 
-const ADMIN_EMAIL = 'abd.srour313@gmail.com';
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'abd.srour313@gmail.com';
 const LEGACY_ADMIN_EMAIL = 'admin@solarstore.local';
+
+/**
+ * The admin password comes from the environment.
+ *
+ * It used to be hardcoded, which meant every deployment of this system shipped
+ * with the same known password — and re-running the seed silently reset a
+ * changed password back to it. Generating a random one instead makes the
+ * insecure case impossible: either the operator chose the password, or nobody
+ * knows it but them, and it is printed once here.
+ */
+function resolveAdminPassword(): { password: string; generated: boolean } {
+  const fromEnv = process.env.SEED_ADMIN_PASSWORD;
+  if (fromEnv) {
+    if (fromEnv.length < 8) throw new Error('SEED_ADMIN_PASSWORD must be at least 8 characters');
+    return { password: fromEnv, generated: false };
+  }
+  // Ambiguity-free alphabet: this gets read off a terminal and typed by hand.
+  const alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const password = Array.from({ length: 20 }, () => alphabet[randomInt(alphabet.length)]).join('');
+  return { password, generated: true };
+}
 
 async function main() {
   // Admin user — the legacy admin (if present) is renamed in place so all of
   // its history (orders, audit logs, …) stays attached to the same user row.
-  const passwordHash = await bcrypt.hash('admin123', 10);
   const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
   const legacy = await prisma.user.findUnique({ where: { email: LEGACY_ADMIN_EMAIL } });
+  const existing = admin ?? legacy;
+
+  // The seed is re-run to add reference data, not to reset credentials. An
+  // existing admin keeps the password they chose unless SEED_ADMIN_PASSWORD
+  // explicitly asks otherwise — silently reverting it would lock the owner out
+  // of an account they had already secured.
+  const resetPassword = !existing || !!process.env.SEED_ADMIN_PASSWORD;
+  const { password: adminPassword, generated } = resetPassword
+    ? resolveAdminPassword()
+    : { password: '', generated: false };
+  const credentials = resetPassword
+    ? { passwordHash: await bcrypt.hash(adminPassword, 10) }
+    : {};
+
   if (admin) {
     await prisma.user.update({
       where: { id: admin.id },
-      data: { passwordHash, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+      data: { ...credentials, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
     });
     if (legacy) {
       // Both exist: keep the new one, remove the legacy account (fall back to
@@ -29,10 +64,26 @@ async function main() {
   } else if (legacy) {
     await prisma.user.update({
       where: { id: legacy.id },
-      data: { email: ADMIN_EMAIL, passwordHash, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+      data: { ...credentials, email: ADMIN_EMAIL, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
     });
   } else {
-    await prisma.user.create({ data: { email: ADMIN_EMAIL, passwordHash, name: 'Admin', role: 'ADMIN' } });
+    await prisma.user.create({
+      data: { email: ADMIN_EMAIL, passwordHash: credentials.passwordHash!, name: 'Admin', role: 'ADMIN' },
+    });
+  }
+
+  if (resetPassword && generated) {
+    // Printed once, never stored anywhere else. Change it after first login.
+    console.log('\n' + '='.repeat(64));
+    console.log(`  Admin account: ${ADMIN_EMAIL}`);
+    console.log(`  Generated password: ${adminPassword}`);
+    console.log('  Save it now — it is not recoverable, and this is the only');
+    console.log('  time it is shown. Set SEED_ADMIN_PASSWORD to choose your own.');
+    console.log('='.repeat(64) + '\n');
+  } else if (resetPassword) {
+    console.log(`Admin account ${ADMIN_EMAIL} set to the password in SEED_ADMIN_PASSWORD.`);
+  } else {
+    console.log(`Admin account ${ADMIN_EMAIL} already exists — password left unchanged.`);
   }
 
   // Default warehouse

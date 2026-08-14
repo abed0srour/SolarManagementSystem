@@ -4,14 +4,14 @@ import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, ArrowRightCircle, Trash2 } from 'lucide-react';
+import { Plus, ArrowRightCircle, Archive, RotateCcw } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, toItemsPayload } from '../../../components/line-items-editor';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -30,7 +30,7 @@ export default function QuotationsPage() {
   const [convertFor, setConvertFor] = useState<any>(null);
   const [convertWh, setConvertWh] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
+  const [archived, setArchived] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
@@ -83,6 +83,17 @@ export default function QuotationsPage() {
     }
   };
 
+  /** Archiving is reversible: restoring is the exact inverse of the soft delete. */
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/quotations/${row.id}/restore`);
+      toast.success(t('common.restored'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   const convert = async () => {
     try {
       await api.post(`/quotations/${convertFor.id}/convert`, { warehouseId: convertWh?.id });
@@ -101,8 +112,11 @@ export default function QuotationsPage() {
       <DataTable
         endpoint="/quotations"
         refreshKey={refreshKey}
+        archived={archived}
+        onArchivedChange={setArchived}
         extraParams={statusFilter ? { status: statusFilter } : undefined}
-        onRowClick={openEdit}
+        // Archived rows are read-only — restore before editing.
+        onRowClick={archived ? undefined : openEdit}
         filters={
           <Select className="w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
@@ -120,9 +134,7 @@ export default function QuotationsPage() {
           { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           {
             key: 'client', label: t('common.client'),
-            render: (r) => r.client?.name ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
-            ) : '—',
+            render: (r) => <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>,
           },
           { key: 'createdAt', label: t('common.date'), render: (r) => fmtDate(r.createdAt) },
           { key: 'validUntil', label: t('quotations.validUntil'), render: (r) => fmtDate(r.validUntil) },
@@ -132,14 +144,22 @@ export default function QuotationsPage() {
             key: 'actions', label: '',
             render: (r) => (
               <div className="flex justify-end gap-1">
-                {['DRAFT', 'SENT', 'ACCEPTED'].includes(r.status) && r.salesOrders?.length === 0 && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('quotations.convert')} onClick={(e) => { e.stopPropagation(); setConvertFor(r); }}>
-                    <ArrowRightCircle />
+                {archived ? (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
+                    <RotateCcw />
                   </Button>
+                ) : (
+                  <>
+                    {['DRAFT', 'SENT', 'ACCEPTED'].includes(r.status) && r.salesOrders?.length === 0 && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('quotations.convert')} onClick={(e) => { e.stopPropagation(); setConvertFor(r); }}>
+                        <ArrowRightCircle />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                      <Archive />
+                    </Button>
+                  </>
                 )}
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                  <Trash2 />
-                </Button>
               </div>
             ),
           },
@@ -203,16 +223,17 @@ export default function QuotationsPage() {
         </DialogContent>
       </Dialog>
 
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
-
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         requireText={t('common.deleteWord')}
+        usagePath={deleteTarget ? `/quotations/${deleteTarget.id}/usage` : undefined}
         onConfirm={async () => {
           try {
-            await api.delete(`/quotations/${deleteTarget.id}`);
-            toast.success(t('common.deleted'));
+            const { data } = await api.delete(`/quotations/${deleteTarget.id}`);
+            // A quotation nobody accepted is deleted outright; an accepted one is
+            // archived. Say which actually happened.
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
             setRefreshKey((k) => k + 1);
           } catch (e) {
             toast.error(errMsg(e));

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
 import { calcDocTotals, calcLine, round2 } from '../common/calc';
+import { buildCompositeItems, writeSubItems } from '../common/composite-items';
 
 @Injectable()
 export class InvoicesService {
@@ -60,7 +61,13 @@ export class InvoicesService {
         supplier: true,
         salesOrder: { select: { id: true, number: true } },
         purchaseOrder: { select: { id: true, number: true } },
-        items: { include: { product: { select: { sku: true, name: true } } } },
+        items: {
+          where: { parentItemId: null },
+          include: {
+            product: { select: { sku: true, name: true } },
+            subItems: { include: { product: { select: { sku: true, name: true } } } },
+          },
+        },
         payments: { orderBy: { paymentDate: 'desc' }, include: { createdBy: { select: { name: true } } } },
         schedules: { orderBy: { installmentNo: 'asc' } },
         units: { select: { id: true, serialNumber: true, productId: true, warrantyEndDate: true } },
@@ -81,23 +88,16 @@ export class InvoicesService {
     if (isSale && !dto.clientId) throw new BadRequestException('Sale invoices require a client');
     if (!isSale && !dto.supplierId) throw new BadRequestException('Purchase invoices require a supplier');
 
-    const built = dto.items.map((i: any) => {
-      const t = calcLine(i);
-      return {
-        productId: i.productId ?? null,
-        description: i.description ?? '',
-        quantity: i.quantity,
-        unit: i.unit ?? null,
-        unitPrice: i.unitPrice,
-        discountType: i.discountType ?? null,
-        discountValue: i.discountValue ?? 0,
-        lineTotal: t.lineTotal,
-        isComposite: i.isComposite ?? false,
-        _totals: t,
-        _serialNumbers: i.serialNumbers as string[] | undefined,
-        _sourceItemId: i._sourceItemId as string | undefined,
-      };
-    });
+    // A purchase invoice prices its lines at cost, a sale invoice at sale price.
+    const lines = await buildCompositeItems(this.prisma, dto.items, isSale ? 'salePrice' : 'costPrice');
+    const built = lines.map((line, idx) => ({
+      ...line,
+      // InvoiceItem has no autoPrice column — the bundle price is already resolved.
+      autoPrice: undefined,
+      description: line.description ?? '',
+      _serialNumbers: dto.items[idx].serialNumbers as string[] | undefined,
+      _sourceItemId: dto.items[idx]._sourceItemId as string | undefined,
+    }));
     const totals = calcDocTotals(
       built.map((b: any) => b._totals),
       dto.discountType,
@@ -128,9 +128,15 @@ export class InvoicesService {
           showSubItemsOnInvoice: dto.showSubItemsOnInvoice ?? false,
           ...totals,
           createdById: userId,
-          items: { create: built.map(({ _totals, _serialNumbers, _sourceItemId, ...item }: any) => item) },
+          items: {
+            create: built.map(
+              ({ _totals, _subItems, _serialNumbers, _sourceItemId, autoPrice, ...item }: any) => item,
+            ),
+          },
         },
       });
+
+      await writeSubItems(tx.invoiceItem, 'invoiceId', inv.id, built as any);
 
       // Link serial-numbered units and start warranty
       for (const b of built) {
@@ -264,6 +270,10 @@ export class InvoicesService {
           discountType: i.discountType ?? undefined,
           discountValue: Number(i.discountValue),
           isComposite: i.isComposite,
+          // The order's price is the agreed price. Components are copied
+          // afterwards by copyBundleSubItems, so re-deriving the bundle price
+          // here would read an empty component list and bill zero.
+          autoPrice: false,
           _sourceItemId: i.id,
         })),
       notes: invoicedSoFar > 0 ? `Final invoice for order ${so.number} (previously invoiced: ${invoicedSoFar})` : undefined,

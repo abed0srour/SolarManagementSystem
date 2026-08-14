@@ -30,7 +30,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
   const t = useTranslations();
   const [busy, setBusy] = useState(false);
   const [typed, setTyped] = useState('');
-  const [usage, setUsage] = useState<{ used: boolean; usedBy: Record<string, number> } | null>(null);
+  const [usage, setUsage] = useState<{ used: boolean; usedBy: Record<string, number>; blockedReason?: string } | null>(null);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
@@ -53,8 +53,15 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
     };
   }, [open, usagePath]);
 
+  /**
+   * Some records cannot be removed at all — a category still holding live
+   * sub-categories, say. Saying so up front beats letting the user type the
+   * confirmation word and then rejecting it.
+   */
+  const blockedReason = usage?.blockedReason;
+
   /** Unused records are deleted outright, so the archive ceremony is skipped. */
-  const canDelete = usage !== null && !usage.used;
+  const canDelete = usage !== null && !usage.used && !blockedReason;
 
   const entered = typed.trim();
   // A deletable record needs no typed confirmation — there is no history to lose.
@@ -103,9 +110,11 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
               <DialogDescription>
                 {checking
                   ? t('common.loading')
-                  : canDelete
-                    ? t('common.deleteForeverDescription')
-                    : (description ?? t('common.confirmDelete'))}
+                  : blockedReason
+                    ? t('common.blocked.' + blockedReason)
+                    : canDelete
+                      ? t('common.deleteForeverDescription')
+                      : (description ?? t('common.confirmDelete'))}
               </DialogDescription>
               {/* Say exactly what is holding the record back from deletion. */}
               {usage?.used && Object.keys(usage.usedBy).length > 0 && (
@@ -117,7 +126,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
           </div>
         </DialogHeader>
 
-        {requireText && !canDelete && !checking && (
+        {requireText && !canDelete && !checking && !blockedReason && (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">{t('common.typeToConfirm', { word: requireText })}</p>
             <Input
@@ -151,7 +160,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button variant={destructive ? 'destructive' : 'default'} disabled={busy || blocked || checking} onClick={run}>
+          <Button variant={destructive ? 'destructive' : 'default'} disabled={busy || blocked || checking || !!blockedReason} onClick={run}>
             {busy ? t('common.loading') : canDelete ? t('common.deleteForever') : t('common.confirm')}
           </Button>
         </DialogFooter>

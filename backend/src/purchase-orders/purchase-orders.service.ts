@@ -5,6 +5,7 @@ import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
 import { StockService } from '../inventory/stock.service';
 import { round2 } from '../common/calc';
+import { applyWeightedAverageCost } from '../common/costing';
 
 @Injectable()
 export class PurchaseOrdersService {
@@ -204,12 +205,12 @@ export class PurchaseOrdersService {
 
         if (item) {
           // Must run before adjustStock so on-hand quantity is pre-receipt.
-          await this.applyWeightedAverageCost(tx, {
+          await applyWeightedAverageCost(tx, {
             productId: line.productId,
             receivedQty: line.quantity,
             receivedUnitCost: round2(Number(item.unitCost) + deliveryCostPerUnit),
             userId,
-            poNumber: po.number,
+            source: po.number,
             deliveryCostPerUnit,
           });
         }
@@ -263,50 +264,6 @@ export class PurchaseOrdersService {
 
     await this.audit.log(userId, 'RECEIVE', 'PurchaseOrder', id, { lines: dto.lines.length, discrepancies });
     return { ...(await this.findOne(id)), receiptDiscrepancies: discrepancies };
-  }
-
-  /**
-   * Re-cost a product on goods receipt using the weighted average cost method:
-   *   newCost = (onHandQty * currentCost + receivedQty * receivedUnitCost) / (onHandQty + receivedQty)
-   * If nothing is on hand, the received cost becomes the new cost. Every change
-   * is recorded in PriceHistory so the cost trail stays auditable.
-   */
-  private async applyWeightedAverageCost(
-    tx: Prisma.TransactionClient,
-    params: { productId: string; receivedQty: number; receivedUnitCost: number; userId: string; poNumber: string; deliveryCostPerUnit?: number },
-  ) {
-    const product = await tx.product.findUnique({
-      where: { id: params.productId },
-      select: { costPrice: true },
-    });
-    if (!product || params.receivedQty <= 0) return;
-
-    const agg = await tx.stockLevel.aggregate({
-      where: { productId: params.productId },
-      _sum: { quantity: true },
-    });
-    const onHand = Math.max(Number(agg._sum.quantity ?? 0), 0);
-    const oldCost = Number(product.costPrice);
-    const totalQty = onHand + params.receivedQty;
-    const newCost =
-      totalQty > 0
-        ? round2((onHand * oldCost + params.receivedQty * params.receivedUnitCost) / totalQty)
-        : params.receivedUnitCost;
-    if (newCost === oldCost) return;
-
-    await tx.product.update({
-      where: { id: params.productId },
-      data: { costPrice: newCost, priceUpdatedAt: new Date() },
-    });
-    await tx.priceHistory.create({
-      data: {
-        productId: params.productId,
-        oldCostPrice: oldCost,
-        newCostPrice: newCost,
-        reason: `Weighted average cost on ${params.poNumber}: ${onHand} on hand @ ${oldCost} + ${params.receivedQty} received @ ${params.receivedUnitCost}${params.deliveryCostPerUnit ? ` (incl. ${round2(params.deliveryCostPerUnit)}/unit delivery)` : ''}`,
-        changedById: params.userId,
-      },
-    });
   }
 
   /**

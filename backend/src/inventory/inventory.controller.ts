@@ -1,5 +1,5 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, MinLength, NotEquals } from 'class-validator';
+﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, MinLength, NotEquals } from 'class-validator';
 import { StockService } from './stock.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -10,13 +10,24 @@ class AdjustmentDto {
   @IsString()
   warehouseId: string;
 
-  @IsInt()
+  // Not @IsInt: stock is stored as a Decimal because metered goods (cable,
+  // conduit) are counted in metres, so 12.5 is a legitimate adjustment.
+  @IsNumber()
   @NotEquals(0)
   delta: number;
 
   @IsString()
   @MinLength(2)
   reason: string;
+
+  /**
+   * Cost of the units being added. Re-costs the product on the weighted average,
+   * the same as a goods receipt. Only meaningful when `delta` is positive.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitCost?: number;
 }
 
 class TransferDto {
@@ -106,6 +117,21 @@ export class InventoryController {
   @Patch('warehouses/:id')
   updateWarehouse(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: Partial<WarehouseDto & { isActive: boolean }>) {
     return this.stock.updateWarehouse(user.id, id, dto);
+  }
+
+  @Get('warehouses/:id/usage')
+  warehouseUsage(@Param('id') id: string) {
+    return this.stock.warehouseUsageReport(id);
+  }
+
+  @Delete('warehouses/:id')
+  removeWarehouse(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.stock.removeWarehouse(user.id, id);
+  }
+
+  @Post('warehouses/:id/restore')
+  restoreWarehouse(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.stock.restoreWarehouse(user.id, id);
   }
 
   @Get('units')

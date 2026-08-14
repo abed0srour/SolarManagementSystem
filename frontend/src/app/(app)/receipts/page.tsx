@@ -7,13 +7,12 @@ import { toast } from 'sonner';
 import { FileDown, MessageCircle } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 
 export default function ReceiptsPage() {
   const t = useTranslations();
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   const download = async (r: any) => {
     try {
@@ -47,13 +46,30 @@ export default function ReceiptsPage() {
           { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           {
             key: 'client', label: t('common.client'),
-            render: (r) => r.client?.name && r.clientId ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
-            ) : '—',
+            render: (r) => <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>,
           },
           {
-            key: 'order', label: t('nav.salesOrders'), className: 'w-28',
-            render: (r) => <span className="font-mono text-xs">{r.invoice?.salesOrder?.number ?? '—'}</span>,
+            /*
+             * What this money was for. A receipt settles an invoice, and the
+             * invoice usually belongs to an order — so both are shown: the order
+             * is what staff and customers refer to out loud, the invoice is the
+             * document the payment is actually posted against. A payment taken
+             * without an invoice (a bare deposit) has neither, and says so.
+             */
+            key: 'order', label: t('receipts.paidFor'), className: 'w-36',
+            render: (r) =>
+              r.invoice ? (
+                <div className="leading-tight">
+                  {r.invoice.salesOrder ? (
+                    <EntityLink href={linkTo.salesOrder(r.invoice.salesOrder.id)} mono>{r.invoice.salesOrder.number}</EntityLink>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{t('receipts.noOrder')}</span>
+                  )}
+                  <div className="font-mono text-[11px] text-muted-foreground">{r.invoice.number}</div>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
           },
           { key: 'paymentDate', label: t('common.date'), className: 'w-24', render: (r) => fmtDate(r.paymentDate) },
           { key: 'method', label: t('common.method'), className: 'w-28', render: (r) => <Badge variant="outline">{t(`payments.${r.method}`)}</Badge> },
@@ -74,7 +90,6 @@ export default function ReceiptsPage() {
           },
         ]}
       />
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
     </div>
   );
 }

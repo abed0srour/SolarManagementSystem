@@ -5,31 +5,15 @@ import type { Response } from 'express';
 import { InvoicesService } from './invoices.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
+import { LineItemDto } from '../common/line-item.dto';
 
-class InvoiceItemDto {
-  @IsOptional()
-  @IsString()
-  productId?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsInt()
-  @Min(1)
-  quantity: number;
-
-  @IsNumber()
-  unitPrice: number;
-
-  @IsOptional()
-  @IsIn(['PERCENT', 'FIXED'])
-  discountType?: string;
-
-  @IsOptional()
-  @IsNumber()
-  discountValue?: number;
-
+/**
+ * Invoice lines are ordinary document lines — bundles, metered quantities and
+ * catalogue-derived prices included — plus the serial numbers that attach
+ * physical units to the sale.
+ */
+class InvoiceItemDto extends LineItemDto {
+  /** Units sold on this line; linking them starts their warranty clock. */
   @IsOptional()
   @IsArray()
   serialNumbers?: string[];

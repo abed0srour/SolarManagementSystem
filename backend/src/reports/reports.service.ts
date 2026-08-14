@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { round2 } from '../common/calc';
+import { expandRevenueLines } from '../common/revenue';
 
 @Injectable()
 export class ReportsService {
@@ -41,9 +42,20 @@ export class ReportsService {
         select: { issueDate: true, total: true },
         orderBy: { issueDate: 'asc' },
       }),
+      // Top-level lines only, with each bundle's components attached — see
+      // expandRevenueLines for why components are not queried directly.
       this.prisma.invoiceItem.findMany({ relationLoadStrategy: 'join',
-        where: { invoice: saleWhere, productId: { not: null } },
-        include: { product: { include: { subCategory: { include: { category: true } } } } },
+        where: { invoice: saleWhere, parentItemId: null },
+        include: {
+          product: { include: { subCategory: { include: { category: true } } } },
+          subItems: {
+            select: {
+              quantity: true,
+              lineTotal: true,
+              product: { include: { subCategory: { include: { category: true } } } },
+            },
+          },
+        },
       }),
       this.prisma.product.findMany({
         where: { isActive: true },
@@ -73,20 +85,26 @@ export class ReportsService {
     const byCategory = new Map<string, number>();
     const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
     let cogs = 0;
-    for (const item of saleItems) {
-      const cat = item.product?.subCategory.category.name ?? 'Other';
-      byCategory.set(cat, round2((byCategory.get(cat) ?? 0) + Number(item.lineTotal)));
-      // Bundle headers and their sub-items have no product, so they cannot be
-      // attributed to a SKU or costed. Their revenue still lands in the
-      // category total above via the "Other" bucket.
-      if (!item.product) continue;
-      const key = item.product.sku;
-      const cur = byProduct.get(key) ?? { name: item.product.name, qty: 0, revenue: 0 };
-      cur.qty += Number(item.quantity);
-      cur.revenue = round2(cur.revenue + Number(item.lineTotal));
+    // A bundle's charged price is split across its components, so category and
+    // product revenue add back up to the invoice totals the KPIs report.
+    for (const line of expandRevenueLines(saleItems)) {
+      const cat = line.product.subCategory.category.name;
+      byCategory.set(cat, round2((byCategory.get(cat) ?? 0) + line.revenue));
+      const key = line.product.sku;
+      const cur = byProduct.get(key) ?? { name: line.product.name, qty: 0, revenue: 0 };
+      cur.qty += line.quantity;
+      cur.revenue = round2(cur.revenue + line.revenue);
       byProduct.set(key, cur);
-      cogs += Number(item.product.costPrice) * Number(item.quantity);
+      cogs += Number(line.product.costPrice) * line.quantity;
     }
+    // Lines with no product at all (ad-hoc text, deposit invoices) carry revenue
+    // that belongs to no SKU. It is in the headline revenue but has no category.
+    const unattributed = round2(
+      saleItems
+        .filter((i) => !i.product && !i.isComposite)
+        .reduce((s, i) => s + Number(i.lineTotal), 0),
+    );
+    if (unattributed !== 0) byCategory.set('Other', round2((byCategory.get('Other') ?? 0) + unattributed));
     const revenue = Number(salesAgg._sum.total ?? 0);
 
     // Completed refunds reduce revenue; resellable returns went back into
@@ -117,8 +135,74 @@ export class ReportsService {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
+    /*
+     * The immediately preceding window of the same length, so "vs previous" is
+     * always like-for-like: last 7 days against the 7 before, a month against
+     * the month before. Comparing to a fixed calendar period instead would make
+     * a 10-day range look catastrophic against a full month.
+     */
+    const span = period.lte.getTime() - period.gte.getTime();
+    const prior = { gte: new Date(period.gte.getTime() - span - 1), lte: new Date(period.gte.getTime() - 1) };
+    const priorSaleWhere = { type: 'SALE' as const, status: { not: 'CANCELLED' as const }, issueDate: prior };
+
+    const [priorAgg, priorInvoiceCount, priorExpenses, priorItems, orderStatusGroups] = await Promise.all([
+      this.prisma.invoice.aggregate({ where: priorSaleWhere, _sum: { total: true, paidAmount: true } }),
+      this.prisma.invoice.count({ where: priorSaleWhere }),
+      this.prisma.expense.aggregate({ where: { deletedAt: null, expenseDate: prior }, _sum: { amount: true } }),
+      this.prisma.invoiceItem.findMany({
+        relationLoadStrategy: 'join',
+        where: { invoice: priorSaleWhere, parentItemId: null },
+        include: {
+          product: { select: { costPrice: true } },
+          subItems: { select: { quantity: true, lineTotal: true, product: { select: { costPrice: true } } } },
+        },
+      }),
+      this.prisma.salesOrder.groupBy({
+        by: ['status'],
+        where: { deletedAt: null, orderDate: period },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const priorCogs = expandRevenueLines(priorItems).reduce(
+      (s, l) => s + Number(l.product.costPrice) * l.quantity,
+      0,
+    );
+    const priorRevenue = Number(priorAgg._sum.total ?? 0);
+    const priorExpenseTotal = Number(priorExpenses._sum.amount ?? 0);
+    const priorGross = round2(priorRevenue - priorCogs);
+
+    /** Percentage change, or null when there is no baseline to compare against. */
+    const delta = (now: number, before: number): number | null =>
+      before === 0 ? null : round2(((now - before) / Math.abs(before)) * 100);
+
+    const netProfitNow = round2(grossProfit - Number(expensesAgg._sum.amount ?? 0));
+
     return {
       topClients,
+      previous: {
+        revenue: priorRevenue,
+        collected: Number(priorAgg._sum.paidAmount ?? 0),
+        grossProfit: priorGross,
+        expenses: priorExpenseTotal,
+        invoiceCount: priorInvoiceCount,
+        netProfit: round2(priorGross - priorExpenseTotal),
+      },
+      deltas: {
+        revenue: delta(revenue, priorRevenue),
+        collected: delta(Number(salesAgg._sum.paidAmount ?? 0), Number(priorAgg._sum.paidAmount ?? 0)),
+        grossProfit: delta(grossProfit, priorGross),
+        expenses: delta(Number(expensesAgg._sum.amount ?? 0), priorExpenseTotal),
+        invoiceCount: delta(invoiceCount, priorInvoiceCount),
+        netProfit: delta(netProfitNow, round2(priorGross - priorExpenseTotal)),
+      },
+      /** Doughnut: where orders currently sit in the fulfilment pipeline. */
+      orderStatus: orderStatusGroups.map((g) => ({ status: g.status, count: g._count._all })),
+      /** Doughnut: how much of what was billed has actually been collected. */
+      collectionMix: [
+        { key: 'collected', value: Number(salesAgg._sum.paidAmount ?? 0) },
+        { key: 'outstanding', value: round2(Math.max(0, revenue - Number(salesAgg._sum.paidAmount ?? 0))) },
+      ],
       kpis: {
         revenue,
         refunds,
@@ -149,17 +233,24 @@ export class ReportsService {
   async profitByProduct(from?: string, to?: string) {
     const period = this.range(from, to);
     const items = await this.prisma.invoiceItem.findMany({ relationLoadStrategy: 'join',
-      where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: period }, productId: { not: null } },
-      include: { product: { select: { sku: true, name: true, costPrice: true } } },
+      where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: period }, parentItemId: null },
+      include: {
+        product: { select: { sku: true, name: true, costPrice: true } },
+        subItems: {
+          select: { quantity: true, lineTotal: true, product: { select: { sku: true, name: true, costPrice: true } } },
+        },
+      },
     });
     const map = new Map<string, { name: string; qty: number; revenue: number; cost: number }>();
-    for (const i of items) {
-      if (!i.product) continue; // bundle headers and sub-items have no SKU to report against
-      const cur = map.get(i.product.sku) ?? { name: i.product.name, qty: 0, revenue: 0, cost: 0 };
-      cur.qty += Number(i.quantity);
-      cur.revenue = round2(cur.revenue + Number(i.lineTotal));
-      cur.cost = round2(cur.cost + Number(i.product.costPrice) * Number(i.quantity));
-      map.set(i.product.sku, cur);
+    // Each bundle contributes its components, carrying their share of what the
+    // customer actually paid — so a discounted bundle shows a thinner margin on
+    // every part of it rather than a phantom one.
+    for (const line of expandRevenueLines(items)) {
+      const cur = map.get(line.product.sku) ?? { name: line.product.name, qty: 0, revenue: 0, cost: 0 };
+      cur.qty += line.quantity;
+      cur.revenue = round2(cur.revenue + line.revenue);
+      cur.cost = round2(cur.cost + Number(line.product.costPrice) * line.quantity);
+      map.set(line.product.sku, cur);
     }
     // Completed refunds pull the returned quantity and value back out; a
     // resellable return also takes its cost out of COGS (it is stock again).
@@ -320,11 +411,22 @@ export class ReportsService {
   /** Reorder suggestions based on 90-day sales velocity vs current stock. */
   async reorderSuggestions() {
     const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
-    const items = await this.prisma.invoiceItem.groupBy({
-      by: ['productId'],
-      where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: { gte: since } }, productId: { not: null } },
-      _sum: { quantity: true },
+    // Not a groupBy: a bundle's components are stored at their per-bundle
+    // quantity, so selling the same bundle five times has to multiply through
+    // or velocity — and therefore the reorder point — comes out five times low.
+    const soldLines = await this.prisma.invoiceItem.findMany({
+      relationLoadStrategy: 'join',
+      where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: { gte: since } }, parentItemId: null },
+      include: {
+        product: { select: { id: true } },
+        subItems: { select: { quantity: true, lineTotal: true, product: { select: { id: true } } } },
+      },
     });
+    const items = [...
+      expandRevenueLines(soldLines)
+        .reduce((m, l) => m.set(l.product.id, (m.get(l.product.id) ?? 0) + l.quantity), new Map<string, number>())
+        .entries()
+    ].map(([productId, qty]) => ({ productId, _sum: { quantity: qty } }));
     const products = await this.prisma.product.findMany({
       where: { isActive: true },
       select: { id: true, sku: true, name: true, lowStockThreshold: true, stockLevels: { select: { quantity: true } } },

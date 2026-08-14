@@ -19,7 +19,7 @@ import {
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/api';
 import StatusChip from '../../../../components/status-chip';
 import ConfirmDialog from '../../../../components/confirm-dialog';
-import ClientInfoDialog from '../../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../../components/entity-link';
 import SerialPicker from '../../../../components/serial-picker';
 import Field from '../../../../components/form-field';
 import { Button } from '../../../../components/ui/button';
@@ -35,7 +35,6 @@ export default function SalesOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [so, setSo] = useState<any>(null);
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [serialInputs, setSerialInputs] = useState<Record<string, string[]>>({});
   const [deliverOpen, setDeliverOpen] = useState(false);
@@ -152,13 +151,25 @@ export default function SalesOrderDetailPage() {
           <Button size="sm" variant="outline" onClick={() => router.push(`/sales-orders/${so.id}/receipt?print=1`)}>
             <Printer /> {t('orders.posReceipt')}
           </Button>
-          {!['CANCELLED', 'DELIVERED'].includes(so.status) && (
+          {so.cancellable && (
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => setCancelOpen(true)}>
               <XCircle /> {t('orders.cancelOrder')}
             </Button>
           )}
         </div>
       </div>
+
+      {/*
+        When cancelling is off the table for a reason the status does not already
+        make obvious — money taken, or goods collected while still CONFIRMED —
+        say so and name the route that does work. A button that has simply
+        vanished reads as a bug.
+      */}
+      {!so.cancellable && so.cancelBlockedReason && so.cancelBlockedReason !== 'ALREADY_CANCELLED' && (
+        <p className="text-xs text-muted-foreground">
+          {t(`orders.cancelBlocked.${so.cancelBlockedReason}`)}
+        </p>
+      )}
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -186,9 +197,7 @@ export default function SalesOrderDetailPage() {
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">{t('common.client')}:</span>
-            <button className="font-medium text-primary hover:underline" onClick={() => setClientInfo(so.clientId)}>
-              {so.client?.name}
-            </button>
+            <EntityLink href={linkTo.client(so.clientId)} className="font-medium">{so.client?.name}</EntityLink>
           </div>
           <div className="flex items-center gap-2">
             <WarehouseIcon className="h-4 w-4 text-muted-foreground" />
@@ -272,8 +281,6 @@ export default function SalesOrderDetailPage() {
           </div>
         </CardContent>
       </Card>
-
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
 
       {/* Confirm with serials */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

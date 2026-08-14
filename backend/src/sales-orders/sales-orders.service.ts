@@ -8,6 +8,7 @@ import { StockService } from '../inventory/stock.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
 import { calcDocTotals, calcLine, round2 } from '../common/calc';
+import { buildCompositeItems, writeSubItems } from '../common/composite-items';
 
 @Injectable()
 export class SalesOrdersService {
@@ -19,6 +20,36 @@ export class SalesOrdersService {
     private invoices: InvoicesService,
     private payments: PaymentsService,
   ) {}
+
+  /**
+   * Whether this order can still be cancelled, and if not, why.
+   *
+   * Confirming an order does NOT make it uncancellable — a customer can back out
+   * any time before the goods leave, and `cancel()` puts the stock back. What
+   * makes it uncancellable is the goods or the money having moved:
+   *
+   *  - COLLECTED — the customer walked out with it. Restoring stock here would
+   *    invent inventory that is physically gone.
+   *  - DELIVERED — same, via the delivery flow; a refund is the correct route.
+   *  - HAS_PAYMENTS — money was taken, so it has to be refunded first.
+   *
+   * Computed here rather than in the UI so the button and the endpoint can never
+   * disagree about what is allowed. `cancel()` re-checks all of it server-side.
+   */
+  private cancelInfo(order: {
+    status: string;
+    claimedAt?: Date | null;
+    invoices?: { status: string; paidAmount: any; deletedAt?: Date | null }[];
+  }): { cancellable: boolean; cancelBlockedReason: string | null } {
+    const active = (order.invoices ?? []).filter((i) => i.status !== 'CANCELLED' && !i.deletedAt);
+    const reason =
+      order.status === 'CANCELLED' ? 'ALREADY_CANCELLED'
+      : order.status === 'DELIVERED' ? 'DELIVERED'
+      : order.claimedAt ? 'COLLECTED'
+      : active.some((i) => Number(i.paidAmount) > 0) ? 'HAS_PAYMENTS'
+      : null;
+    return { cancellable: reason === null, cancelBlockedReason: reason };
+  }
 
   /** Paid / outstanding derived from the order's non-cancelled invoices. */
   private paymentInfo(order: { total: any; invoices?: { status: string; total: any; paidAmount: any }[] }) {
@@ -64,7 +95,7 @@ export class SalesOrdersService {
         take: pageSize,
       })
       .then(async (items) => ({
-        items: items.map((o) => ({ ...o, ...this.paymentInfo(o) })),
+        items: items.map((o) => ({ ...o, ...this.paymentInfo(o), ...this.cancelInfo(o) })),
         total: await totalPromise,
         page,
         pageSize,
@@ -110,6 +141,7 @@ export class SalesOrdersService {
     return {
       ...so,
       ...this.paymentInfo(so),
+      ...this.cancelInfo(so),
       refundedByProduct: Object.fromEntries(returnedItems.map((r) => [r.productId, r._sum.quantity ?? 0])),
       refundedTotal: Number(refundsAgg._sum.totalAmount ?? 0),
     };
@@ -124,82 +156,8 @@ export class SalesOrdersService {
    * current sale price; a negative one is rejected. Line discounts then apply
    * on top of whatever unit price the line ended up with.
    */
-  private async buildItems(items: any[]) {
-    // Bundle headers and their sub-items are typed by hand, so only real
-    // catalogue lines need a price looked up.
-    const productIds = items
-      .flatMap((i) => [i.productId, ...(i.subItems ?? []).map((s: any) => s.productId)])
-      .filter(Boolean);
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, salePrice: true, name: true, sku: true },
-    });
-    const priceById = new Map(products.map((p) => [p.id, Number(p.salePrice)]));
-    const nameById = new Map(products.map((p) => [p.id, p.name]));
-
-    const priceOf = (i: any): number => {
-      const base = i.productId ? priceById.get(i.productId) : undefined;
-      if (i.productId && base === undefined) throw new NotFoundException(`Product ${i.productId} not found`);
-      const unitPrice = i.unitPrice === undefined || i.unitPrice === null ? (base ?? 0) : Number(i.unitPrice);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        throw new BadRequestException('Unit price must be zero or greater');
-      }
-      return unitPrice;
-    };
-
-    return items.map((i) => {
-      const isComposite = Boolean(i.isComposite);
-      const subs = isComposite ? (i.subItems ?? []) : [];
-
-      // Sub-items are priced individually so the internal pick-list shows what
-      // each component is worth, even when the customer only sees one figure.
-      const builtSubs = subs.map((s: any) => {
-        const unitPrice = priceOf(s);
-        const quantity = Number(s.quantity ?? 0);
-        if (!Number.isFinite(quantity) || quantity < 0) {
-          throw new BadRequestException('Sub-item quantity must be zero or greater');
-        }
-        // Components are catalogue products; the name is snapshotted so the
-        // pick-list and invoice still read correctly if the product is renamed.
-        const description = s.description?.trim() || (s.productId ? nameById.get(s.productId) : undefined);
-        if (!description) throw new BadRequestException('Each bundle component needs a product');
-        return {
-          productId: s.productId ?? null,
-          description,
-          quantity,
-          unit: s.unit ?? null,
-          unitPrice,
-          lineTotal: round2(quantity * unitPrice),
-        };
-      });
-
-      if (isComposite && !i.description) {
-        throw new BadRequestException('A bundle needs a name');
-      }
-
-      // autoPrice (the default) sums the components; turning it off lets the
-      // admin quote a round number for the package regardless of its contents.
-      const autoPrice = i.autoPrice !== false;
-      const componentsTotal = round2(builtSubs.reduce((s: number, b: any) => s + b.lineTotal, 0));
-      const unitPrice = isComposite && autoPrice ? componentsTotal : priceOf(i);
-      const quantity = isComposite ? Number(i.quantity ?? 1) : Number(i.quantity);
-
-      const t = calcLine({ ...i, quantity, unitPrice });
-      return {
-        productId: isComposite ? null : (i.productId ?? null),
-        description: i.description ?? null,
-        quantity,
-        unit: i.unit ?? null,
-        unitPrice,
-        discountType: i.discountType ?? null,
-        discountValue: i.discountValue ?? 0,
-        lineTotal: t.lineTotal,
-        isComposite,
-        autoPrice,
-        _totals: t,
-        _subItems: builtSubs,
-      };
-    });
+  private buildItems(items: any[]) {
+    return buildCompositeItems(this.prisma, items);
   }
 
   /**
@@ -209,12 +167,13 @@ export class SalesOrdersService {
    */
   private static readonly CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
+  /** QR codes are valid for a day; reprinting the receipt mints a fresh one. */
+  private static readonly PICKUP_TOKEN_HOURS = 24;
+
   /**
-   * Short, unique code printed on the POS receipt.
-   *
-   * Generated server-side and checked against the unique index, so a collision
-   * can never surface as a customer arriving with a code that matches someone
-   * else's order. 31^8 ≈ 850 billion combinations.
+   * Short, unique code printed on the receipt as the scanner-free fallback.
+   * Checked against the unique index, so a customer can never arrive with a
+   * code that resolves to someone else's order.
    */
   private async generatePickupCode(tx: Prisma.TransactionClient, length = 8): Promise<string> {
     const alphabet = SalesOrdersService.CODE_ALPHABET;
@@ -225,27 +184,6 @@ export class SalesOrdersService {
     }
     throw new BadRequestException('Could not generate a pickup code, please try again');
   }
-
-  /**
-   * Mint the signed token that goes inside the receipt's QR code.
-   *
-   * Signed with the server's JWT secret, so a QR that verifies is provably one
-   * we issued — a customer cannot forge one, and a photographed code from
-   * someone else's receipt still only resolves to *that* order.
-   *
-   * `typ: 'pickup'` stops a login access token being presented as a pickup QR
-   * and vice versa: both are signed with the same secret, so without a type
-   * claim one would validate as the other.
-   */
-  async issuePickupToken(orderId: string): Promise<{ token: string; expiresAt: Date }> {
-    const expiresAt = new Date(Date.now() + SalesOrdersService.PICKUP_TOKEN_HOURS * 3600 * 1000);
-    const expMinutes = Math.floor(expiresAt.getTime() / 60000);
-    const body = `${SalesOrdersService.uuidToB64(orderId)}.${expMinutes.toString(36)}`;
-    return { token: `${body}.${SalesOrdersService.sign(body)}`, expiresAt };
-  }
-
-  /** QR codes are valid for a day; reprinting the receipt mints a fresh one. */
-  private static readonly PICKUP_TOKEN_HOURS = 24;
 
   /**
    * A UUID is 16 bytes; its canonical text form wastes 14 characters on dashes
@@ -262,38 +200,41 @@ export class SalesOrdersService {
   }
 
   /**
-   * Truncated HMAC-SHA256 over the token body.
-   *
-   * 16 bytes is 128 bits of authentication — far beyond forging — and keeps the
-   * whole token near 50 characters. That length is what lets the printed QR be
-   * small: payload size drives the module count, so a compact token means a
-   * coarse grid that survives a thermal head and a phone camera. A full JWT was
-   * 208 characters and needed a dense grid that had to be printed large.
+   * Truncated HMAC-SHA256 over the token body. 16 bytes is 128 bits of
+   * authentication and keeps the whole token near 50 characters — payload size
+   * drives QR module count, so a compact token is what lets the printed code be
+   * small enough for a receipt and still scan.
    */
   private static sign(body: string): string {
     const secret = process.env.JWT_SECRET ?? '';
     return createHmac('sha256', secret).update(body).digest().subarray(0, 16).toString('base64url');
   }
 
+  /** Mint the signed token that goes inside the receipt's QR code. */
+  async issuePickupToken(orderId: string): Promise<{ token: string; expiresAt: Date }> {
+    const expiresAt = new Date(Date.now() + SalesOrdersService.PICKUP_TOKEN_HOURS * 3600 * 1000);
+    const expMinutes = Math.floor(expiresAt.getTime() / 60000);
+    const body = `${SalesOrdersService.uuidToB64(orderId)}.${expMinutes.toString(36)}`;
+    return { token: `${body}.${SalesOrdersService.sign(body)}`, expiresAt };
+  }
+
   /**
-   * Verify a scanned QR and return what the warehouse needs to decide.
-   *
-   * Never throws for an expired or forged code — the scanner screen has to be
-   * able to say *why* a code failed, and "this QR expired yesterday" is a very
-   * different conversation with a customer than "this is not our QR".
+   * Verify a scanned QR. Never throws for a bad code — the scanner screen has to
+   * explain *why* it failed, and "expired yesterday" is a very different
+   * conversation with a customer than "this is not our QR".
    */
   async verifyPickupToken(token: string) {
     const invalid = { valid: false as const, reason: 'INVALID', message: 'This QR code was not issued by this system' };
 
     const parts = token.trim().split('.');
-    // A 3-part token of the wrong shape (a JWT, say) fails here before any
-    // crypto runs, so a login token can never be mistaken for a pickup code.
+    // A token of the wrong shape (a JWT, say) fails here before any crypto runs,
+    // so a login token can never be mistaken for a pickup code.
     if (parts.length !== 3 || parts[0].length !== 22 || parts[2].length !== 22) return invalid;
 
     const [idPart, expPart, sig] = parts;
     const expected = SalesOrdersService.sign(`${idPart}.${expPart}`);
-    // Constant-time compare: a fast-exit comparison leaks how much of a forged
-    // signature was right, which is enough to reconstruct one byte at a time.
+    // Constant-time: a fast-exit compare leaks how much of a forged signature
+    // was right, which is enough to rebuild one byte at a time.
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) return invalid;
@@ -330,17 +271,12 @@ export class SalesOrdersService {
     const check = await this.verifyPickupToken(token);
     if (!check.valid) throw new BadRequestException(check.message);
     if (!check.claimable) throw new BadRequestException(check.reason!);
-    // Re-uses the code path so the same transaction guard prevents a double
-    // claim, whichever way the order was presented.
     return this.claim(userId, (check.order as any).pickupCode, notes);
   }
 
   /**
-   * Find an order from the code on a customer's receipt.
-   *
-   * Returns the order plus a `claimable` verdict rather than throwing, so the
-   * warehouse screen can explain *why* something cannot be released (already
-   * collected, cancelled, not yet confirmed) instead of just failing.
+   * Find an order from the code on a customer's receipt. Returns a `claimable`
+   * verdict rather than throwing, so the counter screen can explain why.
    */
   async findByPickupCode(code: string) {
     const order = await this.prisma.salesOrder.findUnique({
@@ -376,11 +312,9 @@ export class SalesOrdersService {
   }
 
   /**
-   * Hand the goods over. Stamps who released them and when.
-   *
-   * The re-check inside the transaction is what actually prevents a receipt
-   * being used twice — two warehouse staff could load the same code at the same
-   * moment and both see it as claimable.
+   * Hand the goods over. The re-check inside the transaction is what actually
+   * prevents one receipt being used twice — two staff could load the same code
+   * simultaneously and both see it as claimable.
    */
   async claim(userId: string, code: string, notes?: string) {
     const normalised = code.trim().toUpperCase();
@@ -400,22 +334,6 @@ export class SalesOrdersService {
     });
   }
 
-  /** Write a bundle's components once the parent line has an id to hang them on. */
-  private async writeSubItems(tx: Prisma.TransactionClient, salesOrderId: string, built: any[]) {
-    if (!built.some((b) => b._subItems?.length)) return;
-    const parents = await tx.salesOrderItem.findMany({
-      where: { salesOrderId, isComposite: true, parentItemId: null },
-      select: { id: true, description: true },
-    });
-    for (const b of built) {
-      if (!b._subItems?.length) continue;
-      const parent = parents.find((p) => p.description === b.description);
-      if (!parent) continue;
-      await tx.salesOrderItem.createMany({
-        data: b._subItems.map((s: any) => ({ ...s, salesOrderId, parentItemId: parent.id })),
-      });
-    }
-  }
 
   async create(userId: string, dto: any) {
     // Credit limit warning check
@@ -451,7 +369,7 @@ export class SalesOrdersService {
         },
         include: { items: true },
       });
-      await this.writeSubItems(tx, created.id, built);
+      await writeSubItems(tx.salesOrderItem, 'salesOrderId', created.id, built);
       return created;
     });
     await this.audit.log(userId, 'CREATE', 'SalesOrder', so.id, { number });
@@ -495,7 +413,7 @@ export class SalesOrdersService {
         },
         include: { items: true },
       });
-      if (built) await this.writeSubItems(tx, id, built);
+      if (built) await writeSubItems(tx.salesOrderItem, 'salesOrderId', id, built);
       return updated;
     });
     await this.audit.log(userId, 'UPDATE', 'SalesOrder', id);
@@ -679,6 +597,10 @@ export class SalesOrdersService {
     if (so.status === 'CANCELLED') throw new BadRequestException('Order already cancelled');
     if (so.status === 'DELIVERED')
       throw new BadRequestException('Delivered orders cannot be cancelled — create a refund instead');
+    // Collected via the pickup QR: the goods are physically gone even though the
+    // status is still CONFIRMED, so restoring stock here would invent inventory.
+    if (so.claimedAt)
+      throw new BadRequestException('Order was already collected — create a refund instead');
     const activeInvoices = so.invoices.filter((inv) => inv.status !== 'CANCELLED' && !inv.deletedAt);
     if (activeInvoices.some((inv) => Number(inv.paidAmount) > 0))
       throw new BadRequestException('Order has paid invoices — refund the payments first');

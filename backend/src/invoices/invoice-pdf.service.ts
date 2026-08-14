@@ -3,6 +3,7 @@ import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import { readFile } from 'fs/promises';
 import { basename, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../common/storage';
 
 const DARK = rgb(0.13, 0.15, 0.19);
 const GRAY = rgb(0.45, 0.48, 0.53);
@@ -11,7 +12,10 @@ const BAND = rgb(0.955, 0.96, 0.97);
 
 @Injectable()
 export class InvoicePdfService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+  ) {}
 
   private async company() {
     const setting = await this.prisma.setting.findUnique({ where: { key: 'company' } });
@@ -22,7 +26,10 @@ export class InvoicePdfService {
   private async embedLogo(pdf: PDFDocument, logoUrl?: string) {
     if (!logoUrl) return null;
     try {
-      const bytes = await readFile(join(process.cwd(), 'uploads', basename(logoUrl)));
+      // The stored logo path is an absolute blob URL in production and an
+      // app-relative path locally, so go through storage by filename either way.
+      const bytes = await this.storage.get(`uploads/${basename(logoUrl)}`);
+      if (!bytes) return null;
       const lower = logoUrl.toLowerCase();
       return lower.endsWith('.png') ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
     } catch {

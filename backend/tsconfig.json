@@ -16,5 +16,5 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "prisma/seed.ts"]
+  "include": ["src/**/*", "api/**/*", "prisma/seed.ts"]
 }

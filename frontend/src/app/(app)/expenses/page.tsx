@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Archive, RotateCcw } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { api, errMsg, fmtDate, fmtMoney } from '../../../lib/api';
 import { seriesColors, chartInk } from '../../../lib/charts';
@@ -37,6 +37,7 @@ export default function ExpensesPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [summary, setSummary] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [archived, setArchived] = useState(false);
 
   useEffect(() => {
     api.get('/expenses/summary').then((r) => setSummary(r.data)).catch(() => {});
@@ -88,7 +89,19 @@ export default function ExpensesPage() {
   const remove = async () => {
     try {
       await api.delete(`/expenses/${deleteId}`);
-      toast.success(t('common.deleted'));
+      // An expense is always archived, never purged — see ExpensesService.remove.
+      toast.success(t('common.archivedToast'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  /** Archiving is reversible: restoring puts the expense back into reports. */
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/expenses/${row.id}/restore`);
+      toast.success(t('common.restored'));
       setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(errMsg(e));
@@ -131,7 +144,7 @@ export default function ExpensesPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: ink.muted }} stroke={ink.baseline} />
                     <YAxis tick={{ fontSize: 11, fill: ink.muted }} stroke={ink.baseline} width={70} />
                     <Tooltip formatter={(v: any) => fmtMoney(v)} contentStyle={tooltipStyle} cursor={{ fill: ink.grid, opacity: 0.4 }} />
-                    <Bar dataKey="amount" name={t('expenses.title')} fill={colors[5]} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="amount" name={t('expenses.title')} fill={colors[4]} radius={[4, 4, 0, 0]} maxBarSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -143,8 +156,11 @@ export default function ExpensesPage() {
       <DataTable
         endpoint="/expenses"
         refreshKey={refreshKey}
+        archived={archived}
+        onArchivedChange={setArchived}
         extraParams={categoryFilter ? { category: categoryFilter } : undefined}
-        onRowClick={openEdit}
+        // Archived rows are read-only — restore before editing.
+        onRowClick={archived ? undefined : openEdit}
         filters={
           <Select className="w-40" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
@@ -166,14 +182,24 @@ export default function ExpensesPage() {
           { key: 'amount', label: t('common.amount'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.amount)}</span> },
           {
             key: 'actions', label: '',
-            render: (r) => (
-              <Button
-                variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={(e) => { e.stopPropagation(); setDeleteId(r.id); }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            ),
+            render: (r) =>
+              archived ? (
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                  title={t('common.restore')}
+                  onClick={(e) => { e.stopPropagation(); restore(r); }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7 text-red-600 dark:text-red-400"
+                  title={t('common.archive')}
+                  onClick={(e) => { e.stopPropagation(); setDeleteId(r.id); }}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </Button>
+              ),
           },
         ]}
       />

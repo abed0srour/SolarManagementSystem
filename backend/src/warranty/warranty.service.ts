@@ -34,7 +34,7 @@ export class WarrantyService {
           client: { select: { name: true } },
           product: { select: { sku: true, name: true } },
           productUnit: { select: { serialNumber: true, warrantyEndDate: true } },
-          invoice: { select: { number: true } },
+          invoice: { select: { id: true, number: true } },
         },
         orderBy: { openedAt: 'desc' },
         skip: (page - 1) * pageSize,

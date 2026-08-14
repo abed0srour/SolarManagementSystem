@@ -63,7 +63,7 @@ export class RefundsService {
         where,
         include: {
           client: { select: { name: true } },
-          invoice: { select: { number: true, salesOrderId: true, salesOrder: { select: { number: true } } } },
+          invoice: { select: { id: true, number: true, salesOrderId: true, salesOrder: { select: { id: true, number: true } } } },
           items: { include: { product: { select: { sku: true, name: true } } } },
         },
         orderBy: { createdAt: 'desc' },

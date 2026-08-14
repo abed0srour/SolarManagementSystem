@@ -1,20 +1,20 @@
 import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from 'fs';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { gunzipSync, createGzip } from 'zlib';
-import { pipeline } from 'stream/promises';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { StorageService } from '../common/storage';
+import { isServerless } from '../common/runtime';
 
-const BACKUP_DIR = join(process.cwd(), 'backups');
-if (!existsSync(BACKUP_DIR)) mkdirSync(BACKUP_DIR, { recursive: true });
-
-const LATEST_FILE = join(BACKUP_DIR, 'backup.json.gz');
-const PREVIOUS_FILE = join(BACKUP_DIR, 'backup.previous.json.gz');
+/**
+ * Storage keys rather than paths: StorageService puts these on disk in
+ * development and in Vercel Blob in production, so the backup feature works the
+ * same on a laptop and on a platform with no writable filesystem.
+ */
+const LATEST_KEY = 'backups/backup.json.gz';
+const PREVIOUS_KEY = 'backups/backup.previous.json.gz';
 
 // Rows are streamed to disk in pages rather than loaded all at once, so a
 // table that has grown huge after years of use never blows up process
@@ -60,6 +60,7 @@ export class BackupService implements OnModuleInit {
     private prisma: PrismaService,
     private audit: AuditService,
     private scheduler: SchedulerRegistry,
+    private storage: StorageService,
   ) {}
 
   async onModuleInit() {
@@ -114,12 +115,18 @@ export class BackupService implements OnModuleInit {
     this.running = true;
     const start = Date.now();
     const order = this.modelOrder();
-    const tmpFile = `${LATEST_FILE}.tmp`;
     let rowCount = 0;
     try {
+      // Compressed chunks are collected in memory instead of streamed to a
+      // file. Rows are still read a page at a time, so what accumulates here is
+      // only the gzipped output — a fraction of the database's size.
       const gzip = createGzip();
-      const out = createWriteStream(tmpFile);
-      const donePromise = pipeline(gzip, out);
+      const chunks: Buffer[] = [];
+      gzip.on('data', (c: Buffer) => chunks.push(c));
+      const donePromise = new Promise<void>((resolve, reject) => {
+        gzip.on('end', () => resolve());
+        gzip.on('error', reject);
+      });
       gzip.write(`{"meta":${JSON.stringify({ version: BACKUP_FORMAT_VERSION, createdAt: new Date().toISOString() })},"data":{`);
       for (let i = 0; i < order.length; i++) {
         const { name, idField } = order[i];
@@ -150,15 +157,16 @@ export class BackupService implements OnModuleInit {
       await donePromise;
 
       // Overwrite in place, keeping exactly one prior generation as a safety
-      // net against a corrupted/interrupted run — never more than two files
-      // on disk, which is the spirit of "replace the old backup".
-      if (existsSync(LATEST_FILE)) {
-        if (existsSync(PREVIOUS_FILE)) unlinkSync(PREVIOUS_FILE);
-        renameSync(LATEST_FILE, PREVIOUS_FILE);
-      }
-      renameSync(tmpFile, LATEST_FILE);
+      // net against a corrupted/interrupted run — never more than two objects
+      // stored, which is the spirit of "replace the old backup".
+      //
+      // The rotation happens only after the new archive is fully built: if the
+      // export throws, the existing backup is still the one in storage.
+      const body = Buffer.concat(chunks);
+      await this.storage.copy(LATEST_KEY, PREVIOUS_KEY);
+      const stored = await this.storage.put(LATEST_KEY, body, 'application/gzip');
 
-      const sizeBytes = statSync(LATEST_FILE).size;
+      const sizeBytes = stored.size;
       await this.prisma.backupLog.create({
         data: {
           type: 'BACKUP',
@@ -176,7 +184,6 @@ export class BackupService implements OnModuleInit {
       this.logger.log(`Backup complete: ${order.length} tables, ${rowCount} rows, ${(sizeBytes / 1024 / 1024).toFixed(2)} MB`);
       return { success: true, sizeBytes, rowCount, tableCount: order.length };
     } catch (err: any) {
-      if (existsSync(tmpFile)) unlinkSync(tmpFile);
       await this.prisma.backupLog
         .create({ data: { type: 'BACKUP', status: 'FAILED', error: String(err.message ?? err).slice(0, 1000), triggeredBy, durationMs: Date.now() - start } })
         .catch(() => {});
@@ -204,11 +211,32 @@ export class BackupService implements OnModuleInit {
       this.prisma.backupLog.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
       this.getSchedule(),
     ]);
-    const hasLocalFile = existsSync(LATEST_FILE);
+    const hasLocalFile = !!(await this.storage.stat(LATEST_KEY));
     return { lastBackup, lastRestore, history, schedule, hasLocalFile };
   }
 
   // ---- Schedule ----
+
+  /**
+   * Should the platform scheduler take a backup on this invocation?
+   *
+   * A hosted cron fires on a fixed timetable, but the admin configures their own
+   * weekly day here. So the day is checked against their setting, while the hour
+   * is left to whatever cadence the platform runs at — and a 12-hour cooldown
+   * keeps an hourly scheduler from taking 24 backups on the chosen day.
+   */
+  async isScheduledForNow(now = new Date()): Promise<boolean> {
+    const schedule = await this.getSchedule();
+    if (!schedule.enabled) return false;
+    if (now.getDay() !== schedule.dayOfWeek) return false;
+    const last = await this.prisma.backupLog.findFirst({
+      where: { type: 'BACKUP', status: 'SUCCESS' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (!last) return true;
+    return now.getTime() - last.createdAt.getTime() > 12 * 3600 * 1000;
+  }
 
   async getSchedule(): Promise<BackupSchedule> {
     const row = await this.prisma.setting.findUnique({ where: { key: SCHEDULE_KEY } });
@@ -234,6 +262,8 @@ export class BackupService implements OnModuleInit {
   }
 
   private applySchedule(schedule: BackupSchedule) {
+    // Serverless has no live process to run a timer; /api/cron/backup drives it.
+    if (isServerless()) return;
     if (this.scheduler.doesExist('cron', CRON_JOB_NAME)) this.scheduler.deleteCronJob(CRON_JOB_NAME);
     if (!schedule.enabled) return;
     const cronExpression = `${schedule.minute} ${schedule.hour} * * ${schedule.dayOfWeek}`;
@@ -246,16 +276,23 @@ export class BackupService implements OnModuleInit {
 
   // ---- Download ----
 
-  downloadPath(): string {
-    if (!existsSync(LATEST_FILE)) throw new BadRequestException('No backup has been taken yet');
-    return LATEST_FILE;
+  /**
+   * The archive bytes to send to the browser.
+   *
+   * Returns a buffer rather than a path because in production the file lives in
+   * blob storage and has no path on this machine.
+   */
+  async downloadBody(): Promise<Buffer> {
+    const buffer = await this.storage.get(LATEST_KEY);
+    if (!buffer) throw new BadRequestException('No backup has been taken yet');
+    return buffer;
   }
 
   // ---- Restore ----
 
   async restoreFromLocal(userId: string) {
-    if (!existsSync(LATEST_FILE)) throw new BadRequestException('No local backup file to restore from');
-    const buffer = await readFile(LATEST_FILE);
+    const buffer = await this.storage.get(LATEST_KEY);
+    if (!buffer) throw new BadRequestException('No stored backup to restore from');
     return this.restoreFromBuffer(userId, buffer);
   }
 

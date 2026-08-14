@@ -2,6 +2,8 @@
 import { MovementType, Prisma, UnitStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { applyWeightedAverageCost } from '../common/costing';
+import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class StockService {
@@ -123,12 +125,35 @@ export class StockService {
       .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
   }
 
+  /**
+   * Manually add or remove stock — opening balances, found stock, breakage,
+   * shrinkage after a count.
+   *
+   * A positive adjustment may carry `unitCost`, which re-costs the product on
+   * the weighted average exactly as a goods receipt does. Without it the units
+   * are assumed to have come in at the current average, which is the right
+   * default for a recount but wrong for an opening balance at a new price —
+   * hence the option. Removals never change the average.
+   */
   async manualAdjustment(
     userId: string,
-    dto: { productId: string; warehouseId: string; delta: number; reason: string },
+    dto: { productId: string; warehouseId: string; delta: number; reason: string; unitCost?: number },
   ) {
     if (!dto.delta) throw new BadRequestException('Delta must be non-zero');
+    if (dto.unitCost !== undefined && dto.delta < 0) {
+      throw new BadRequestException('A unit cost only applies when adding stock');
+    }
     await this.prisma.$transaction(async (tx) => {
+      if (dto.unitCost !== undefined && dto.delta > 0) {
+        // Must run before adjustStock so on-hand quantity is still pre-adjustment.
+        await applyWeightedAverageCost(tx, {
+          productId: dto.productId,
+          receivedQty: dto.delta,
+          receivedUnitCost: dto.unitCost,
+          userId,
+          source: `stock adjustment (${dto.reason})`,
+        });
+      }
       await this.adjustStock(tx, {
         productId: dto.productId,
         warehouseId: dto.warehouseId,
@@ -179,8 +204,11 @@ export class StockService {
 
   // ---- Warehouses ----
 
-  warehouses() {
-    return this.prisma.warehouse.findMany({ orderBy: { id: 'asc' } });
+  warehouses(includeArchived = false) {
+    return this.prisma.warehouse.findMany({
+      where: includeArchived ? undefined : { deletedAt: null },
+      orderBy: { id: 'asc' },
+    });
   }
 
   async createWarehouse(userId: string, data: { name: string; address?: string; isDefault?: boolean }) {
@@ -199,6 +227,66 @@ export class StockService {
     }
     await this.audit.log(userId, 'UPDATE', 'Warehouse', id, data);
     return wh;
+  }
+
+  /**
+   * Business use of a warehouse. A zero-quantity StockLevel is not use: one is
+   * created by `adjustStock`'s upsert for every product/warehouse pair it ever
+   * touches, so counting them would make an empty warehouse un-purgeable.
+   */
+  private async warehouseUsage(id: string) {
+    const [stocked, units, movementsFrom, movementsTo, salesOrders, purchaseOrders] = await Promise.all([
+      this.prisma.stockLevel.count({ where: { warehouseId: id, NOT: { quantity: 0 } } }),
+      this.prisma.productUnit.count({ where: { warehouseId: id } }),
+      this.prisma.stockMovement.count({ where: { warehouseId: id } }),
+      this.prisma.stockMovement.count({ where: { toWarehouseId: id } }),
+      this.prisma.salesOrder.count({ where: { warehouseId: id } }),
+      this.prisma.purchaseOrder.count({ where: { warehouseId: id } }),
+    ]);
+    return { stockOnHand: stocked, units, movements: movementsFrom + movementsTo, salesOrders, purchaseOrders };
+  }
+
+  /** Can this warehouse be deleted outright? `removeWarehouse()` re-checks. */
+  async warehouseUsageReport(id: string): Promise<UsageReport> {
+    const counts = await this.warehouseUsage(id);
+    return { used: !isUnused(counts), usedBy: usedBy(counts) };
+  }
+
+  async removeWarehouse(userId: string, id: string): Promise<SafeDeleteResult> {
+    const wh = await this.prisma.warehouse.findUnique({ where: { id } });
+    if (!wh) throw new NotFoundException('Warehouse not found');
+
+    // Stock has to live somewhere: removing the only place to put it would leave
+    // every receipt and order with nowhere to go.
+    const remaining = await this.prisma.warehouse.count({ where: { deletedAt: null, id: { not: id } } });
+    if (remaining === 0) throw new BadRequestException('The last warehouse cannot be deleted');
+    if (wh.isDefault) throw new BadRequestException('Make another warehouse the default before deleting this one');
+
+    const counts = await this.warehouseUsage(id);
+    if (isUnused(counts)) {
+      // The empty stock-level rows are bookkeeping and go with it; the FK is
+      // Restrict, so they must be cleared explicitly.
+      await this.prisma.$transaction([
+        this.prisma.stockLevel.deleteMany({ where: { warehouseId: id } }),
+        this.prisma.warehouse.delete({ where: { id } }),
+      ]);
+      await this.audit.log(userId, 'PURGE', 'Warehouse', id, { name: wh.name });
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+
+    const used = usedBy(counts);
+    await this.prisma.warehouse.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+    await this.audit.log(userId, 'DELETE', 'Warehouse', id, { name: wh.name, usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
+  }
+
+  async restoreWarehouse(userId: string, id: string) {
+    const wh = await this.prisma.warehouse.findUnique({ where: { id } });
+    if (!wh) throw new NotFoundException('Warehouse not found');
+    if (!wh.deletedAt) return { success: true, alreadyActive: true };
+    await this.prisma.warehouse.update({ where: { id }, data: { deletedAt: null, isActive: true } });
+    await this.audit.log(userId, 'RESTORE', 'Warehouse', id, { name: wh.name });
+    return { success: true, alreadyActive: false };
   }
 
   // ---- Product units (serial numbers) ----

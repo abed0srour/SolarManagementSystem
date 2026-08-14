@@ -28,7 +28,9 @@ export default function CategoriesPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dialog, setDialog] = useState<DialogState>(null);
   const [form, setForm] = useState<any>({});
-  const [deleteFn, setDeleteFn] = useState<(() => Promise<void>) | null>(null);
+  // Both the endpoint to delete and the one to ask about usage, so the dialog
+  // can say whether confirming will archive or permanently delete.
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; usagePath: string } | null>(null);
 
   // Cache-first, rendered straight from the cached value so a warm visit paints
   // with no intermediate state. `refresh` re-fetches from the API and rewrites
@@ -115,10 +117,7 @@ export default function CategoriesPage() {
               </Button>
               <Button
                 variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={() => setDeleteFn(() => async () => {
-                  try { await api.delete(`/categories/${cat.id}`); toast.success(t('common.deleted')); load(); }
-                  catch (e) { toast.error(errMsg(e)); }
-                })}
+                onClick={() => setDeleteTarget({ path: `/categories/${cat.id}`, usagePath: `/categories/${cat.id}/usage` })}
               >
                 <Trash2 />
               </Button>
@@ -139,10 +138,7 @@ export default function CategoriesPage() {
                       </Button>
                       <Button
                         variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => setDeleteFn(() => async () => {
-                          try { await api.delete(`/categories/sub/${sub.id}`); toast.success(t('common.deleted')); load(); }
-                          catch (e) { toast.error(errMsg(e)); }
-                        })}
+                        onClick={() => setDeleteTarget({ path: `/categories/sub/${sub.id}`, usagePath: `/categories/sub/${sub.id}/usage` })}
                       >
                         <Trash2 />
                       </Button>
@@ -236,7 +232,23 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog open={!!deleteFn} onOpenChange={(v) => !v && setDeleteFn(null)} requireText={t('common.deleteWord')} onConfirm={async () => { await deleteFn?.(); }} />
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+        requireText={t('common.deleteWord')}
+        usagePath={deleteTarget?.usagePath}
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          try {
+            const { data } = await api.delete(deleteTarget.path);
+            // Report what actually happened rather than always saying "deleted".
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            load();
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
     </div>
   );
 }

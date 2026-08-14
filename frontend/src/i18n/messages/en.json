@@ -176,7 +176,12 @@
     "restore": "Restore",
     "restored": "Restored to the active list",
     "purgedToast": "Deleted permanently",
-    "archivedToast": "Moved to the archive — restore it any time from the Archive view"
+    "archivedToast": "Moved to the archive — restore it any time from the Archive view",
+    "blocked": {
+      "HAS_SUBCATEGORIES": "This category still has sub-categories. Delete or move them first.",
+      "HAS_PRODUCTS": "This sub-category still has products. Move them to another sub-category first.",
+      "HAS_SALES_ORDER": "This quotation was converted into a sales order, so it must stay."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -214,7 +219,13 @@
     "previousPeriod": "Previous period",
     "nextPeriod": "Next period",
     "today": "Today",
-    "showingPeriod": "Showing"
+    "showingPeriod": "Showing",
+    "orderStatus": "Orders by status",
+    "collectionMix": "Collection vs outstanding",
+    "outstanding": "Outstanding",
+    "vsPrevious": "vs previous period",
+    "thisMonth": "This month",
+    "thisYear": "This year"
   },
   "status": {
     "DRAFT": "Draft",
@@ -342,7 +353,9 @@
     "addresses": "Addresses",
     "addAddress": "Add address",
     "billing": "Billing",
-    "installation": "Installation site"
+    "installation": "Installation site",
+    "details": "Details",
+    "newOrder": "New order"
   },
   "suppliers": {
     "title": "Suppliers",
@@ -377,7 +390,10 @@
     "startDay": "Start day (sold)",
     "newWarehouse": "New warehouse",
     "default": "Default",
-    "low": "Low"
+    "low": "Low",
+    "unitCost": "Unit cost (optional)",
+    "unitCostHint": "Re-costs the product on the weighted average, like a goods receipt. Leave blank to keep the current average cost.",
+    "unitCostPlaceholder": "Same as current average"
   },
   "quotations": {
     "title": "Quotations",
@@ -437,7 +453,12 @@
     "hideComponents": "Hide components",
     "showSubItemsOnInvoice": "Itemise bundles on the invoice",
     "showSubItemsHint": "Off: the customer sees one package line.",
-    "posReceipt": "POS receipt"
+    "posReceipt": "POS receipt",
+    "cancelBlocked": {
+      "DELIVERED": "This order was delivered. Create a refund instead of cancelling it.",
+      "COLLECTED": "The customer already collected this order. Create a refund instead of cancelling it.",
+      "HAS_PAYMENTS": "Payments have been taken against this order. Refund them before it can be cancelled."
+    }
   },
   "invoices": {
     "title": "Invoices",
@@ -472,7 +493,9 @@
   "receipts": {
     "title": "Receipts",
     "share": "Share via WhatsApp",
-    "waMessage": "Receipt {number}: we received {amount} on {date}. Thank you!"
+    "waMessage": "Receipt {number}: we received {amount} on {date}. Thank you!",
+    "paidFor": "Paid for",
+    "noOrder": "No order"
   },
   "refunds": {
     "title": "Refunds & Returns",
@@ -701,7 +724,7 @@
   },
   "calculator": {
     "title": "Solar System Calculator",
-    "subtitle": "Size a system from a client's consumption and get a quote-ready bundle from your stock",
+    "subtitle": "Size a system from the bill or from measured current, then match it to what is in stock",
     "monthlyKwh": "Monthly consumption (kWh)",
     "sunHours": "Peak sun hours / day",
     "backupHours": "Backup autonomy (hours)",
@@ -733,7 +756,58 @@
     "createQuotation": "Create quotation",
     "quotationCreated": "Quotation created",
     "pickClient": "Pick a client for the quotation",
-    "outOfStock": "insufficient stock"
+    "outOfStock": "insufficient stock",
+    "modeLoad": "From measured load",
+    "modeBill": "From monthly bill",
+    "dayAmps": "Daytime current (A)",
+    "dayHours": "Daytime hours",
+    "nightAmps": "Nighttime current (A)",
+    "nightHours": "Nighttime hours",
+    "ampsHint": "Measured with a clamp meter",
+    "phase": "Supply type",
+    "phaseDC": "DC",
+    "phaseSingle": "Single-phase AC",
+    "phaseThree": "Three-phase AC",
+    "systemVoltage": "System voltage",
+    "powerFactor": "Power factor",
+    "surgeFactor": "Motor surge",
+    "surgeHint": "Starting current multiple",
+    "surgeNone": "resistive",
+    "surgeLight": "light motors",
+    "surgeMotor": "induction motor",
+    "surgeHeavy": "heavy machinery",
+    "autonomyDays": "Days of autonomy",
+    "batteryVoltage": "Battery bank voltage",
+    "peakLoadHint": "Optional override",
+    "continuous": "continuous",
+    "surge": "surge",
+    "month": "month",
+    "energyBalance": "Energy balance",
+    "costComposition": "Cost composition",
+    "dayLoad": "Day load",
+    "nightLoad": "Night load",
+    "daytime": "Daytime",
+    "nighttime": "Nighttime",
+    "pickComponents": "Select components to see the cost breakdown",
+    "shortBy": "Short by {n}",
+    "missingSpecs": "{n} product(s) skipped — no specification recorded. Add the wattage or capacity on the product to include them here.",
+    "noInverter": "No inverter in stock reaches the required {kw} kW. Consider two smaller units in parallel, or add a larger model to the catalogue.",
+    "shortageWarning": "Some items are short in stock. The order can still be created, but confirming it will fail until stock arrives.",
+    "createOrder": "Create sales order",
+    "orderCreated": "Order created",
+    "orderStockNote": "The order is created as a draft. Stock is only drawn when you confirm it.",
+    "stepLoad": "The load",
+    "stepLoadHint": "What the customer actually consumes",
+    "stepSite": "Site and system",
+    "stepSiteHint": "Where it will be installed and how it is built",
+    "stepMoney": "Economics",
+    "stepMoneyHint": "Used for payback and savings only",
+    "current": "Current (A)",
+    "hours": "Hours",
+    "derivedPower": "Derived power",
+    "byDay": "by day",
+    "byNight": "by night",
+    "calculateHint": "Sizing is matched against products in stock"
   },
   "expenses": {
     "title": "Expenses",
@@ -889,6 +963,11 @@
     "validUntil": "QR valid until",
     "scanAnother": "Scan another",
     "cameraDenied": "Camera permission was denied. Allow camera access in your browser settings, or use the code below.",
-    "cameraUnavailable": "No camera available on this device. Use the code printed under the QR."
+    "cameraUnavailable": "No camera available on this device. Use the code printed under the QR.",
+    "doNotRelease": "Do not release",
+    "collectFirst": "Collect before releasing",
+    "pickList": "Items to collect",
+    "pieces": "{count} pieces",
+    "ackUnpaid": "The customer is collecting without settling the balance, and I am authorised to release it."
   }
 }

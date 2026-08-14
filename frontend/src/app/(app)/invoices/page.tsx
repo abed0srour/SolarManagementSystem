@@ -11,7 +11,7 @@ import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, toItemsPayload } from '../../../components/line-items-editor';
-import ClientInfoDialog from '../../../components/client-info-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import { ClientPicker, SupplierPicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -27,7 +27,6 @@ export default function InvoicesPage() {
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [clientInfo, setClientInfo] = useState<string | null>(null);
 
   const openCreate = () => {
     setForm({ type: 'SALE', client: null, supplier: null, dueDate: '', discountType: '', discountValue: 0, shippingFee: 0, notes: '' });
@@ -90,9 +89,12 @@ export default function InvoicesPage() {
           { key: 'type', label: t('clients.type'), render: (r) => (r.type === 'SALE' ? t('invoices.sale') : t('invoices.purchase')) },
           {
             key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`,
-            render: (r) => r.client?.name && r.clientId ? (
-              <button className="text-primary hover:underline" onClick={(e) => { e.stopPropagation(); setClientInfo(r.clientId); }}>{r.client.name}</button>
-            ) : (r.supplier?.name ?? '—'),
+            render: (r) =>
+              r.clientId ? (
+                <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>
+              ) : (
+                r.supplier?.name ?? <span className="text-muted-foreground">—</span>
+              ),
           },
           { key: 'issueDate', label: t('invoices.issueDate'), render: (r) => fmtDate(r.issueDate) },
           { key: 'dueDate', label: t('common.dueDate'), render: (r) => fmtDate(r.dueDate) },
@@ -152,8 +154,6 @@ export default function InvoicesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ClientInfoDialog clientId={clientInfo} onOpenChange={(v) => !v && setClientInfo(null)} />
     </div>
   );
 }

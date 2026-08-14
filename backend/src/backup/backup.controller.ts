@@ -50,9 +50,14 @@ export class BackupController {
   }
 
   @Get('download')
-  download(@Res() res: Response) {
-    const path = this.service.downloadPath();
-    res.download(path, `solar-store-backup-${new Date().toISOString().slice(0, 10)}.json.gz`);
+  async download(@Res() res: Response) {
+    const body = await this.service.downloadBody();
+    res.set({
+      'Content-Type': 'application/gzip',
+      'Content-Disposition': `attachment; filename="solar-store-backup-${new Date().toISOString().slice(0, 10)}.json.gz"`,
+      'Content-Length': String(body.length),
+    });
+    res.end(body);
   }
 
   @Post('restore/local')
