@@ -18,6 +18,12 @@ export interface Column<T = any> {
   render?: (row: T) => ReactNode;
   sortable?: boolean;
   className?: string;
+  /**
+   * How this column behaves in the phone card layout.
+   * `hide` drops it, `primary` promotes it to the card's heading. Left unset,
+   * the first column becomes the heading and the rest render as label/value.
+   */
+  mobile?: 'primary' | 'hide';
 }
 
 interface Props {
@@ -117,6 +123,65 @@ export default function DataTable({
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  /*
+   * Phone layout. A ten-column table on a 390px screen is either a horizontal
+   * scroll hunt or unreadable, so each row becomes a card: one heading line and
+   * the rest as label/value pairs. Columns with a blank label (the row-action
+   * buttons) are pulled out and pinned to the card's footer, where they stay
+   * reachable with a thumb.
+   */
+  const isBlank = (l: ReactNode) => l === '' || l === null || l === undefined;
+  const shown = columns.filter((c) => c.mobile !== 'hide');
+  const actionCols = shown.filter((c) => isBlank(c.label));
+  const dataCols = shown.filter((c) => !isBlank(c.label));
+  const headingCol = dataCols.find((c) => c.mobile === 'primary') ?? dataCols[0];
+  const detailCols = dataCols.filter((c) => c !== headingCol);
+  const cell = (c: Column, row: any) => (c.render ? c.render(row) : (row[c.key] ?? '—'));
+
+  const cards = (
+    <div className="divide-y">
+      {loading ? (
+        Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="space-y-2 p-4">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        ))
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+          <Inbox className="h-8 w-8 opacity-50" />
+          <span className="text-sm">{t('common.noRecords')}</span>
+        </div>
+      ) : (
+        rows.map((row, i) => (
+          <div
+            key={row.id ?? i}
+            className={cn('p-4', onRowClick && 'cursor-pointer active:bg-muted/50')}
+            onClick={() => onRowClick?.(row)}
+          >
+            {headingCol && <div className="mb-2 font-medium">{cell(headingCol, row)}</div>}
+            <dl className="space-y-1.5">
+              {detailCols.map((c) => (
+                <div key={c.key} className="flex items-start justify-between gap-3 text-sm">
+                  <dt className="shrink-0 text-muted-foreground">{c.label}</dt>
+                  <dd className="min-w-0 text-end">{cell(c, row)}</dd>
+                </div>
+              ))}
+            </dl>
+            {actionCols.length > 0 && (
+              <div className="mt-3 flex justify-end gap-1 border-t pt-3">
+                {actionCols.map((c) => (
+                  <div key={c.key}>{cell(c, row)}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+
   return (
     <div className="rounded-lg border bg-card">
       <div className="no-print flex flex-wrap items-center gap-2 border-b p-3">
@@ -163,6 +228,8 @@ export default function DataTable({
         <div className="flex-1" />
         {toolbar}
       </div>
+      <div className="sm:hidden">{cards}</div>
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -221,6 +288,7 @@ export default function DataTable({
           )}
         </TableBody>
       </Table>
+      </div>
       <div className="no-print flex flex-wrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>{t('common.rowsPerPage')}</span>

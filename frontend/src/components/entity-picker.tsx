@@ -1,10 +1,7 @@
 'use client';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronDown, Search, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtMoney } from '../lib/api';
-import { cn } from '../lib/utils';
-import { Input } from './ui/input';
+import Combobox, { ComboboxOption } from './combobox';
 
 interface Props {
   endpoint: string;
@@ -20,125 +17,47 @@ interface Props {
 
 /**
  * Searchable async combobox for picking an entity from a list endpoint.
- * The options list renders in a body portal with fixed positioning so it is
- * never clipped by dialog/table overflow and never overlaps sibling fields.
+ *
+ * Callers work in whole records — `value` and `onChange` carry the entity, not
+ * an id — so the fetched rows are kept alongside the flattened options and
+ * mapped back on selection.
  */
 export function EntityPicker({ endpoint, value, onChange, getLabel, getSub, placeholder, extraParams, className, required }: Props) {
-  const [options, setOptions] = useState<any[]>([]);
-  const [input, setInput] = useState('');
-  const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const [options, setOptions] = useState<ComboboxOption[]>([]);
+  const rows = useRef<Map<string, any>>(new Map());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const place = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setRect((prev) =>
-      prev && prev.top === r.bottom + 4 && prev.left === r.left && prev.width === r.width
-        ? prev
-        : { top: r.bottom + 4, left: r.left, width: r.width },
-    );
-  };
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    place();
-    // Keep tracking while open: the picker often opens while a dialog is still
-    // mounting/animating into its centered position, so a one-shot measurement
-    // can capture pre-layout coordinates (dropdown appearing bottom-right).
-    const timer = setInterval(place, 100);
-    const onMove = () => place();
-    window.addEventListener('scroll', onMove, true);
-    window.addEventListener('resize', onMove);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('scroll', onMove, true);
-      window.removeEventListener('resize', onMove);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const timer = setTimeout(() => {
+  const fetchRows = useCallback(
+    (search?: string) => {
       api
-        .get(endpoint, { params: { search: input || undefined, pageSize: 20, ...extraParams } })
-        .then((r) => setOptions(Array.isArray(r.data) ? r.data : (r.data.items ?? [])))
+        .get(endpoint, { params: { search: search || undefined, pageSize: 20, ...extraParams } })
+        .then((r) => {
+          const items: any[] = Array.isArray(r.data) ? r.data : (r.data.items ?? []);
+          rows.current = new Map(items.map((i) => [i.id, i]));
+          setOptions(items.map((i) => ({ value: i.id, label: getLabel(i), sub: getSub?.(i) ?? null })));
+        })
         .catch(() => setOptions([]));
-    }, 250);
-    return () => clearTimeout(timer);
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, endpoint, open]);
+    [endpoint, JSON.stringify(extraParams)],
+  );
 
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!containerRef.current?.contains(t) && !listRef.current?.contains(t)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, []);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
-      {value ? (
-        <div className="flex h-9 items-center justify-between gap-1 rounded-md border border-input bg-background px-3 text-sm">
-          <span className="truncate">{getLabel(value)}</span>
-          <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => onChange(null)}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
-        <div className="relative">
-          <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={placeholder}
-            value={input}
-            required={required}
-            onChange={(e) => setInput(e.target.value)}
-            onFocus={() => setOpen(true)}
-            className="ps-8 pe-8"
-          />
-          <ChevronDown className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        </div>
-      )}
-      {open && !value && rect && typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            ref={listRef}
-            data-entity-picker-list=""
-            // pointerEvents must be re-enabled explicitly: a modal Radix dialog
-            // sets pointer-events:none on everything outside its own content.
-            style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, zIndex: 100, pointerEvents: 'auto' }}
-            className="max-h-64 overflow-y-auto rounded-md border bg-popover p-1 shadow-lg"
-          >
-            {options.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">—</div>}
-            {options.map((o) => {
-              const sub = getSub?.(o);
-              return (
-                <button
-                  key={o.id}
-                  type="button"
-                  className="block w-full rounded-sm px-3 py-1.5 text-start text-sm hover:bg-accent"
-                  // mousedown, not click: it fires before the input blurs or the
-                  // dialog's outside-interaction logic runs.
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onChange(o);
-                    setOpen(false);
-                    setInput('');
-                  }}
-                >
-                  <span className="block truncate">{getLabel(o)}</span>
-                  {sub && <span className="block truncate text-xs text-muted-foreground">{sub}</span>}
-                </button>
-              );
-            })}
-          </div>,
-          document.body,
-        )}
-    </div>
+    <Combobox
+      value={value ? { value: value.id, label: getLabel(value) } : null}
+      onChange={(o) => onChange(o ? (rows.current.get(o.value) ?? null) : null)}
+      options={options}
+      placeholder={placeholder}
+      className={className}
+      required={required}
+      onOpen={() => fetchRows()}
+      onSearch={(q) => {
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => fetchRows(q), 250);
+      }}
+    />
   );
 }
 
