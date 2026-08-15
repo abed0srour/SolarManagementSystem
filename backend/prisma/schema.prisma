@@ -14,7 +14,12 @@ datasource db {
 // ============ Users, Auth & Audit ============
 
 enum Role {
+  /// Owns the system: full access plus the only role that can manage accounts.
+  SUPER_ADMIN
   ADMIN
+  MANAGER
+  STAFF
+  VIEWER
 }
 
 model User {
@@ -22,7 +27,11 @@ model User {
   email               String    @unique
   passwordHash        String
   name                String
-  role                Role      @default(ADMIN)
+  role                Role      @default(STAFF)
+  /// Per-account override of the role's default permissions. Empty means "use
+  /// the role's defaults" — not "no access" — so existing accounts are
+  /// unaffected by the introduction of permissions.
+  permissions         String[]  @default([])
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?

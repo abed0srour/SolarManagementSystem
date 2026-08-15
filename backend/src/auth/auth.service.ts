@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { effectivePermissions } from './permissions';
 import { AuditService } from '../common/audit.service';
 import { MailService } from '../common/mail.service';
 
@@ -24,8 +25,18 @@ export class AuthService {
     private mail: MailService,
   ) {}
 
-  private async issueTokens(user: { id: string; email: string; name: string; role: string }) {
-    const payload = { sub: user.id, email: user.email, name: user.name, role: user.role };
+  private async issueTokens(user: { id: string; email: string; name: string; role: string; permissions?: string[] }) {
+    // Baked into the token so the guard needs no database round-trip per
+    // request. The cost is that a permission change only takes effect on the
+    // next token — which is why UsersService revokes refresh tokens whenever a
+    // role, password or active flag changes.
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      permissions: effectivePermissions(user.role, user.permissions),
+    };
     const accessToken = await this.jwtService.signAsync(payload);
     const refreshToken = randomBytes(48).toString('hex');
     await this.prisma.refreshToken.create({

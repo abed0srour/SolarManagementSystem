@@ -1033,5 +1033,39 @@
     "csvHint": "A .zip with one CSV per table, for opening in Excel. Not restorable — use the backup above for that.",
     "csvDaily": "Download a CSV copy automatically once a day",
     "csvDownloaded": "Daily CSV backup downloaded"
+  },
+  "users": {
+    "title": "Users & Roles",
+    "hint": "Only the super admin can create accounts and set what they can reach.",
+    "newUser": "New account",
+    "role": "Role",
+    "permissions": "Permissions",
+    "module": "Area",
+    "view": "View",
+    "edit": "Edit",
+    "permissionsHint": "Choosing a role ticks its defaults; adjust them per account. View allows reading, Edit allows creating and changing.",
+    "resetPassword": "Reset password",
+    "resetPasswordHint": "Leave blank to keep the current password.",
+    "deleteTitle": "Remove this account?",
+    "deleteHint": "{email} will be archived and signed out immediately. Their past records stay intact.",
+    "roles": {
+      "SUPER_ADMIN": "Super admin",
+      "ADMIN": "Admin",
+      "MANAGER": "Manager",
+      "STAFF": "Staff",
+      "VIEWER": "Viewer"
+    },
+    "modules": {
+      "catalog": "Products & categories",
+      "inventory": "Inventory & warehouses",
+      "sales": "Sales & clients",
+      "purchasing": "Purchasing & suppliers",
+      "finance": "Invoices & payments",
+      "operations": "Installations & service",
+      "workers": "Workers & payroll",
+      "reports": "Reports & dashboard",
+      "settings": "Settings & backup",
+      "users": "Users & roles"
+    }
   }
 }

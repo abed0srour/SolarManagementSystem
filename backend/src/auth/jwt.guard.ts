@@ -23,7 +23,15 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('Missing access token');
     try {
       const payload = await this.jwtService.verifyAsync(token);
-      request.user = { id: payload.sub, email: payload.email, name: payload.name, role: payload.role };
+      request.user = {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+        // Must be carried through: PermissionsGuard reads this, and omitting it
+        // denies every non-super-admin request rather than failing open.
+        permissions: payload.permissions ?? [],
+      };
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');

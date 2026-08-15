@@ -4,17 +4,18 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Building2, Coins, Hash, ShieldCheck, KeyRound, Mail, MailCheck, Upload, History, Settings as SettingsIcon,
-  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet,
+  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet, UsersRound,
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
-import { setUser } from '../../../lib/auth';
+import { getUser, setUser } from '../../../lib/auth';
 import { invalidateCache } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import { CSV_BACKUP_ENABLED_KEY, csvBackupEnabled, csvFilename } from '../../../components/daily-csv-backup';
 import { PasswordInput } from '../../../components/ui/password-input';
+import UsersManager from '../../../components/users-manager';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
@@ -38,6 +39,9 @@ export default function SettingsPage() {
   const [restoreLocalOpen, setRestoreLocalOpen] = useState(false);
   const [restoreUploadOpen, setRestoreUploadOpen] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  // Presentation only — /users is independently restricted server-side.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  useEffect(() => setIsSuperAdmin(getUser()?.role === 'SUPER_ADMIN'), []);
 
   const load = () => {
     api.get('/settings').then((r) => {
@@ -224,6 +228,9 @@ export default function SettingsPage() {
           <TabsTrigger value="sequences"><Hash className="me-1.5 h-4 w-4" />{t('settings.sequences')}</TabsTrigger>
           <TabsTrigger value="security"><ShieldCheck className="me-1.5 h-4 w-4" />{t('settings.security')}</TabsTrigger>
           <TabsTrigger value="backup"><DatabaseBackup className="me-1.5 h-4 w-4" />{t('settings.backup')}</TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="users"><UsersRound className="me-1.5 h-4 w-4" />{t('users.title')}</TabsTrigger>
+          )}
         </TabsList>
 
         {/* ---- Company ---- */}
@@ -484,6 +491,12 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Backup & restore ---- */}
+        {isSuperAdmin && (
+          <TabsContent value="users">
+            <UsersManager />
+          </TabsContent>
+        )}
+
         <TabsContent value="backup">
           <div className="space-y-4">
             <Card>
