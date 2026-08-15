@@ -38,7 +38,8 @@
     "claim": "Order Collection",
     "scan": "Scan QR",
     "serials": "Serial Numbers",
-    "purchaseReturns": "Supplier Returns"
+    "purchaseReturns": "Supplier Returns",
+    "productBuyers": "Who Bought What"
   },
   "subtitles": {
     "dashboard": "Business overview — sales, stock and cash at a glance.",
@@ -62,7 +63,8 @@
     "serviceJobs": "Installation, maintenance and repair jobs.",
     "profile": "Your account, security and sign-in history.",
     "serials": "Every serial-numbered unit — search, correct and re-assign them.",
-    "purchaseReturns": "Goods sent back to suppliers and the money refunded."
+    "purchaseReturns": "Goods sent back to suppliers and the money refunded.",
+    "productBuyers": "Pick a product and see every customer who bought it."
   },
   "auth": {
     "signIn": "Sign in",
@@ -91,7 +93,11 @@
     "codeSent": "A verification code was sent to your email",
     "codeHint": "Enter the 6-digit verification code sent to your current account email.",
     "changePasswordHint": "For your security, a verification code is sent to your account email before the password is changed.",
-    "changeEmailHint": "A verification code is sent to your current email to confirm it's really you before switching to the new address."
+    "changeEmailHint": "A verification code is sent to your current email to confirm it's really you before switching to the new address.",
+    "confirmPassword": "Confirm new password",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "passwordMinHint": "At least 8 characters.",
+    "changePasswordSignsOut": "Changing your password signs out your other devices."
   },
   "common": {
     "search": "Search…",
@@ -1011,5 +1017,21 @@
     "WHISH": "Whish refund",
     "OMT": "OMT refund",
     "CREDIT_NOTE": "Credit note (no cash)"
+  },
+  "productBuyers": {
+    "title": "Who Bought What",
+    "pickProduct": "Pick a product to see its buyers…",
+    "noBuyers": "No one has bought this product yet.",
+    "choose": "Choose a product above to see who bought it.",
+    "openOrder": "Open order",
+    "purchased": "Purchased",
+    "totalSold": "Total sold",
+    "buyers": "Buyers"
+  },
+  "backup": {
+    "csvExport": "Export all tables as CSV",
+    "csvHint": "A .zip with one CSV per table, for opening in Excel. Not restorable — use the backup above for that.",
+    "csvDaily": "Download a CSV copy automatically once a day",
+    "csvDownloaded": "Daily CSV backup downloaded"
   }
 }

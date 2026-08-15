@@ -60,6 +60,18 @@ export class BackupController {
     res.end(body);
   }
 
+  /** Every table as CSV in one zip — readable in Excel, not restorable. */
+  @Get('csv')
+  async csv(@Res() res: Response) {
+    const body = await this.service.csvExport();
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="solar-store-csv-${new Date().toISOString().slice(0, 10)}.zip"`,
+      'Content-Length': String(body.length),
+    });
+    res.end(body);
+  }
+
   @Post('restore/local')
   restoreLocal(@CurrentUser() user: AuthUser) {
     return this.service.restoreFromLocal(user.id);

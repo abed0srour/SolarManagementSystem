@@ -216,6 +216,12 @@ export class ProductsController {
     return this.service.priceHistory(id);
   }
 
+  /** Clients who bought this product, one row per sales-order line. */
+  @Get(':id/buyers')
+  buyers(@Param('id') id: string, @Query() query: any) {
+    return this.service.buyers(id, query);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateProductDto) {
     return this.service.create(user.id, dto);

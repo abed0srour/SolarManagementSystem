@@ -12,6 +12,7 @@ import { setUser } from '../../../lib/auth';
 import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { PasswordInput } from '../../../components/ui/password-input';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Skeleton } from '../../../components/ui/skeleton';
@@ -28,8 +29,9 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 /**
  * The admin's own account: who they are, and every self-service action that
- * changes it. Email and password both go through an emailed verification code,
- * so a stolen session cannot quietly take over the account.
+ * changes it. Changing the email still goes through an emailed verification
+ * code; changing the password only requires the current one, so it works with
+ * no SMTP configured.
  */
 export default function ProfilePage() {
   const t = useTranslations();
@@ -40,7 +42,7 @@ export default function ProfilePage() {
 
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
-  const [pw, setPw] = useState<any>({ currentPassword: '', newPassword: '', code: '', codeSent: false, busy: false });
+  const [pw, setPw] = useState<any>({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
   const [em, setEm] = useState<any>({ currentPassword: '', newEmail: '', code: '', codeSent: false, busy: false });
   const [signOutAll, setSignOutAll] = useState(false);
 
@@ -63,26 +65,29 @@ export default function ProfilePage() {
     }
   };
 
-  const requestPasswordCode = async () => {
-    setPw((p: any) => ({ ...p, busy: true }));
-    try {
-      await api.post('/auth/request-password-change', { currentPassword: pw.currentPassword });
-      setPw((p: any) => ({ ...p, codeSent: true, busy: false }));
-      toast.success(t('auth.codeSent'));
-    } catch (e) {
-      toast.error(errMsg(e));
-      setPw((p: any) => ({ ...p, busy: false }));
-    }
-  };
+  const mismatch = pw.confirmPassword.length > 0 && pw.newPassword !== pw.confirmPassword;
+  const canChangePassword =
+    !!pw.currentPassword && pw.newPassword.length >= 8 && pw.newPassword === pw.confirmPassword;
 
-  const confirmPasswordChange = async () => {
+  /*
+   * Changed directly, with no emailed code. The code flow exists for accounts
+   * where a stolen session should not be enough to take the account over, but
+   * it depends on SMTP being configured — and with none configured it made
+   * changing a password impossible rather than merely less strict. The current
+   * password is still required, which is the check that matters here.
+   */
+  const changePassword = async () => {
     setPw((p: any) => ({ ...p, busy: true }));
     try {
-      await api.post('/auth/confirm-password-change', { code: pw.code, newPassword: pw.newPassword });
+      await api.post('/auth/change-password', {
+        currentPassword: pw.currentPassword,
+        newPassword: pw.newPassword,
+      });
       toast.success(t('common.saved'));
-      setPw({ currentPassword: '', newPassword: '', code: '', codeSent: false, busy: false });
+      setPw({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
     } catch (e) {
       toast.error(errMsg(e));
+    } finally {
       setPw((p: any) => ({ ...p, busy: false }));
     }
   };
@@ -177,30 +182,34 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Field label={t('auth.currentPassword')}>
-              <Input type="password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} />
+              <PasswordInput
+                autoComplete="current-password"
+                value={pw.currentPassword}
+                onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })}
+              />
             </Field>
-            <Field label={t('auth.newPassword')}>
-              <Input type="password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} />
+            <Field label={t('auth.newPassword')} hint={t('auth.passwordMinHint')}>
+              <PasswordInput
+                autoComplete="new-password"
+                value={pw.newPassword}
+                onChange={(e) => setPw({ ...pw, newPassword: e.target.value })}
+              />
             </Field>
-            {pw.codeSent ? (
-              <>
-                <Field label={t('auth.verificationCode')} hint={t('auth.codeHint')}>
-                  <Input dir="ltr" inputMode="numeric" maxLength={6} className="font-mono tracking-widest" value={pw.code} onChange={(e) => setPw({ ...pw, code: e.target.value })} />
-                </Field>
-                <div className="flex gap-2">
-                  <Button className="flex-1" disabled={pw.busy || pw.code.length < 6} onClick={confirmPasswordChange}>
-                    {t('common.confirm')}
-                  </Button>
-                  <Button variant="outline" disabled={pw.busy} onClick={requestPasswordCode}>
-                    {t('auth.resendCode')}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <Button className="w-full" disabled={pw.busy || !pw.currentPassword || pw.newPassword.length < 8} onClick={requestPasswordCode}>
-                <Mail /> {t('auth.sendCode')}
-              </Button>
-            )}
+            <Field
+              label={t('auth.confirmPassword')}
+              hint={mismatch ? <span className="text-destructive">{t('auth.passwordsDoNotMatch')}</span> : undefined}
+            >
+              <PasswordInput
+                autoComplete="new-password"
+                className={mismatch ? 'border-destructive' : undefined}
+                value={pw.confirmPassword}
+                onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })}
+              />
+            </Field>
+            <Button className="w-full" disabled={pw.busy || !canChangePassword} onClick={changePassword}>
+              <KeyRound /> {t('auth.changePassword')}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t('auth.changePasswordSignsOut')}</p>
           </CardContent>
         </Card>
 

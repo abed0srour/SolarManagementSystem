@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/c
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { gunzipSync, createGzip } from 'zlib';
+import JSZip from 'jszip';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -36,6 +37,21 @@ const BACKUP_FORMAT_VERSION = 1;
 
 const SCHEDULE_KEY = 'backup.schedule';
 const CRON_JOB_NAME = 'scheduled-backup';
+
+/** RFC 4180 quoting, plus the leading-BOM Excel needs to read UTF-8 correctly. */
+function toCsv(rows: any[]): string {
+  if (!rows.length) return '﻿';
+  const columns = Object.keys(rows[0]);
+  const cell = (v: any): string => {
+    if (v === null || v === undefined) return '';
+    // Dates as ISO, JSON columns as compact JSON; everything else as-is.
+    const s = v instanceof Date ? v.toISOString() : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [columns.join(',')];
+  for (const row of rows) lines.push(columns.map((c) => cell(row[c])).join(','));
+  return `﻿${lines.join('\r\n')}\r\n`;
+}
 
 interface BackupSchedule {
   enabled: boolean;
@@ -106,6 +122,47 @@ export class BackupService implements OnModuleInit {
   private delegate(client: any, modelName: string) {
     const key = modelName.charAt(0).toLowerCase() + modelName.slice(1);
     return client[key];
+  }
+
+  // ---- CSV export ----
+
+  /**
+   * Every table as a CSV inside one zip.
+   *
+   * Separate from `run()` on purpose: that produces a gzipped JSON snapshot
+   * built for restoring — exact types, relation order, nothing lost. This is
+   * built for a human opening it in Excel, so values are flattened to text and
+   * nothing about it is restorable. Keeping the two apart means neither has to
+   * compromise for the other.
+   */
+  async csvExport(): Promise<Buffer> {
+    const zip = new JSZip();
+    const stamp = new Date().toISOString().slice(0, 10);
+    for (const { name, idField } of this.modelOrder()) {
+      const delegate = this.delegate(this.prisma, name);
+      const rows: any[] = [];
+      let cursor: any;
+      // Same paged read as the JSON backup: never hold a whole table at once.
+      for (;;) {
+        const page = await delegate.findMany({
+          take: EXPORT_PAGE_SIZE,
+          orderBy: { [idField]: 'asc' },
+          ...(cursor ? { cursor: { [idField]: cursor }, skip: 1 } : {}),
+        });
+        if (!page.length) break;
+        rows.push(...page);
+        cursor = page[page.length - 1][idField];
+        if (page.length < EXPORT_PAGE_SIZE) break;
+      }
+      zip.file(`${name}.csv`, toCsv(rows));
+    }
+    zip.file(
+      'README.txt',
+      `Solar Store CSV export — ${stamp}\n\n` +
+        `One CSV per table. This is a readable export for spreadsheets, not a restorable backup;\n` +
+        `use Settings > Backup for a snapshot that can be restored.\n`,
+    );
+    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 
   // ---- Backup ----

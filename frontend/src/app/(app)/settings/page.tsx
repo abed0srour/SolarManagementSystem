@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Building2, Coins, Hash, ShieldCheck, KeyRound, Mail, MailCheck, Upload, History, Settings as SettingsIcon,
-  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive,
+  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet,
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
@@ -13,6 +13,7 @@ import { invalidateCache } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
+import { CSV_BACKUP_ENABLED_KEY, csvBackupEnabled, csvFilename } from '../../../components/daily-csv-backup';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
@@ -31,6 +32,8 @@ export default function SettingsPage() {
   const [backup, setBackup] = useState<any>(null);
   const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: 0, hour: 3, minute: 0 });
   const [backupBusy, setBackupBusy] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvDaily, setCsvDaily] = useState(true);
   const [restoreLocalOpen, setRestoreLocalOpen] = useState(false);
   const [restoreUploadOpen, setRestoreUploadOpen] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
@@ -51,6 +54,9 @@ export default function SettingsPage() {
     });
   };
   useEffect(loadBackup, []);
+
+  // localStorage is only readable after mount, so the toggle syncs here.
+  useEffect(() => setCsvDaily(csvBackupEnabled()), []);
 
   const runBackupNow = async () => {
     setBackupBusy(true);
@@ -80,6 +86,17 @@ export default function SettingsPage() {
       await downloadFile('/backup/download', `solar-store-backup-${new Date().toISOString().slice(0, 10)}.json.gz`);
     } catch (e) {
       toast.error(errMsg(e));
+    }
+  };
+
+  const doCsvExport = async () => {
+    setCsvBusy(true);
+    try {
+      await downloadFile('/backup/csv', csvFilename());
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setCsvBusy(false);
     }
   };
 
@@ -519,6 +536,31 @@ export default function SettingsPage() {
                     <Download /> {t('settings.downloadBackup')}
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* CSV copy on this PC — separate from the restorable snapshot above. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-primary" />{t('backup.csvExport')}</CardTitle>
+                <CardDescription>{t('backup.csvHint')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={csvDaily}
+                    onChange={(e) => {
+                      setCsvDaily(e.target.checked);
+                      localStorage.setItem(CSV_BACKUP_ENABLED_KEY, e.target.checked ? '1' : '0');
+                    }}
+                  />
+                  {t('backup.csvDaily')}
+                </label>
+                <Button variant="outline" onClick={doCsvExport} disabled={csvBusy}>
+                  <Download /> {t('backup.csvExport')}
+                </Button>
               </CardContent>
             </Card>
 

@@ -506,6 +506,78 @@ export class ProductsService {
     return { success: true, mode: 'ARCHIVED', usedBy: used };
   }
 
+  /**
+   * Who bought this product — one row per sales-order line, newest first, with
+   * the serial numbers that went out on it where the product is tracked.
+   *
+   * Cancelled orders are excluded: they represent a sale that never happened,
+   * so listing that client as a buyer would be wrong.
+   */
+  async buyers(productId: string, query: { page?: number; pageSize?: number; search?: string }) {
+    const where: Prisma.SalesOrderItemWhereInput = {
+      productId,
+      salesOrder: {
+        deletedAt: null,
+        status: { not: 'CANCELLED' },
+        ...(query.search
+          ? { client: { name: { contains: query.search, mode: 'insensitive' as const } } }
+          : {}),
+      },
+    };
+    const page = Number(query.page) || 1;
+    const pageSize = Math.min(Number(query.pageSize) || 25, 200);
+    const totalPromise = this.prisma.salesOrderItem.count({ where });
+
+    const items = await this.prisma.salesOrderItem.findMany({
+      relationLoadStrategy: 'join',
+      where,
+      include: {
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            orderDate: true,
+            status: true,
+            client: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { salesOrder: { orderDate: 'desc' } },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    // Serials are attached to the order, not the line, so they are fetched once
+    // for the page's orders rather than per row.
+    const orderIds = items.map((i) => i.salesOrder.id);
+    const units = orderIds.length
+      ? await this.prisma.productUnit.findMany({
+          where: { productId, salesOrderId: { in: orderIds } },
+          select: { salesOrderId: true, serialNumber: true },
+        })
+      : [];
+    const serialsByOrder = new Map<string, string[]>();
+    for (const u of units) {
+      if (!u.salesOrderId) continue;
+      serialsByOrder.set(u.salesOrderId, [...(serialsByOrder.get(u.salesOrderId) ?? []), u.serialNumber]);
+    }
+
+    return {
+      items: items.map((i) => ({
+        id: i.id,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        lineTotal: i.lineTotal,
+        order: i.salesOrder,
+        client: i.salesOrder.client,
+        serialNumbers: serialsByOrder.get(i.salesOrder.id) ?? [],
+      })),
+      total: await totalPromise,
+      page,
+      pageSize,
+    };
+  }
+
   priceHistory(productId: string) {
     return this.prisma.priceHistory.findMany({ relationLoadStrategy: 'join',
       where: { productId },

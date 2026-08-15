@@ -8,7 +8,7 @@ import {
   SunMedium, LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
-  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2,
+  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -18,6 +18,7 @@ import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
+import DailyCsvBackup from '../../components/daily-csv-backup';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
@@ -45,6 +46,7 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
       { key: 'clients', href: '/clients', icon: Users },
       { key: 'quotations', href: '/quotations', icon: FileText },
       { key: 'salesOrders', href: '/sales-orders', icon: ShoppingCart },
+      { key: 'productBuyers', href: '/product-buyers', icon: PackageSearch },
       { key: 'payments', href: '/payments', icon: CreditCard },
       { key: 'receipts', href: '/receipts', icon: Receipt },
       { key: 'refunds', href: '/refunds', icon: RotateCcw },
@@ -206,18 +208,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 const Icon = item.icon;
                 const active = item.href === activeHref;
                 return (
-                  <Link
+                  /*
+                   * A button, not a link. The browser paints the target URL in
+                   * a status bubble at the bottom-left whenever an anchor is
+                   * hovered, and that is not suppressible from script — the only
+                   * way to be rid of it is to not use an href. The trade-off is
+                   * real and deliberate: middle-click and ctrl-click no longer
+                   * open a nav item in a new tab. Navigation itself is identical,
+                   * since the router push is what Link does anyway.
+                   */
+                  <button
                     key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      router.push(item.href);
+                    }}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                      'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-start text-sm transition-colors',
                       active ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
                     {t(`nav.${item.key}`)}
-                  </Link>
+                  </button>
                 );
               })}
             </div>
@@ -229,6 +243,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* Renders nothing; pulls a CSV copy of the database once a day. */}
+      <DailyCsvBackup />
       {/* Desktop sidebar */}
       <aside className="no-print fixed inset-y-0 start-0 z-30 hidden w-60 md:block">{sidebar}</aside>
       {/* Mobile drawer */}
