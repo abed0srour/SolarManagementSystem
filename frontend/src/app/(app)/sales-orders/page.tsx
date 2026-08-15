@@ -12,7 +12,7 @@ import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import EntityLink, { linkTo } from '../../../components/entity-link';
-import SerialPicker from '../../../components/serial-picker';
+import SerialSelector from '../../../components/serial-selector';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
@@ -229,19 +229,18 @@ export default function SalesOrdersPage() {
       <Dialog open={!!confirmFor} onOpenChange={(v) => !v && setConfirmFor(null)}>
         <DialogContent wide>
           <DialogHeader><DialogTitle>{t('orders.confirmOrder')} — {confirmFor?.number}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {(confirmFor?.items ?? []).map((i: any) => (
               <div key={i.id}>
-                <div className="mb-1 text-sm font-medium">
-                  {i.product?.name} × {i.quantity}
+                <div className="mb-1.5 text-sm font-medium">
+                  {i.product?.name} <span className="text-muted-foreground">× {i.quantity}</span>
                 </div>
                 {i.product?.trackSerials && (
-                  <SerialPicker
+                  <SerialSelector
                     productId={i.productId}
-                    max={i.quantity}
+                    required={i.quantity}
                     value={serialInputs[i.productId] ?? []}
                     onChange={(serials) => setSerialInputs({ ...serialInputs, [i.productId]: serials })}
-                    placeholder={t('orders.pickSerials')}
                   />
                 )}
               </div>

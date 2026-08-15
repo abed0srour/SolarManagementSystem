@@ -463,7 +463,10 @@
       "DELIVERED": "This order was delivered. Create a refund instead of cancelling it.",
       "COLLECTED": "The customer already collected this order. Create a refund instead of cancelling it.",
       "HAS_PAYMENTS": "Payments have been taken against this order. Refund them before it can be cancelled."
-    }
+    },
+    "searchSerials": "Search in-stock serial numbers…",
+    "autoPick": "Auto-pick",
+    "noSerialsInStock": "No serial numbers in stock for this product."
   },
   "invoices": {
     "title": "Invoices",

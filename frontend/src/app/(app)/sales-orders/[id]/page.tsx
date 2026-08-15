@@ -20,7 +20,7 @@ import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/ap
 import StatusChip from '../../../../components/status-chip';
 import ConfirmDialog from '../../../../components/confirm-dialog';
 import EntityLink, { linkTo } from '../../../../components/entity-link';
-import SerialPicker from '../../../../components/serial-picker';
+import SerialSelector from '../../../../components/serial-selector';
 import Field from '../../../../components/form-field';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
@@ -284,19 +284,20 @@ export default function SalesOrderDetailPage() {
 
       {/* Confirm with serials */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
+        <DialogContent wide>
           <DialogHeader><DialogTitle>{t('orders.confirmOrder')} — {so.number}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {so.items.map((i: any) => (
               <div key={i.id}>
-                <div className="mb-1 text-sm font-medium">{i.product?.name} × {i.quantity}</div>
+                <div className="mb-1.5 text-sm font-medium">
+                  {i.product?.name} <span className="text-muted-foreground">× {i.quantity}</span>
+                </div>
                 {i.product?.trackSerials && (
-                  <SerialPicker
+                  <SerialSelector
                     productId={i.productId}
-                    max={i.quantity}
+                    required={i.quantity}
                     value={serialInputs[i.productId] ?? []}
                     onChange={(serials) => setSerialInputs({ ...serialInputs, [i.productId]: serials })}
-                    placeholder={t('orders.pickSerials')}
                   />
                 )}
               </div>
