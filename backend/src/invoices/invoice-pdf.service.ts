@@ -50,11 +50,17 @@ export class InvoicePdfService {
 
     const logo = await this.embedLogo(pdf, company.logoUrl);
     if (logo) {
-      // Fit into a 150x80 box, vertically centered in the header area (y 700–786)
-      const scale = Math.min(150 / logo.width, 80 / logo.height);
+      /*
+       * Fit into a 210x100 box. The box grows upward from y 700 rather than
+       * around a fixed centre: 700 is where the info band starts, so a tall
+       * logo must never reach below it, and the free space above is only the
+       * top margin. A short or wide logo is centred in the box so it still
+       * lines up with the title on the right.
+       */
+      const scale = Math.min(210 / logo.width, 100 / logo.height);
       const w = logo.width * scale;
       const h = logo.height * scale;
-      page.drawImage(logo, { x: 50, y: 700 + (86 - h) / 2, width: w, height: h });
+      page.drawImage(logo, { x: 50, y: 700 + (100 - h) / 2, width: w, height: h });
     } else {
       page.drawText(company.name ?? 'Solar Store', { x: 50, y: 760, size: 18, font: bold, color: rgb(0.9, 0.45, 0.1) });
     }
@@ -133,8 +139,8 @@ export class InvoicePdfService {
         items: {
           where: { parentItemId: null },
           include: {
-            product: { select: { sku: true } },
-            subItems: { orderBy: { id: 'asc' } },
+            product: { select: { sku: true, name: true } },
+            subItems: { orderBy: { id: 'asc' }, include: { product: { select: { name: true } } } },
           },
         },
       },
@@ -194,7 +200,12 @@ export class InvoicePdfService {
         page = pdf.addPage([595, 842]);
         y = 780;
       }
-      const desc = item.description.length > 55 ? item.description.slice(0, 55) + '…' : item.description;
+      // A catalogue line prints the product's current name, so renaming a product
+      // in the catalogue shows up the next time the invoice is downloaded. The
+      // stored description is the fallback for lines typed by hand — bundle
+      // headers, deposits, credits — which carry no product of their own.
+      const name = item.product?.name || item.description;
+      const desc = name.length > 55 ? name.slice(0, 55) + '…' : name;
       page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
       rightAt(qty(item.quantity), colQty, y, 10.5, font);
       rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
@@ -215,7 +226,8 @@ export class InvoicePdfService {
             y = 780;
           }
           const unit = sub.unit ? ` ${sub.unit}` : '';
-          const label = `• ${sub.description}  (${qty(sub.quantity)}${unit})`;
+          const subName = sub.product?.name || sub.description;
+          const label = `• ${subName}  (${qty(sub.quantity)}${unit})`;
           page.drawText(label.length > 70 ? label.slice(0, 70) + '…' : label, {
             x: 62, y, size: 9, font, color: GRAY,
           });

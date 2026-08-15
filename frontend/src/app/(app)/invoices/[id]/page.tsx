@@ -143,7 +143,7 @@ export default function InvoiceDetailPage() {
                   <TableCell>{idx + 1}</TableCell>
                   <TableCell>
                     {i.product?.sku && <span className="me-1 font-mono text-xs text-muted-foreground">[{i.product.sku}]</span>}
-                    {i.description}
+                    {i.product?.name || i.description}
                   </TableCell>
                   <TableCell className="text-end tabular-nums">{i.quantity}</TableCell>
                   <TableCell className="text-end tabular-nums">{fmtMoney(i.unitPrice, inv.currency)}</TableCell>
