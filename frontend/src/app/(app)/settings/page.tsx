@@ -14,6 +14,7 @@ import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import { CSV_BACKUP_ENABLED_KEY, csvBackupEnabled, csvFilename } from '../../../components/daily-csv-backup';
+import { PasswordInput } from '../../../components/ui/password-input';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
@@ -27,7 +28,7 @@ export default function SettingsPage() {
   const [company, setCompany] = useState<any>({});
   const [finance, setFinance] = useState<any>({});
   const [sequences, setSequences] = useState<any[]>([]);
-  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', code: '', codeSent: false, busy: false });
+  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
   const [em, setEm] = useState({ currentPassword: '', newEmail: '', code: '', codeSent: false, busy: false });
   const [backup, setBackup] = useState<any>(null);
   const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: 0, hour: 3, minute: 0 });
@@ -156,29 +157,25 @@ export default function SettingsPage() {
     }
   };
 
-  // A change is requested first (a 6-digit code is emailed to the CURRENT
-  // account email), then confirmed with that code.
-  const requestPasswordChange = async () => {
+  const pwMismatch = pw.confirmPassword.length > 0 && pw.newPassword !== pw.confirmPassword;
+  const canChangePassword =
+    !!pw.currentPassword && pw.newPassword.length >= 8 && pw.newPassword === pw.confirmPassword;
+
+  // Changed directly against the current password — no emailed code, so this
+  // works with no SMTP configured. Changing the email still uses a code, since
+  // there the point is proving control of the mailbox.
+  const changePassword = async () => {
     setPw((p) => ({ ...p, busy: true }));
     try {
-      await api.post('/auth/request-password-change', { currentPassword: pw.currentPassword });
-      setPw((p) => ({ ...p, codeSent: true, code: '' }));
-      toast.success(t('auth.codeSent'));
+      await api.post('/auth/change-password', {
+        currentPassword: pw.currentPassword,
+        newPassword: pw.newPassword,
+      });
+      toast.success(t('common.saved'));
+      setPw({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
-      setPw((p) => ({ ...p, busy: false }));
-    }
-  };
-
-  const confirmPasswordChange = async () => {
-    setPw((p) => ({ ...p, busy: true }));
-    try {
-      await api.post('/auth/confirm-password-change', { code: pw.code, newPassword: pw.newPassword });
-      toast.success(t('common.saved'));
-      setPw({ currentPassword: '', newPassword: '', code: '', codeSent: false, busy: false });
-    } catch (e) {
-      toast.error(errMsg(e));
       setPw((p) => ({ ...p, busy: false }));
     }
   };
@@ -383,40 +380,36 @@ export default function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Field label={t('auth.currentPassword')}>
-                    <Input type="password" disabled={pw.codeSent} value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} />
+                    <PasswordInput
+                      autoComplete="current-password"
+                      value={pw.currentPassword}
+                      onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })}
+                    />
                   </Field>
-                  <Field label={t('auth.newPassword')}>
-                    <Input type="password" minLength={8} value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} />
+                  <Field label={t('auth.newPassword')} hint={t('auth.passwordMinHint')}>
+                    <PasswordInput
+                      autoComplete="new-password"
+                      value={pw.newPassword}
+                      onChange={(e) => setPw({ ...pw, newPassword: e.target.value })}
+                    />
                   </Field>
-                  {pw.codeSent ? (
-                    <>
-                      <CodeBanner />
-                      <Field label={t('auth.verificationCode')}>
-                        <Input
-                          inputMode="numeric"
-                          maxLength={6}
-                          className="text-center font-mono text-lg tracking-[0.5em]"
-                          dir="ltr"
-                          value={pw.code}
-                          onChange={(e) => setPw({ ...pw, code: e.target.value.replace(/\D/g, '') })}
-                        />
-                      </Field>
-                      <div className="flex gap-2 border-t pt-3">
-                        <Button onClick={confirmPasswordChange} disabled={pw.busy || pw.code.length !== 6 || pw.newPassword.length < 8}>
-                          {t('common.confirm')}
-                        </Button>
-                        <Button variant="outline" onClick={requestPasswordChange} disabled={pw.busy}>
-                          {t('auth.resendCode')}
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="border-t pt-3">
-                      <Button onClick={requestPasswordChange} disabled={pw.busy || !pw.currentPassword || pw.newPassword.length < 8}>
-                        <Mail /> {t('auth.sendCode')}
-                      </Button>
-                    </div>
-                  )}
+                  <Field
+                    label={t('auth.confirmPassword')}
+                    hint={pwMismatch ? <span className="text-destructive">{t('auth.passwordsDoNotMatch')}</span> : undefined}
+                  >
+                    <PasswordInput
+                      autoComplete="new-password"
+                      className={pwMismatch ? 'border-destructive' : undefined}
+                      value={pw.confirmPassword}
+                      onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })}
+                    />
+                  </Field>
+                  <div className="border-t pt-3">
+                    <Button onClick={changePassword} disabled={pw.busy || !canChangePassword}>
+                      <KeyRound /> {t('auth.changePassword')}
+                    </Button>
+                    <p className="mt-2 text-xs text-muted-foreground">{t('auth.changePasswordSignsOut')}</p>
+                  </div>
                 </CardContent>
               </Card>
 

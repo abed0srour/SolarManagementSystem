@@ -92,7 +92,7 @@
     "resendCode": "Resend code",
     "codeSent": "A verification code was sent to your email",
     "codeHint": "Enter the 6-digit verification code sent to your current account email.",
-    "changePasswordHint": "For your security, a verification code is sent to your account email before the password is changed.",
+    "changePasswordHint": "Requires your current password. Your other devices are signed out.",
     "changeEmailHint": "A verification code is sent to your current email to confirm it's really you before switching to the new address.",
     "confirmPassword": "Confirm new password",
     "passwordsDoNotMatch": "Passwords do not match",
