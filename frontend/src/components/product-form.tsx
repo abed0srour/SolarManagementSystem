@@ -8,7 +8,7 @@ import { Wand2, ArrowLeft } from 'lucide-react';
 import { api, errMsg } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
 import { cn } from '../lib/utils';
-import Field from './form-field';
+import Field, { AlignedFieldGrid } from './form-field';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
@@ -39,29 +39,34 @@ function Section({
       <div className="border-b bg-muted/40 px-4 py-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
       </div>
-      <div className={cn('grid grid-cols-1 gap-x-4 gap-y-4 p-4', cols > 1 && 'sm:grid-cols-2', COLS[cols])}>
+      <AlignedFieldGrid className={cn('grid-cols-1 gap-x-4 gap-y-4 p-4', cols > 1 && 'sm:grid-cols-2', COLS[cols])}>
         {children}
-      </div>
+      </AlignedFieldGrid>
     </Card>
   );
 }
 
 /**
- * Checkbox styled as a grid cell. `h-9` matches the Input height and `self-end`
- * bottom-anchors it, so it sits on the same line as the inputs beside it.
+ * Checkbox styled as a grid cell. It claims the same three row tracks as the
+ * Fields beside it and puts itself in the control track, so it lands on the
+ * inputs' line rather than up against the labels. `h-9` matches the Input
+ * height.
  */
 function CheckRow({
   id, label, checked, onChange, title,
 }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void; title?: string }) {
   return (
-    <label
-      htmlFor={id}
-      title={title}
-      className="flex h-9 cursor-pointer select-none items-center gap-2.5 self-end rounded-md border bg-muted/30 px-3 text-sm transition-colors hover:bg-muted/60"
-    >
-      <input id={id} type="checkbox" className="h-4 w-4 shrink-0 accent-primary" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span className="truncate">{label}</span>
-    </label>
+    <div className="row-span-3 grid grid-rows-subgrid gap-1.5">
+      <span aria-hidden />
+      <label
+        htmlFor={id}
+        title={title}
+        className="flex h-9 cursor-pointer select-none items-center gap-2.5 self-end rounded-md border bg-muted/30 px-3 text-sm transition-colors hover:bg-muted/60"
+      >
+        <input id={id} type="checkbox" className="h-4 w-4 shrink-0 accent-primary" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <span className="truncate">{label}</span>
+      </label>
+    </div>
   );
 }
 
@@ -397,7 +402,8 @@ export default function ProductForm({ productId }: { productId?: string }) {
         )}
 
         <Section title={t('common.notes')} cols={1}>
-          <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          {/* Not a Field, so it claims the row tracks itself. */}
+          <Textarea className="row-span-3" rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </Section>
       </div>
 

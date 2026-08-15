@@ -16,7 +16,8 @@
     "test:cov": "jest --coverage",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma generate && prisma migrate deploy"
+    "vercel-build": "prisma generate && DATABASE_URL=$POSTGRES_PRISMA_URL DIRECT_URL=$POSTGRES_URL_NON_POOLING prisma migrate deploy",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

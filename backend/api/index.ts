@@ -1,3 +1,4 @@
+import '../src/common/env';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { createApp } from '../src/bootstrap';
 

@@ -291,12 +291,32 @@ export class StockService {
 
   // ---- Product units (serial numbers) ----
 
-  units(query: { productId?: string; salesOrderId?: string; status?: string; serial?: string; page?: number; pageSize?: number }) {
+  units(query: {
+    productId?: string;
+    salesOrderId?: string;
+    purchaseOrderId?: string;
+    warehouseId?: string;
+    status?: string;
+    serial?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const where: Prisma.ProductUnitWhereInput = {};
     if (query.productId) where.productId = query.productId;
     if (query.salesOrderId) where.salesOrderId = query.salesOrderId;
+    if (query.purchaseOrderId) where.purchaseOrderId = query.purchaseOrderId;
+    if (query.warehouseId) where.warehouseId = query.warehouseId;
     if (query.status) where.status = query.status as UnitStatus;
     if (query.serial) where.serialNumber = { contains: query.serial, mode: 'insensitive' };
+    // The serials page searches by serial, product name or SKU from one box.
+    if (query.search) {
+      where.OR = [
+        { serialNumber: { contains: query.search, mode: 'insensitive' } },
+        { product: { name: { contains: query.search, mode: 'insensitive' } } },
+        { product: { sku: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
     const page = Number(query.page) || 1;
     const pageSize = Math.min(Number(query.pageSize) || 50, 200);
     const totalPromise = this.prisma.productUnit.count({ where });
@@ -304,10 +324,11 @@ export class StockService {
       .findMany({ relationLoadStrategy: 'join',
         where,
         include: {
-          product: { select: { sku: true, name: true } },
-          warehouse: { select: { name: true } },
+          product: { select: { id: true, sku: true, name: true } },
+          warehouse: { select: { id: true, name: true } },
+          purchaseOrder: { select: { id: true, number: true } },
           invoice: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
-          salesOrder: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
+          salesOrder: { select: { id: true, number: true, client: { select: { id: true, name: true, phone: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -358,16 +379,41 @@ export class StockService {
     });
   }
 
-  async updateUnit(userId: string, id: string, data: { status?: UnitStatus; manufactureDate?: string; warehouseId?: string }) {
+  async updateUnit(
+    userId: string,
+    id: string,
+    data: { serialNumber?: string; status?: UnitStatus; manufactureDate?: string; warehouseId?: string },
+  ) {
+    const existing = await this.prisma.productUnit.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Unit not found');
+
+    // Serials are printed on the physical hardware, so correcting a typo has to
+    // be possible — but the new value still has to obey the same rules as one
+    // captured at goods receipt, and stay unique across every unit.
+    let serialNumber: string | undefined;
+    if (data.serialNumber !== undefined) {
+      serialNumber = data.serialNumber.trim();
+      if (!serialNumber) throw new BadRequestException('Serial number cannot be empty');
+      if (serialNumber.length > 18) throw new BadRequestException('Serial numbers must be 18 characters or less');
+      if (serialNumber !== existing.serialNumber) {
+        const clash = await this.prisma.productUnit.findUnique({ where: { serialNumber } });
+        if (clash) throw new BadRequestException(`Serial number "${serialNumber}" is already used by another unit`);
+      }
+    }
+
     const unit = await this.prisma.productUnit.update({
       where: { id },
       data: {
+        serialNumber,
         status: data.status,
         warehouseId: data.warehouseId,
         manufactureDate: data.manufactureDate ? new Date(data.manufactureDate) : undefined,
       },
     });
-    await this.audit.log(userId, 'UPDATE', 'ProductUnit', id, data);
+    await this.audit.log(userId, 'UPDATE', 'ProductUnit', id, {
+      ...data,
+      ...(serialNumber && serialNumber !== existing.serialNumber ? { previousSerialNumber: existing.serialNumber } : {}),
+    });
     return unit;
   }
 }

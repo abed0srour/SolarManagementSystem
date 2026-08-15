@@ -8,7 +8,7 @@ import {
   SunMedium, LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
-  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode,
+  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -36,6 +36,7 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
       { key: 'products', href: '/products', icon: Package },
       { key: 'categories', href: '/categories', icon: FolderTree },
       { key: 'inventory', href: '/inventory', icon: WarehouseIcon },
+      { key: 'serials', href: '/serials', icon: QrCode },
     ],
   },
   {
@@ -54,6 +55,7 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
     items: [
       { key: 'suppliers', href: '/suppliers', icon: Truck },
       { key: 'purchaseOrders', href: '/purchase-orders', icon: PackagePlus },
+      { key: 'purchaseReturns', href: '/purchase-returns', icon: Undo2 },
       { key: 'scan', href: '/warehouse/scan', icon: QrCode },
       { key: 'claim', href: '/warehouse/claim', icon: PackageCheck },
       { key: 'expenses', href: '/expenses', icon: Wallet },

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, PackageCheck, Banknote } from 'lucide-react';
+import { Plus, PackageCheck, Banknote, Undo2 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
@@ -50,9 +50,12 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  // Returned goods already came off the bill server-side, so trust its figure.
+  const remainingOf = (row: any) =>
+    Number(row.remainingAmount ?? Math.max(0, Number(row.total) - Number(row.paidAmount ?? 0)));
+
   const openPay = (row: any) => {
-    const remaining = Math.max(0, Number(row.total) - Number(row.paidAmount ?? 0));
-    setPayForm({ amount: remaining, method: 'CASH', reference: '', notes: '', paymentDate: new Date().toISOString().slice(0, 10) });
+    setPayForm({ amount: remainingOf(row), method: 'CASH', reference: '', notes: '', paymentDate: new Date().toISOString().slice(0, 10) });
     setPayFor(row);
   };
 
@@ -108,7 +111,7 @@ export default function PurchaseOrdersPage() {
           {
             key: 'remaining', label: t('orders.remaining'), className: 'w-28 text-end',
             render: (r) => {
-              const remaining = Math.max(0, Number(r.total) - Number(r.paidAmount ?? 0));
+              const remaining = remainingOf(r);
               return (
                 <span className={`tabular-nums ${remaining > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
                   {fmtMoney(remaining, r.currency)}
@@ -130,6 +133,12 @@ export default function PurchaseOrdersPage() {
                 {r.status !== 'CANCELLED' && r.paymentStatus !== 'PAID' && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title={t('orders.pay')} onClick={(e) => { e.stopPropagation(); openPay(r); }}>
                     <Banknote />
+                  </Button>
+                )}
+                {/* Only meaningful once something has actually been received. */}
+                {r.status !== 'CANCELLED' && (r.items ?? []).some((i: any) => i.receivedQty > i.returnedQty) && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 dark:text-amber-400" title={t('purchaseReturns.returnToSupplier')} onClick={(e) => { e.stopPropagation(); router.push(`/purchase-orders/${r.id}/return`); }}>
+                    <Undo2 />
                   </Button>
                 )}
               </div>

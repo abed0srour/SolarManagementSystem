@@ -1,5 +1,5 @@
 ﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, MinLength, NotEquals } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, MinLength, NotEquals } from 'class-validator';
 import { StockService } from './stock.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -67,6 +67,12 @@ class WarehouseDto {
 }
 
 class UnitUpdateDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(18)
+  serialNumber?: string;
+
   @IsOptional()
   @IsIn(['IN_STOCK', 'RESERVED', 'SOLD', 'RETURNED', 'DAMAGED', 'RETURNED_TO_SUPPLIER'])
   status?: any;

@@ -15,6 +15,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { QuotationsModule } from './quotations/quotations.module';
 import { SalesOrdersModule } from './sales-orders/sales-orders.module';
 import { PurchaseOrdersModule } from './purchase-orders/purchase-orders.module';
+import { PurchaseReturnsModule } from './purchase-returns/purchase-returns.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PaymentsModule } from './payments/payments.module';
 import { RefundsModule } from './refunds/refunds.module';
@@ -49,6 +50,7 @@ import { CronModule } from './cron/cron.module';
     QuotationsModule,
     SalesOrdersModule,
     PurchaseOrdersModule,
+    PurchaseReturnsModule,
     InvoicesModule,
     PaymentsModule,
     RefundsModule,

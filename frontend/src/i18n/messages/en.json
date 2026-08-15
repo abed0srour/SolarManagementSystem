@@ -36,7 +36,9 @@
     "themes": "Themes",
     "workers": "Workers & Payroll",
     "claim": "Order Collection",
-    "scan": "Scan QR"
+    "scan": "Scan QR",
+    "serials": "Serial Numbers",
+    "purchaseReturns": "Supplier Returns"
   },
   "subtitles": {
     "dashboard": "Business overview — sales, stock and cash at a glance.",
@@ -58,7 +60,9 @@
     "monitoring": "Performance of your installed solar systems.",
     "warranty": "Sold units, warranty coverage and claims.",
     "serviceJobs": "Installation, maintenance and repair jobs.",
-    "profile": "Your account, security and sign-in history."
+    "profile": "Your account, security and sign-in history.",
+    "serials": "Every serial-numbered unit — search, correct and re-assign them.",
+    "purchaseReturns": "Goods sent back to suppliers and the money refunded."
   },
   "auth": {
     "signIn": "Sign in",
@@ -181,7 +185,8 @@
       "HAS_SUBCATEGORIES": "This category still has sub-categories. Delete or move them first.",
       "HAS_PRODUCTS": "This sub-category still has products. Move them to another sub-category first.",
       "HAS_SALES_ORDER": "This quotation was converted into a sales order, so it must stay."
-    }
+    },
+    "unitCost": "Unit cost"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -969,5 +974,39 @@
     "pickList": "Items to collect",
     "pieces": "{count} pieces",
     "ackUnpaid": "The customer is collecting without settling the balance, and I am authorised to release it."
+  },
+  "serials": {
+    "title": "Serial Numbers",
+    "editUnit": "Edit unit",
+    "source": "Received on",
+    "serialHint": "Correct a mistyped serial here. It must stay unique and 18 characters or less."
+  },
+  "purchaseReturns": {
+    "title": "Supplier Returns",
+    "newReturn": "Return to supplier",
+    "returnToSupplier": "Return to supplier",
+    "confirmReturn": "Confirm return",
+    "details": "Return details",
+    "wholeOrder": "Whole order",
+    "receivedQuantities": "Received quantities",
+    "alreadyReturned": "Already returned",
+    "thisReturn": "This return",
+    "returnQty": "Return qty",
+    "returnTotal": "Return total",
+    "cashBack": "Money back to you",
+    "billReduction": "Taken off the bill",
+    "refundMethod": "Refund method",
+    "creditNoteRef": "Credit note ref.",
+    "reasonPlaceholder": "e.g. defective",
+    "notesPlaceholder": "Optional notes about this return…",
+    "pickSerials": "Search this order’s in-stock serials…",
+    "addLineHint": "Add a line for each product going back to the supplier — serial-tracked products are picked by serial number.",
+    "hint": "Goods leave {warehouse} and go back to {supplier}. Stock drops and the refund is recorded against this purchase order.",
+    "nothingReturnable": "Nothing on this order can be returned — none of it has been received yet, or it has all been returned already.",
+    "effect": "Stock is removed, serial units are marked returned, and the refund is recorded.",
+    "CASH": "Cash refund",
+    "WHISH": "Whish refund",
+    "OMT": "OMT refund",
+    "CREDIT_NOTE": "Credit note (no cash)"
   }
 }

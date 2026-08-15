@@ -16,13 +16,24 @@ export class PurchaseOrdersService {
     private stock: StockService,
   ) {}
 
-  /** UNPAID / PARTIALLY_PAID / PAID derived from paidAmount vs total. */
-  private paymentStatus(po: { total: any; paidAmount: any }) {
-    const total = Number(po.total);
+  /**
+   * UNPAID / PARTIALLY_PAID / PAID derived from paidAmount vs what we still
+   * owe. Goods sent back to the supplier reduce the bill, so the yardstick is
+   * `total - returnedAmount`, not the original total — a fully returned PO is
+   * settled even though nothing was ever paid on it.
+   */
+  private paymentStatus(po: { total: any; paidAmount: any; returnedAmount?: any }) {
+    const total = round2(Number(po.total) - Number(po.returnedAmount ?? 0));
     const paid = Number(po.paidAmount);
-    if (total > 0 && paid >= total - 0.01) return 'PAID';
+    if (total <= 0.01) return 'PAID';
+    if (paid >= total - 0.01) return 'PAID';
     if (paid > 0) return 'PARTIALLY_PAID';
     return 'UNPAID';
+  }
+
+  /** What is still owed on the PO after returns and payments. */
+  private remainingAmount(po: { total: any; paidAmount: any; returnedAmount?: any }) {
+    return Math.max(0, round2(Number(po.total) - Number(po.returnedAmount ?? 0) - Number(po.paidAmount)));
   }
 
   /**
@@ -64,7 +75,11 @@ export class PurchaseOrdersService {
         take: pageSize,
       })
       .then(async (items) => ({
-        items: items.map((po) => ({ ...po, paymentStatus: this.paymentStatus(po) })),
+        items: items.map((po) => ({
+          ...po,
+          paymentStatus: this.paymentStatus(po),
+          remainingAmount: this.remainingAmount(po),
+        })),
         total: await totalPromise,
         page,
         pageSize,
@@ -80,12 +95,22 @@ export class PurchaseOrdersService {
         items: { include: { product: { select: { sku: true, name: true, trackSerials: true } } } },
         goodsReceipts: { include: { createdBy: { select: { name: true } } }, orderBy: { receivedAt: 'desc' } },
         invoices: { select: { id: true, number: true, status: true, total: true, paidAmount: true } },
-        payments: { where: { deletedAt: null }, orderBy: { paymentDate: 'desc' }, select: { id: true, number: true, amount: true, method: true, paymentDate: true, reference: true } },
+        payments: { where: { deletedAt: null }, orderBy: { paymentDate: 'desc' }, select: { id: true, number: true, direction: true, amount: true, method: true, paymentDate: true, reference: true } },
+        returns: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, number: true, status: true, refundMethod: true, totalAmount: true, creditNoteRef: true, createdAt: true },
+        },
         createdBy: { select: { name: true } },
       },
     });
     if (!po) throw new NotFoundException('Purchase order not found');
-    return { ...po, paymentStatus: this.paymentStatus(po), deliveryCostPerUnit: this.deliveryCostPerUnit(po) };
+    return {
+      ...po,
+      paymentStatus: this.paymentStatus(po),
+      remainingAmount: this.remainingAmount(po),
+      deliveryCostPerUnit: this.deliveryCostPerUnit(po),
+    };
   }
 
   async create(userId: string, dto: any) {
@@ -279,7 +304,8 @@ export class PurchaseOrdersService {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po) throw new NotFoundException('Purchase order not found');
     if (po.status === 'CANCELLED') throw new BadRequestException('Cannot pay a cancelled purchase order');
-    const remaining = round2(Number(po.total) - Number(po.paidAmount));
+    // Returned goods are no longer payable, so they come off the balance.
+    const remaining = this.remainingAmount(po);
     if (dto.amount > remaining + 0.01)
       throw new BadRequestException(`Payment exceeds remaining balance (${remaining.toFixed(2)})`);
 
