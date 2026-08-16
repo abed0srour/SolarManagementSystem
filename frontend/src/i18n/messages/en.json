@@ -449,7 +449,7 @@
     "soldQty": "Sold qty",
     "invoicePdf": "Invoice PDF",
     "shareInvoice": "Share via WhatsApp",
-    "waInvoiceMessage": "Hello {client}, thank you for your business. Here is your invoice for order {number} — total {total}, balance due {remaining}.",
+    "waInvoiceMessage": "Hello, thank you for choosing us! Here is your invoice for order #{number}.\nTotal: {total}\nBalance Due: {balance}{paidInFull, select, yes { (Paid in full)} other {}}\nWe appreciate your business!",
     "onlyPendingEditable": "Only pending orders can be edited",
     "belowCost": "Below cost price",
     "belowCostTitle": "Selling below cost",
@@ -495,7 +495,7 @@
     "cancelInvoice": "Cancel invoice",
     "recordPayment": "Record payment",
     "shareWhatsApp": "Share via WhatsApp",
-    "waMessage": "Hello {client}, thank you for your business. Here is your invoice {number} — total {total}, balance due {balance}."
+    "waMessage": "Hello, thank you for choosing us! Here is your invoice #{number}.\nTotal: {total}\nBalance Due: {balance}{paidInFull, select, yes { (Paid in full)} other {}}\nWe appreciate your business!"
   },
   "payments": {
     "title": "Payments",

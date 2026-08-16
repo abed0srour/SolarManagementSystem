@@ -11,6 +11,23 @@
  * opens the conversation with the message typed and the invoice PDF is attached
  * by hand before sending.
  */
+import { fmtMoney } from './api';
+
+/** Currencies whose symbol is worth printing. Anything else shows its code alone. */
+const CURRENCY_SYMBOL: Record<string, string> = { USD: '$', EUR: '€', GBP: '£' };
+
+/**
+ * Money the way the WhatsApp messages want it: "$600.00 USD".
+ *
+ * The app's own screens print "600.00 USD" — the symbol is redundant next to a
+ * column header. In a chat there is no column, so the symbol carries the "this
+ * is money" signal, while the code stays because the customer may hold prices
+ * in more than one currency. A currency with no symbol here prints its code
+ * only, rather than borrowing a dollar sign it does not own.
+ */
+export function waMoney(amount: unknown, currency = 'USD'): string {
+  return `${CURRENCY_SYMBOL[currency] ?? ''}${fmtMoney(amount, currency)}`;
+}
 
 /**
  * Reduce a hand-typed phone number to the digits WhatsApp accepts.

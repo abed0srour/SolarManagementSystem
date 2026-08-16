@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, Trash2, RotateCcw } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
-import { openWhatsApp } from '../../../lib/whatsapp';
+import { openWhatsApp, waMoney } from '../../../lib/whatsapp';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
@@ -216,11 +216,14 @@ export default function SalesOrdersPage() {
                     variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.shareInvoice')}
                     onClick={(e) => {
                       e.stopPropagation();
+                      const balance = Number(r.outstanding ?? 0);
                       const text = t('orders.waInvoiceMessage', {
-                        client: r.client?.name ?? '',
                         number: r.number,
-                        total: fmtMoney(r.total),
-                        remaining: fmtMoney(r.outstanding ?? 0),
+                        total: waMoney(r.total),
+                        balance: waMoney(balance),
+                        // Under a cent is settled — the note says so rather than
+                        // leaving the customer to read "$0.00" and wonder.
+                        paidInFull: balance < 0.01 ? 'yes' : 'no',
                       });
                       // The chat opens with the greeting typed; the invoice PDF
                       // is attached there by hand — wa.me cannot carry a file.

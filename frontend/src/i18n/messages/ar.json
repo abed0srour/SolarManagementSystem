@@ -449,7 +449,7 @@
     "soldQty": "الكمية المباعة",
     "invoicePdf": "فاتورة PDF",
     "shareInvoice": "مشاركة عبر واتساب",
-    "waInvoiceMessage": "مرحبًا {client}، شكرًا لتعاملك معنا. إليك فاتورة طلبك {number} — الإجمالي {total}، المتبقي {remaining}.",
+    "waInvoiceMessage": "مرحبًا، شكرًا لاختياركم! إليك فاتورة طلبك رقم {number}.\nالإجمالي: {total}\nالمبلغ المتبقي: {balance}{paidInFull, select, yes { (مدفوعة بالكامل)} other {}}\nنقدّر تعاملك معنا!",
     "onlyPendingEditable": "يمكن تعديل الطلبات المعلقة فقط",
     "belowCost": "أقل من سعر التكلفة",
     "belowCostTitle": "البيع بأقل من التكلفة",
@@ -495,7 +495,7 @@
     "cancelInvoice": "إلغاء الفاتورة",
     "recordPayment": "تسجيل دفعة",
     "shareWhatsApp": "مشاركة عبر واتساب",
-    "waMessage": "مرحبًا {client}، شكرًا لتعاملك معنا. إليك فاتورتك {number} — الإجمالي {total}، المتبقي {balance}."
+    "waMessage": "مرحبًا، شكرًا لاختياركم! إليك فاتورتك رقم {number}.\nالإجمالي: {total}\nالمبلغ المتبقي: {balance}{paidInFull, select, yes { (مدفوعة بالكامل)} other {}}\nنقدّر تعاملك معنا!"
   },
   "payments": {
     "title": "المدفوعات",

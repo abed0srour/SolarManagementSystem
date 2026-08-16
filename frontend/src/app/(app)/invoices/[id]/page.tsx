@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Printer, FileDown, MessageCircle, CreditCard, CalendarClock, XCircle, Plus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/api';
-import { openWhatsApp } from '../../../../lib/whatsapp';
+import { openWhatsApp, waMoney } from '../../../../lib/whatsapp';
 import StatusChip from '../../../../components/status-chip';
 import ConfirmDialog from '../../../../components/confirm-dialog';
 import Field from '../../../../components/form-field';
@@ -101,10 +101,10 @@ export default function InvoiceDetailPage() {
             className="text-green-600 hover:text-green-600 dark:text-green-400"
             onClick={() => {
               const text = t('invoices.waMessage', {
-                client: party.name ?? '',
                 number: inv.number,
-                total: fmtMoney(inv.total, inv.currency),
-                balance: fmtMoney(balance, inv.currency),
+                total: waMoney(inv.total, inv.currency),
+                balance: waMoney(balance, inv.currency),
+                paidInFull: balance < 0.01 ? 'yes' : 'no',
               });
               if (!openWhatsApp(party.phone, text)) toast.warning(t('common.waNoNumber'));
             }}
