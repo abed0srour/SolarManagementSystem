@@ -127,14 +127,13 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
           omitted when blank, so a half-filled configuration prints tidily
           rather than leaving gaps or stray labels on the paper.
         */}
+        {/*
+          No logo on the roll: a thermal head is 1-bit, so any logo arrives as
+          a dithered grey smear, and it burns paper on every sale. The store
+          name in bold caps is what identifies the receipt here. The logo still
+          prints on the A4 invoice and receipt PDFs, which go to real printers.
+        */}
         <div className="space-y-0.5 text-center">
-          {company.logoUrl && (
-            // Thermal printers dither to 1-bit, so keep it small and let the
-            // driver handle it. eslint: next/image cannot size a data/remote
-            // logo here, and the print pipeline wants a plain <img>.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={company.logoUrl} alt="" className="mx-auto mb-1 h-12 w-auto max-w-[40mm] object-contain" />
-          )}
           <div className="text-[15px] font-bold uppercase tracking-[0.15em]">{company.name || 'Solar Store'}</div>
           {company.tagline && <div className="text-[10px] text-black/70">{company.tagline}</div>}
           {company.address && <div className="whitespace-pre-wrap text-[10px] leading-snug">{company.address}</div>}

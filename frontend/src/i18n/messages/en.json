@@ -154,6 +154,7 @@
     "exportCsv": "Export CSV",
     "exportExcel": "Export Excel",
     "downloadPdf": "Download PDF",
+    "waNoNumber": "No phone with a country code on file — pick the contact in WhatsApp",
     "rowsPerPage": "Rows per page",
     "page": "Page",
     "of": "of",
@@ -447,7 +448,7 @@
     "soldQty": "Sold qty",
     "invoicePdf": "Invoice PDF",
     "shareInvoice": "Share via WhatsApp",
-    "waInvoiceMessage": "Your order {number}: total {total}, remaining {remaining}. Thank you!",
+    "waInvoiceMessage": "Hello {client}, thank you for your business. Here is your invoice for order {number} — total {total}, balance due {remaining}.",
     "onlyPendingEditable": "Only pending orders can be edited",
     "belowCost": "Below cost price",
     "marginPerUnit": "Margin per unit",
@@ -488,7 +489,9 @@
     "sale": "Sale",
     "purchase": "Purchase",
     "cancelInvoice": "Cancel invoice",
-    "recordPayment": "Record payment"
+    "recordPayment": "Record payment",
+    "shareWhatsApp": "Share via WhatsApp",
+    "waMessage": "Hello {client}, thank you for your business. Here is your invoice {number} — total {total}, balance due {balance}."
   },
   "payments": {
     "title": "Payments",
@@ -507,7 +510,7 @@
   "receipts": {
     "title": "Receipts",
     "share": "Share via WhatsApp",
-    "waMessage": "Receipt {number}: we received {amount} on {date}. Thank you!",
+    "waMessage": "Hello {client}, thank you for your payment. Receipt {number}: we received {amount} on {date}.",
     "paidFor": "Paid for",
     "noOrder": "No order"
   },

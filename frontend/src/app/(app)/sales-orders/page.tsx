@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
+import { openWhatsApp } from '../../../lib/whatsapp';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
@@ -201,13 +202,15 @@ export default function SalesOrdersPage() {
                     variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.shareInvoice')}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const phone = (r.client?.phone ?? '').replace(/[^\d]/g, '');
                       const text = t('orders.waInvoiceMessage', {
+                        client: r.client?.name ?? '',
                         number: r.number,
                         total: fmtMoney(r.total),
                         remaining: fmtMoney(r.outstanding ?? 0),
                       });
-                      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                      // The chat opens with the greeting typed; the invoice PDF
+                      // is attached there by hand — wa.me cannot carry a file.
+                      if (!openWhatsApp(r.client?.phone, text)) toast.warning(t('common.waNoNumber'));
                     }}
                   >
                     <MessageCircle />

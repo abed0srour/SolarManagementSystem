@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { FileDown, MessageCircle } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
+import { openWhatsApp } from '../../../lib/whatsapp';
 import DataTable from '../../../components/data-table';
 import EntityLink, { linkTo } from '../../../components/entity-link';
 import { Button } from '../../../components/ui/button';
@@ -23,17 +24,14 @@ export default function ReceiptsPage() {
   };
 
   const shareWhatsApp = (r: any) => {
-    const phone = (r.client?.phone ?? '').replace(/[^\d]/g, '');
     const orderRef = r.invoice?.salesOrder?.number ? ` (${r.invoice.salesOrder.number})` : '';
     const text = t('receipts.waMessage', {
+      client: r.client?.name ?? '',
       number: r.number,
       amount: fmtMoney(r.amount, r.currency),
       date: fmtDate(r.paymentDate),
     }) + orderRef;
-    const url = phone
-      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    if (!openWhatsApp(r.client?.phone, text)) toast.warning(t('common.waNoNumber'));
   };
 
   return (

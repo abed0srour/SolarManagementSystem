@@ -3,8 +3,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Printer, FileDown, CreditCard, CalendarClock, XCircle, Plus, Trash2 } from 'lucide-react';
+import { Printer, FileDown, MessageCircle, CreditCard, CalendarClock, XCircle, Plus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../../lib/api';
+import { openWhatsApp } from '../../../../lib/whatsapp';
 import StatusChip from '../../../../components/status-chip';
 import ConfirmDialog from '../../../../components/confirm-dialog';
 import Field from '../../../../components/form-field';
@@ -41,6 +42,9 @@ export default function InvoiceDetailPage() {
     );
 
   const balance = Number(inv.total) - Number(inv.paidAmount);
+  // Whoever the invoice is addressed to — the client on a sale, the supplier on
+  // a purchase. Both carry a phone, so both can be messaged.
+  const party = inv.client ?? inv.supplier;
 
   const recordPayment = async () => {
     try {
@@ -85,6 +89,29 @@ export default function InvoiceDetailPage() {
         <Button variant="outline" onClick={() => downloadFile(`/invoices/${inv.id}/pdf`, `invoice-${inv.number}.pdf`).catch((e) => toast.error(errMsg(e)))}>
           <FileDown /> {t('common.downloadPdf')}
         </Button>
+        {party && (
+          /*
+           * Opens the party's own WhatsApp chat with the greeting already
+           * typed, so the PDF downloaded next door is attached and sent in one
+           * more click. wa.me carries text only — it cannot attach the file
+           * itself, which is why this does not replace the download button.
+           */
+          <Button
+            variant="outline"
+            className="text-green-600 hover:text-green-600 dark:text-green-400"
+            onClick={() => {
+              const text = t('invoices.waMessage', {
+                client: party.name ?? '',
+                number: inv.number,
+                total: fmtMoney(inv.total, inv.currency),
+                balance: fmtMoney(balance, inv.currency),
+              });
+              if (!openWhatsApp(party.phone, text)) toast.warning(t('common.waNoNumber'));
+            }}
+          >
+            <MessageCircle /> {t('invoices.shareWhatsApp')}
+          </Button>
+        )}
         {inv.status !== 'CANCELLED' && inv.status !== 'PAID' && (
           <>
             <Button onClick={() => { setPayForm({ method: 'CASH', amount: balance }); setPayOpen(true); }}>

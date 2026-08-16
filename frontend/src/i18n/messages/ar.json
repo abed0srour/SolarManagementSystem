@@ -154,6 +154,7 @@
     "exportCsv": "تصدير CSV",
     "exportExcel": "تصدير Excel",
     "downloadPdf": "تحميل PDF",
+    "waNoNumber": "لا يوجد رقم هاتف مع رمز الدولة — اختر جهة الاتصال في واتساب",
     "rowsPerPage": "صفوف لكل صفحة",
     "page": "صفحة",
     "of": "من",
@@ -447,7 +448,7 @@
     "soldQty": "الكمية المباعة",
     "invoicePdf": "فاتورة PDF",
     "shareInvoice": "مشاركة عبر واتساب",
-    "waInvoiceMessage": "طلبك {number}: الإجمالي {total}، المتبقي {remaining}. شكرًا لك!",
+    "waInvoiceMessage": "مرحبًا {client}، شكرًا لتعاملك معنا. إليك فاتورة طلبك {number} — الإجمالي {total}، المتبقي {remaining}.",
     "onlyPendingEditable": "يمكن تعديل الطلبات المعلقة فقط",
     "belowCost": "أقل من سعر التكلفة",
     "marginPerUnit": "هامش الربح للوحدة",
@@ -488,7 +489,9 @@
     "sale": "بيع",
     "purchase": "شراء",
     "cancelInvoice": "إلغاء الفاتورة",
-    "recordPayment": "تسجيل دفعة"
+    "recordPayment": "تسجيل دفعة",
+    "shareWhatsApp": "مشاركة عبر واتساب",
+    "waMessage": "مرحبًا {client}، شكرًا لتعاملك معنا. إليك فاتورتك {number} — الإجمالي {total}، المتبقي {balance}."
   },
   "payments": {
     "title": "المدفوعات",
@@ -507,7 +510,7 @@
   "receipts": {
     "title": "الإيصالات",
     "share": "مشاركة عبر واتساب",
-    "waMessage": "إيصال {number}: استلمنا {amount} بتاريخ {date}. شكرًا لك!",
+    "waMessage": "مرحبًا {client}، شكرًا لدفعتك. إيصال {number}: استلمنا {amount} بتاريخ {date}.",
     "paidFor": "مقابل",
     "noOrder": "بدون طلب"
   },
