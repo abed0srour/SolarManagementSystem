@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
-import { api, errMsg } from '../lib/api';
+import { api, errMsg, fmtMoney } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
+import ConfirmDialog from './confirm-dialog';
 import Field from './form-field';
-import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, linesFromStored, toItemsPayload } from './line-items-editor';
+import LineItemsEditor, { LineItem, belowCostLines, belowCostLoss, emptyLine, hasInvalidLine, linesFromStored, toItemsPayload } from './line-items-editor';
 import { ClientPicker, WarehousePicker } from './entity-picker';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -53,6 +54,7 @@ export default function SalesOrderForm({ orderId, lockedClientId, returnTo = '/s
   const [loading, setLoading] = useState(Boolean(orderId || lockedClientId));
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lossConfirmOpen, setLossConfirmOpen] = useState(false);
 
   // Pre-fill the client when creating from a client's page.
   useEffect(() => {
@@ -94,6 +96,19 @@ export default function SalesOrderForm({ orderId, lockedClientId, returnTo = '/s
       cancelled = true;
     };
   }, [orderId]);
+
+  /**
+   * Saving a below-cost order asks first.
+   *
+   * The editor already marks those lines in red, but a red caption is easy to
+   * miss on a long order and the price is often typed as a round number without
+   * checking it against cost. The confirmation names the products and the money
+   * being given away, so the loss is a decision rather than a slip.
+   */
+  const attemptSave = () => {
+    if (belowCostLines(lines).length > 0) setLossConfirmOpen(true);
+    else void save();
+  };
 
   const save = async () => {
     setSaving(true);
@@ -204,10 +219,21 @@ export default function SalesOrderForm({ orderId, lockedClientId, returnTo = '/s
         <Button variant="outline" onClick={() => router.push(returnTo)} disabled={saving}>
           {t('common.cancel')}
         </Button>
-        <Button onClick={save} disabled={blocked || saving}>
+        <Button onClick={attemptSave} disabled={blocked || saving}>
           {saving ? t('common.loading') : t('common.save')}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={lossConfirmOpen}
+        onOpenChange={setLossConfirmOpen}
+        title={t('orders.belowCostTitle')}
+        description={t('orders.belowCostWarning', {
+          items: belowCostLines(lines).map((l) => l.product?.name).join(', '),
+          loss: fmtMoney(belowCostLoss(lines)),
+        })}
+        onConfirm={save}
+      />
     </div>
   );
 }

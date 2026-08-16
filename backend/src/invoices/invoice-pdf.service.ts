@@ -41,7 +41,17 @@ export class InvoicePdfService {
     return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
-  /** Shared page header: logo top-left, document title + company info top-right. */
+  /**
+   * Shared page header: the logo across the top, then the document title and
+   * company details beneath it.
+   *
+   * The logo box is 420x200 — wide enough that nothing can sit next to it on a
+   * 595pt page, which is why the title and address block stack under the logo
+   * instead of sharing its row. Everything below is measured from the logo that
+   * was actually drawn rather than from the box, because the box is only a
+   * bound: a wide logo hits the width limit and fills half the height, and the
+   * header should not reserve space it isn't using.
+   */
   private async header(pdf: PDFDocument, page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, title: string, company: any) {
     const { font, bold } = fonts;
     const width = page.getWidth();
@@ -49,29 +59,28 @@ export class InvoicePdfService {
       page.drawText(str, { x: width - 50 - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
     const logo = await this.embedLogo(pdf, company.logoUrl);
+    let titleY = 762;
     if (logo) {
-      /*
-       * Fit into a 210x100 box. The box grows upward from y 700 rather than
-       * around a fixed centre: 700 is where the info band starts, so a tall
-       * logo must never reach below it, and the free space above is only the
-       * top margin. A short or wide logo is centred in the box so it still
-       * lines up with the title on the right.
-       */
-      const scale = Math.min(210 / logo.width, 100 / logo.height);
+      const scale = Math.min(420 / logo.width, 200 / logo.height);
       const w = logo.width * scale;
       const h = logo.height * scale;
-      page.drawImage(logo, { x: 50, y: 700 + (100 - h) / 2, width: w, height: h });
+      // Hung from the top margin rather than sitting on a fixed baseline, so the
+      // gap above it is the same whatever shape the logo turns out to be.
+      page.drawImage(logo, { x: 50, y: 806 - h, width: w, height: h });
+      titleY = 806 - h - 34;
     } else {
       page.drawText(company.name ?? 'Solar Store', { x: 50, y: 760, size: 18, font: bold, color: rgb(0.9, 0.45, 0.1) });
     }
 
-    right(title, 762, 24, bold, DARK);
-    let hy = 742;
+    right(title, titleY, 24, bold, DARK);
+    let hy = titleY - 20;
     for (const line of [company.name, company.address, company.phone, company.email].filter(Boolean)) {
       right(String(line), hy, 10, font);
       hy -= 14;
     }
-    return Math.min(700, hy - 8); // y below the header block
+    // y below the header block. Without a logo the band stays where it always
+    // sat, so a logo-less invoice is unchanged by any of this.
+    return Math.min(logo ? titleY - 24 : 700, hy - 8);
   }
 
   /** Gray info band with a left block and a right block of label/value rows. */
@@ -242,6 +251,16 @@ export class InvoicePdfService {
 
     // Totals
     y -= 6;
+    /*
+     * Up to five rows at 26pt each, and the footer owns everything below y=110.
+     * Worth checking now that the taller logo pushes the table further down the
+     * first page: a total printed across the footer rule is the one line on the
+     * document nobody can afford to have land in the wrong place.
+     */
+    if (y < 260) {
+      page = pdf.addPage([595, 842]);
+      y = 780;
+    }
     const totalRow = (label: string, value: string, isBold = false, size = 11) => {
       rightAt(label, colPrice, y, size, isBold ? bold : font, isBold ? DARK : GRAY);
       rightAt(value, colAmount, y, size, bold);

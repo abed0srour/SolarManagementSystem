@@ -9,6 +9,7 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
 import { calcDocTotals, calcLine, round2 } from '../common/calc';
 import { buildCompositeItems, writeSubItems } from '../common/composite-items';
+import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
 
 @Injectable()
 export class SalesOrdersService {
@@ -62,8 +63,10 @@ export class SalesOrdersService {
     return { paidAmount, outstanding, paymentStatus };
   }
 
-  findAll(query: { search?: string; status?: string; paymentStatus?: string; clientId?: string; page?: number; pageSize?: number }) {
-    const where: Prisma.SalesOrderWhereInput = { deletedAt: null };
+  findAll(query: { search?: string; status?: string; paymentStatus?: string; clientId?: string; page?: number; pageSize?: number; archived?: string }) {
+    // `archived=true` shows the archive instead of the active list.
+    const where: Prisma.SalesOrderWhereInput =
+      query.archived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
     if (query.status) where.status = query.status as any;
     // paymentStatus is derived from the sum of paidAmount across this order's
     // non-cancelled invoices (see paymentInfo), not a stored column. UNPAID
@@ -641,5 +644,86 @@ export class SalesOrdersService {
     });
     await this.audit.log(userId, 'CANCEL', 'SalesOrder', id, { number: so.number, stockRestored: wasStockDeducted });
     return this.findOne(id);
+  }
+
+  /**
+   * What still points at a cancelled order, and would therefore lose its
+   * reference if the row were really deleted.
+   *
+   * Cancelled invoices count. They carry a number issued out of the same
+   * sequence as every live invoice, so the order behind them has to stay
+   * reachable. Stock movements count for the same reason from the inventory
+   * side: a confirmed order writes an OUT movement and cancelling writes the
+   * matching IN, and those two rows reference the order by id. They are a loose
+   * reference with no foreign key, so nothing but this count protects them.
+   *
+   * Every foreign key into SalesOrder is optional, which means the database
+   * would answer a delete by quietly nulling those links rather than refusing —
+   * so the check has to happen here, before the delete, not be left to the
+   * schema.
+   */
+  private async orderUsage(id: string) {
+    const [invoices, serviceJobs, installations, units, stockMovements] = await Promise.all([
+      this.prisma.invoice.count({ where: { salesOrderId: id, deletedAt: null } }),
+      this.prisma.serviceJob.count({ where: { salesOrderId: id } }),
+      this.prisma.installation.count({ where: { salesOrderId: id } }),
+      this.prisma.productUnit.count({ where: { salesOrderId: id } }),
+      this.prisma.stockMovement.count({ where: { refType: 'SalesOrder', refId: id } }),
+    ]);
+    return { invoices, serviceJobs, installations, units, stockMovements };
+  }
+
+  /** Can this order be deleted outright? `remove()` re-checks server-side. */
+  async usage(id: string): Promise<UsageReport> {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id }, select: { status: true } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    const counts = await this.orderUsage(id);
+    return {
+      used: !isUnused(counts),
+      usedBy: usedBy(counts),
+      // A live order is deleted by cancelling it first: cancelling is what puts
+      // the stock back and voids the invoices. Deleting straight from CONFIRMED
+      // would drop the order while its goods stayed out of inventory.
+      blockedReason: so.status === 'CANCELLED' ? undefined : 'NOT_CANCELLED',
+    };
+  }
+
+  /**
+   * Delete a cancelled order: permanently when nothing came of it, archived when
+   * it left invoices or stock movements behind. See `common/safe-delete.ts`.
+   *
+   * An order cancelled before it was ever confirmed is a typo — no invoice, no
+   * movement, nothing referring to it — and purging it is what stops the list
+   * filling with mistakes. One that was confirmed, invoiced and then cancelled
+   * is history: it drops out of the list but the documents still resolve.
+   */
+  async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.deletedAt) throw new BadRequestException('Order is already deleted');
+    if (so.status !== 'CANCELLED')
+      throw new BadRequestException('Only a cancelled order can be deleted — cancel it first');
+
+    const counts = await this.orderUsage(id);
+    if (isUnused(counts)) {
+      // Items cascade with the order.
+      await this.prisma.salesOrder.delete({ where: { id } });
+      await this.audit.log(userId, 'PURGE', 'SalesOrder', id, { number: so.number });
+      return { success: true, mode: 'PURGED', usedBy: {} };
+    }
+    const used = usedBy(counts);
+    await this.prisma.salesOrder.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.audit.log(userId, 'DELETE', 'SalesOrder', id, { number: so.number, usedBy: used });
+    return { success: true, mode: 'ARCHIVED', usedBy: used };
+  }
+
+  /** Bring an archived order back into the active list. */
+  async restore(userId: string, id: string) {
+    const so = await this.prisma.salesOrder.findUnique({ where: { id } });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (!so.deletedAt) return { success: true, alreadyActive: true };
+    await this.prisma.salesOrder.update({ where: { id }, data: { deletedAt: null } });
+    await this.audit.log(userId, 'RESTORE', 'SalesOrder', id, { number: so.number });
+    return { success: true, alreadyActive: false };
   }
 }

@@ -90,6 +90,24 @@ export function lineUnitMargin(l: LineItem): number {
 }
 
 /**
+ * Lines priced under what the goods cost us.
+ *
+ * Selling at a loss is allowed — clearing dead stock and matching a competitor
+ * are real decisions — but never by accident, so the form confirms before
+ * saving. Bundles are skipped: their price is the sum of components that are
+ * each checked on their own, and a bundle header carries no cost of its own.
+ */
+export function belowCostLines(lines: LineItem[]): LineItem[] {
+  return lines.filter((l) => !l.isComposite && l.product && lineUnitMargin(l) < 0);
+}
+
+/** What the whole order gives away, across every below-cost line. */
+export function belowCostLoss(lines: LineItem[]): number {
+  const loss = belowCostLines(lines).reduce((s, l) => s + lineUnitMargin(l) * Number(l.quantity), 0);
+  return Math.round(Math.abs(loss) * 100) / 100;
+}
+
+/**
  * Amount without a currency suffix, for the captions under the price input.
  * "1,300.00 USD" is too wide for that column and the currency is already shown
  * on the line total beside it.

@@ -191,7 +191,8 @@
     "blocked": {
       "HAS_SUBCATEGORIES": "This category still has sub-categories. Delete or move them first.",
       "HAS_PRODUCTS": "This sub-category still has products. Move them to another sub-category first.",
-      "HAS_SALES_ORDER": "This quotation was converted into a sales order, so it must stay."
+      "HAS_SALES_ORDER": "This quotation was converted into a sales order, so it must stay.",
+      "NOT_CANCELLED": "Only a cancelled order can be deleted. Cancel it first — that is what puts the stock back."
     },
     "unitCost": "Unit cost"
   },
@@ -451,6 +452,9 @@
     "waInvoiceMessage": "Hello {client}, thank you for your business. Here is your invoice for order {number} — total {total}, balance due {remaining}.",
     "onlyPendingEditable": "Only pending orders can be edited",
     "belowCost": "Below cost price",
+    "belowCostTitle": "Selling below cost",
+    "belowCostWarning": "{items} priced below cost — this order loses {loss}. Save it anyway?",
+    "confirmDeleteOrder": "This cancelled order will be removed from the list. Its invoices and stock history stay intact.",
     "marginPerUnit": "Margin per unit",
     "addBundle": "Add bundle",
     "bundleNamePlaceholder": "Package name, e.g. AC & DC Protection Components",

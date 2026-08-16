@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote } from 'lucide-react';
+import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, Trash2, RotateCcw } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
 import { openWhatsApp } from '../../../lib/whatsapp';
 import DataTable from '../../../components/data-table';
@@ -33,8 +33,20 @@ export default function SalesOrdersPage() {
   const [deliverFor, setDeliverFor] = useState<any>(null);
   const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
   const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [archived, setArchived] = useState(false);
   const [payFor, setPayFor] = useState<any>(null);
   const [payForm, setPayForm] = useState<any>({});
+
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/sales-orders/${row.id}/restore`);
+      toast.success(t('common.saved'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
 
   const openPay = (row: any) => {
     setPayFor(row);
@@ -110,6 +122,8 @@ export default function SalesOrdersPage() {
       <DataTable
         endpoint="/sales-orders"
         refreshKey={refreshKey}
+        archived={archived}
+        onArchivedChange={setArchived}
         extraParams={{ ...(statusFilter ? { status: statusFilter } : {}), ...(paymentStatusFilter ? { paymentStatus: paymentStatusFilter } : {}) }}
         onRowClick={(r) => router.push(`/sales-orders/${r.id}`)}
         filters={
@@ -221,6 +235,21 @@ export default function SalesOrdersPage() {
                     <XCircle />
                   </Button>
                 )}
+                {/*
+                  Only a cancelled order can be removed, so nothing else in this
+                  row needs an `archived` guard: every archived order is a
+                  cancelled one, and none of the actions above render for those.
+                */}
+                {!archived && r.status === 'CANCELLED' && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.delete')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                    <Trash2 />
+                  </Button>
+                )}
+                {archived && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
+                    <RotateCcw />
+                  </Button>
+                )}
               </div>
             ),
           },
@@ -330,6 +359,25 @@ export default function SalesOrdersPage() {
           try {
             await api.post(`/sales-orders/${cancelTarget.id}/cancel`);
             toast.success(t('common.saved'));
+            setRefreshKey((k) => k + 1);
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+        description={t('orders.confirmDeleteOrder')}
+        requireText={t('common.deleteWord')}
+        usagePath={deleteTarget ? `/sales-orders/${deleteTarget.id}/usage` : undefined}
+        onConfirm={async () => {
+          try {
+            const { data } = await api.delete(`/sales-orders/${deleteTarget.id}`);
+            // An order cancelled before anything came of it is deleted outright;
+            // one that left invoices or stock movements behind is archived.
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
             setRefreshKey((k) => k + 1);
           } catch (e) {
             toast.error(errMsg(e));

@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
+﻿import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 import { Type } from 'class-transformer';
@@ -144,6 +144,24 @@ export class SalesOrdersController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
+  }
+
+  /** Can this order be deleted outright, or only archived? */
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.usage(id);
+  }
+
+  /** Only a cancelled order can be removed; see the service for purge vs archive. */
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  /** Bring an archived order back into the active list. */
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 
   /** Receipt printing: mint the signed token that goes inside the QR. */
