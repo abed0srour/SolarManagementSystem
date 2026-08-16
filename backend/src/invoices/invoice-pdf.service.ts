@@ -45,12 +45,16 @@ export class InvoicePdfService {
    * Shared page header: the logo across the top, then the document title and
    * company details beneath it.
    *
-   * The logo box is 420x200 — wide enough that nothing can sit next to it on a
-   * 595pt page, which is why the title and address block stack under the logo
-   * instead of sharing its row. Everything below is measured from the logo that
-   * was actually drawn rather than from the box, because the box is only a
-   * bound: a wide logo hits the width limit and fills half the height, and the
-   * header should not reserve space it isn't using.
+   * The title and address block stack under the logo rather than sharing its
+   * row. A 280pt-wide logo would leave room beside it on a 595pt page, but only
+   * for some logo shapes — a banner-shaped one would collide with a long
+   * address — and a header that reflows depending on which logo was uploaded is
+   * worse than one that always reads the same way.
+   *
+   * Everything below is measured from the logo that was actually drawn rather
+   * than from the box, because the box is only a bound: a wide logo hits the
+   * width limit and fills half the height, and the header should not reserve
+   * space it isn't using.
    */
   private async header(pdf: PDFDocument, page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, title: string, company: any) {
     const { font, bold } = fonts;
@@ -61,7 +65,7 @@ export class InvoicePdfService {
     const logo = await this.embedLogo(pdf, company.logoUrl);
     let titleY = 762;
     if (logo) {
-      const scale = Math.min(420 / logo.width, 200 / logo.height);
+      const scale = Math.min(280 / logo.width, 133.3 / logo.height);
       const w = logo.width * scale;
       const h = logo.height * scale;
       // Hung from the top margin rather than sitting on a fixed baseline, so the
