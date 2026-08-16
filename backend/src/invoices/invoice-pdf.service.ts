@@ -42,19 +42,21 @@ export class InvoicePdfService {
   }
 
   /**
-   * Shared page header: the logo across the top, then the document title and
-   * company details beneath it.
+   * Shared page header: logo on the left, document title and company details on
+   * the right, the two centred against each other so they read as one row.
    *
-   * The title and address block stack under the logo rather than sharing its
-   * row. A 280pt-wide logo would leave room beside it on a 595pt page, but only
-   * for some logo shapes — a banner-shaped one would collide with a long
-   * address — and a header that reflows depending on which logo was uploaded is
-   * worse than one that always reads the same way.
+   * The logo is centred on the right-hand block rather than pinned to a
+   * baseline, because the two columns are different heights and change
+   * independently — a banner logo is 60pt tall, a square one 133pt, and the
+   * address block grows a line at a time as the company fills in its details.
+   * Centring is the only rule that keeps them level through all of that.
    *
-   * Everything below is measured from the logo that was actually drawn rather
-   * than from the box, because the box is only a bound: a wide logo hits the
-   * width limit and fills half the height, and the header should not reserve
-   * space it isn't using.
+   * A logo taller than the text block would centre its way off the top of the
+   * page, so the position is clamped to the top margin; past that point the
+   * logo simply hangs from the margin and the text block is the shorter of the
+   * two. When a long address would reach into the logo the header falls back to
+   * stacking the block underneath it — the columns only share a row while there
+   * is genuinely room for both.
    */
   private async header(pdf: PDFDocument, page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, title: string, company: any) {
     const { font, bold } = fonts;
@@ -62,29 +64,47 @@ export class InvoicePdfService {
     const right = (str: string, y: number, size: number, f: PDFFont, color = GRAY) =>
       page.drawText(str, { x: width - 50 - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
+    const infoLines = [company.name, company.address, company.phone, company.email].filter(Boolean).map(String);
     const logo = await this.embedLogo(pdf, company.logoUrl);
+    const scale = logo ? Math.min(280 / logo.width, 133.3 / logo.height) : 0;
+    const w = logo ? logo.width * scale : 0;
+    const h = logo ? logo.height * scale : 0;
+
+    // Where the right-hand block starts, measured from its widest line, against
+    // where the logo ends. 14pt is the narrowest gap that still reads as two
+    // columns rather than as collision.
+    const widest = Math.max(bold.widthOfTextAtSize(title, 24), ...infoLines.map((l) => font.widthOfTextAtSize(l, 10)));
+    const shareRow = !logo || width - 50 - widest > 50 + w + 14;
+
     let titleY = 762;
+    let logoBottom = 786;
     if (logo) {
-      const scale = Math.min(280 / logo.width, 133.3 / logo.height);
-      const w = logo.width * scale;
-      const h = logo.height * scale;
-      // Hung from the top margin rather than sitting on a fixed baseline, so the
-      // gap above it is the same whatever shape the logo turns out to be.
-      page.drawImage(logo, { x: 50, y: 806 - h, width: w, height: h });
-      titleY = 806 - h - 34;
+      if (shareRow) {
+        // 786 is the visual top of the 24pt title; the block ends 4pt under the
+        // last address line.
+        const blockBottom = 742 - 14 * Math.max(0, infoLines.length - 1) - 4;
+        logoBottom = Math.min(806 - h, (786 + blockBottom) / 2 - h / 2);
+      } else {
+        logoBottom = 806 - h;
+        titleY = logoBottom - 34;
+      }
+      page.drawImage(logo, { x: 50, y: logoBottom, width: w, height: h });
     } else {
       page.drawText(company.name ?? 'Solar Store', { x: 50, y: 760, size: 18, font: bold, color: rgb(0.9, 0.45, 0.1) });
     }
 
     right(title, titleY, 24, bold, DARK);
     let hy = titleY - 20;
-    for (const line of [company.name, company.address, company.phone, company.email].filter(Boolean)) {
-      right(String(line), hy, 10, font);
+    for (const line of infoLines) {
+      right(line, hy, 10, font);
       hy -= 14;
     }
-    // y below the header block. Without a logo the band stays where it always
-    // sat, so a logo-less invoice is unchanged by any of this.
-    return Math.min(logo ? titleY - 24 : 700, hy - 8);
+    /*
+     * y below the header block — the lower of the two columns, since a tall logo
+     * can reach further down than the address does. Without a logo the band
+     * stays at 700 where it always sat.
+     */
+    return Math.min(700, hy - 8, logo ? logoBottom - 16 : 700);
   }
 
   /** Gray info band with a left block and a right block of label/value rows. */
