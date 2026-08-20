@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Building2, Coins, Hash, ShieldCheck, KeyRound, Mail, MailCheck, Upload, History, Settings as SettingsIcon,
-  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet, UsersRound,
+  DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet, UsersRound, Trash2,
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
@@ -266,8 +266,8 @@ export default function SettingsPage() {
                 <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                   <Upload className="h-4 w-4 text-muted-foreground" /> {t('settings.logo')}
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border bg-background">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border bg-background shrink-0">
                     {company.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={company.logoUrl} alt="logo" className="h-full w-full object-contain" />
@@ -295,6 +295,21 @@ export default function SettingsPage() {
                       }
                     }}
                   />
+                  {company.logoUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        setCompany({ ...company, logoUrl: null });
+                        toast.success(t('settings.logoRemoved'));
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>{t('common.remove')}</span>
+                    </Button>
+                  )}
                 </div>
               </div>
               <div className="flex justify-end border-t pt-4">
