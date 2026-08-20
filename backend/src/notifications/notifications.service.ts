@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +31,16 @@ export class NotificationsService {
 
   async markAllRead() {
     await this.prisma.notification.updateMany({ where: { isRead: false }, data: { isRead: true } });
+    return { success: true };
+  }
+
+  async deleteNotification(id: string) {
+    await this.prisma.notification.deleteMany({ where: { id } });
+    return { success: true };
+  }
+
+  async clearAll() {
+    await this.prisma.notification.deleteMany({});
     return { success: true };
   }
 

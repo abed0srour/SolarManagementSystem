@@ -9,6 +9,7 @@ import {
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
   ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
+  Check, CheckCheck, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -102,6 +103,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const [ready, setReady] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [userName, setUserName] = useState('');
@@ -313,7 +315,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Moon className="dark:hidden" />
           </Button>
           {/* Notifications */}
-          <DropdownMenu>
+          <DropdownMenu open={notifOpen} onOpenChange={setNotifOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell />
@@ -324,30 +326,75 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-96 max-w-[90vw]">
-              <DropdownMenuLabel>{t('nav.dashboard') === 'Dashboard' ? 'Notifications' : 'الإشعارات'}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {notifs.length === 0 && <div className="px-2 py-3 text-sm text-muted-foreground">{t('common.noRecords')}</div>}
-              {notifs.map((n) => (
-                <DropdownMenuItem
-                  key={n.id}
-                  // Divider between entries — wrapped messages ran together
-                  // otherwise. The last one's border doubles as the rule above
-                  // the "mark all read" action below.
-                  className="whitespace-normal border-b border-border/60"
-                  onClick={() => {
-                    api.post(`/notifications/${n.id}/read`).then(() => {
-                      setNotifs((p) => p.filter((x) => x.id !== n.id));
-                      setUnread((u) => Math.max(0, u - 1));
-                    });
-                  }}
-                >
-                  <span className="text-xs leading-relaxed">{n.message}</span>
-                </DropdownMenuItem>
-              ))}
-              {notifs.length > 0 && (
-                <>
-                  <DropdownMenuItem
+            <DropdownMenuContent align="end" className="w-96 max-w-[90vw] p-0 overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">
+                    {t('nav.dashboard') === 'Dashboard' ? 'Notifications' : 'الإشعارات'}
+                  </span>
+                  {unread > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="max-h-80 overflow-y-auto divide-y divide-border/50">
+                {notifs.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                    {t('common.noRecords')}
+                  </div>
+                ) : (
+                  notifs.map((n) => (
+                    <div
+                      key={n.id}
+                      className="group flex items-start justify-between gap-2.5 p-3 transition-colors hover:bg-muted/40"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs leading-relaxed text-foreground break-words block">{n.message}</span>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 shrink-0">
+                        <button
+                          type="button"
+                          title={t('common.seen')}
+                          className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            api.post(`/notifications/${n.id}/read`).then(() => {
+                              setNotifs((p) => p.filter((x) => x.id !== n.id));
+                              setUnread((u) => Math.max(0, u - 1));
+                            });
+                          }}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title={t('common.clear')}
+                          className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            api.delete(`/notifications/${n.id}`).then(() => {
+                              setNotifs((p) => p.filter((x) => x.id !== n.id));
+                              setUnread((u) => Math.max(0, u - 1));
+                            });
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2 p-2 border-t border-border bg-muted/25">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={notifs.length === 0}
+                    className="h-7 text-xs px-2.5 gap-1 hover:text-primary hover:bg-primary/10"
                     onClick={() => {
                       api.post('/notifications/read-all').then(() => {
                         setNotifs([]);
@@ -355,10 +402,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       });
                     }}
                   >
-                    <span className="text-xs font-medium text-primary">✓ {t('common.close')}</span>
-                  </DropdownMenuItem>
-                </>
-              )}
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    <span>{t('common.seen')}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={notifs.length === 0}
+                    className="h-7 text-xs px-2.5 gap-1 hover:text-destructive hover:border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => {
+                      api.delete('/notifications/clear-all').then(() => {
+                        setNotifs([]);
+                        setUnread(0);
+                      });
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{t('common.clear')}</span>
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs px-2.5 gap-1"
+                  onClick={() => setNotifOpen(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  <span>{t('common.close')}</span>
+                </Button>
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
           {/* User menu */}
