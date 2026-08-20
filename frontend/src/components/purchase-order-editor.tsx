@@ -3,9 +3,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Trash2, Truck, PackagePlus } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Truck, PackagePlus, XCircle } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../lib/api';
 import StatusChip from './status-chip';
+import ConfirmDialog from './confirm-dialog';
 import Field from './form-field';
 import { SupplierPicker, WarehousePicker, ProductPicker } from './entity-picker';
 import { Button } from './ui/button';
@@ -53,6 +54,8 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
       : [{ product: null, quantity: 1, unitCost: 0 }],
   );
   const [saving, setSaving] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const setLine = (idx: number, patch: Partial<PoLine>) => setLines(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
@@ -88,6 +91,10 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
   };
 
   const canSave = editable && form.supplier && form.warehouse && lines.some((l) => l.product);
+
+  const isCancellable = editing && editing.status !== 'CANCELLED' && (editing.cancellable ?? (
+    (editing.items ?? []).every((i: any) => !i.receivedQty) && Number(editing.paidAmount ?? 0) === 0
+  ));
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -232,12 +239,55 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
 
       <div className="flex justify-end gap-2 pb-4">
         <Button variant="outline" onClick={() => router.push('/purchase-orders')}>{t('common.cancel')}</Button>
+        {isCancellable && (
+          <Button variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setCancelOpen(true)}>
+            <XCircle /> {t('orders.cancelOrder')}
+          </Button>
+        )}
+        {editing && editing.status === 'CANCELLED' && (
+          <Button variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setDeleteOpen(true)}>
+            <Trash2 /> {t('common.delete')}
+          </Button>
+        )}
         {editable && (
           <Button onClick={save} disabled={!canSave || saving}>
             <PackagePlus /> {t('common.save')}
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        description={t('orders.confirmCancelPurchaseOrder')}
+        requireText={t('common.deleteWord')}
+        onConfirm={async () => {
+          try {
+            await api.post(`/purchase-orders/${editing.id}/cancel`);
+            toast.success(t('common.saved'));
+            router.push('/purchase-orders');
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        description={t('orders.confirmDeletePurchaseOrder')}
+        requireText={t('common.deleteWord')}
+        usagePath={editing ? `/purchase-orders/${editing.id}/usage` : undefined}
+        onConfirm={async () => {
+          try {
+            const { data } = await api.delete(`/purchase-orders/${editing.id}`);
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            router.push('/purchase-orders');
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
     </div>
   );
 }

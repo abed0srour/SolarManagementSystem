@@ -473,11 +473,14 @@
     "cancelBlocked": {
       "DELIVERED": "This order was delivered. Create a refund instead of cancelling it.",
       "COLLECTED": "The customer already collected this order. Create a refund instead of cancelling it.",
-      "HAS_PAYMENTS": "Payments have been taken against this order. Refund them before it can be cancelled."
+      "HAS_PAYMENTS": "Payments have been taken against this order. Refund them before it can be cancelled.",
+      "HAS_RECEIPTS": "Goods have already been received on this order. Return the goods before cancelling."
     },
     "searchSerials": "Search in-stock serial numbers…",
     "autoPick": "Auto-pick",
-    "noSerialsInStock": "No serial numbers in stock for this product."
+    "noSerialsInStock": "No serial numbers in stock for this product.",
+    "confirmCancelPurchaseOrder": "Are you sure you want to cancel this purchase order?",
+    "confirmDeletePurchaseOrder": "This cancelled purchase order will be removed. Its history will stay intact."
   },
   "invoices": {
     "title": "Invoices",

@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { PurchaseOrdersService } from './purchase-orders.service';
@@ -143,6 +143,11 @@ export class PurchaseOrdersController {
     return this.service.findOne(id);
   }
 
+  @Get(':id/usage')
+  usage(@Param('id') id: string) {
+    return this.service.usage(id);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: PurchaseOrderDto) {
     return this.service.create(user.id, dto);
@@ -158,6 +163,11 @@ export class PurchaseOrdersController {
     return this.service.receive(user.id, id, dto);
   }
 
+  @Post(':id/cancel')
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.cancel(user.id, id);
+  }
+
   @Post(':id/status')
   setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: StatusDto) {
     return this.service.setStatus(user.id, id, dto.status);
@@ -166,5 +176,15 @@ export class PurchaseOrdersController {
   @Post(':id/pay')
   pay(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PayDto) {
     return this.service.pay(user.id, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 }

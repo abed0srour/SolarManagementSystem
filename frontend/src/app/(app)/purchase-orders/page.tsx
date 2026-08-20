@@ -5,9 +5,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, PackageCheck, Banknote, Undo2 } from 'lucide-react';
+import { Plus, PackageCheck, Banknote, Undo2, XCircle, Trash2, RotateCcw } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
+import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
@@ -25,6 +26,19 @@ export default function PurchaseOrdersPage() {
   const [receiveLines, setReceiveLines] = useState<Record<string, { qty: number; serials: string }>>({});
   const [payFor, setPayFor] = useState<any>(null);
   const [payForm, setPayForm] = useState<any>({});
+  const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [archived, setArchived] = useState(false);
+
+  const restore = async (row: any) => {
+    try {
+      await api.post(`/purchase-orders/${row.id}/restore`);
+      toast.success(t('common.saved'));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
 
   const openReceive = async (row: any) => {
     const { data } = await api.get(`/purchase-orders/${row.id}`);
@@ -82,6 +96,8 @@ export default function PurchaseOrdersPage() {
       <DataTable
         endpoint="/purchase-orders"
         refreshKey={refreshKey}
+        archived={archived}
+        onArchivedChange={setArchived}
         extraParams={{ ...(statusFilter ? { status: statusFilter } : {}), ...(paymentStatusFilter ? { paymentStatus: paymentStatusFilter } : {}) }}
         onRowClick={(r) => router.push(`/purchase-orders/${r.id}/edit`)}
         filters={
@@ -125,20 +141,35 @@ export default function PurchaseOrdersPage() {
             key: 'actions', label: '',
             render: (r) => (
               <div className="flex justify-end gap-1">
-                {['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'].includes(r.status) && (
+                {!archived && ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'].includes(r.status) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.receive')} onClick={(e) => { e.stopPropagation(); openReceive(r); }}>
                     <PackageCheck />
                   </Button>
                 )}
-                {r.status !== 'CANCELLED' && r.paymentStatus !== 'PAID' && (
+                {!archived && r.status !== 'CANCELLED' && r.paymentStatus !== 'PAID' && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title={t('orders.pay')} onClick={(e) => { e.stopPropagation(); openPay(r); }}>
                     <Banknote />
                   </Button>
                 )}
                 {/* Only meaningful once something has actually been received. */}
-                {r.status !== 'CANCELLED' && (r.items ?? []).some((i: any) => i.receivedQty > i.returnedQty) && (
+                {!archived && r.status !== 'CANCELLED' && (r.items ?? []).some((i: any) => i.receivedQty > i.returnedQty) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 dark:text-amber-400" title={t('purchaseReturns.returnToSupplier')} onClick={(e) => { e.stopPropagation(); router.push(`/purchase-orders/${r.id}/return`); }}>
                     <Undo2 />
+                  </Button>
+                )}
+                {!archived && r.cancellable && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title={t('orders.cancelOrder')} onClick={(e) => { e.stopPropagation(); setCancelTarget(r); }}>
+                    <XCircle />
+                  </Button>
+                )}
+                {!archived && r.status === 'CANCELLED' && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.delete')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
+                    <Trash2 />
+                  </Button>
+                )}
+                {archived && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
+                    <RotateCcw />
                   </Button>
                 )}
               </div>
@@ -218,6 +249,39 @@ export default function PurchaseOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        onOpenChange={(v) => !v && setCancelTarget(null)}
+        description={t('orders.confirmCancelPurchaseOrder')}
+        requireText={t('common.deleteWord')}
+        onConfirm={async () => {
+          try {
+            await api.post(`/purchase-orders/${cancelTarget.id}/cancel`);
+            toast.success(t('common.saved'));
+            setRefreshKey((k) => k + 1);
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+        description={t('orders.confirmDeletePurchaseOrder')}
+        requireText={t('common.deleteWord')}
+        usagePath={deleteTarget ? `/purchase-orders/${deleteTarget.id}/usage` : undefined}
+        onConfirm={async () => {
+          try {
+            const { data } = await api.delete(`/purchase-orders/${deleteTarget.id}`);
+            toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
+            setRefreshKey((k) => k + 1);
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+        }}
+      />
     </div>
   );
 }
