@@ -238,7 +238,20 @@
     "outstanding": "Outstanding",
     "vsPrevious": "vs previous period",
     "thisMonth": "This month",
-    "thisYear": "This year"
+    "thisYear": "This year",
+    "welcomeBack": "Welcome back",
+    "switchView": "Switch View",
+    "classicView": "Classic View",
+    "proView": "Analytics Pro",
+    "salesTrend": "Sales Trend",
+    "totalRevenue": "Total Revenue",
+    "totalOrders": "Total Orders",
+    "newCustomers": "New Customers",
+    "recentTransactions": "Recent Transactions",
+    "pageOf": "Page {page} of {total}",
+    "showingRows": "Showing {from} - {to} of {total}",
+    "items": "Items",
+    "viewAll": "View all"
   },
   "status": {
     "DRAFT": "Draft",

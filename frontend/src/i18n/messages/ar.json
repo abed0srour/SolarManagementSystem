@@ -238,7 +238,20 @@
     "outstanding": "المستحق",
     "vsPrevious": "مقارنة بالفترة السابقة",
     "thisMonth": "هذا الشهر",
-    "thisYear": "هذه السنة"
+    "thisYear": "هذه السنة",
+    "welcomeBack": "مرحباً بعودتك",
+    "switchView": "تبديل المظهر",
+    "classicView": "المظهر التقليدي",
+    "proView": "التحليلات المتقدمة",
+    "salesTrend": "مؤشر المبيعات",
+    "totalRevenue": "إجمالي الإيرادات",
+    "totalOrders": "إجمالي الطلبات",
+    "newCustomers": "العملاء الجدد",
+    "recentTransactions": "أحدث المعاملات",
+    "pageOf": "صفحة {page} من {total}",
+    "showingRows": "عرض {from} - {to} من {total}",
+    "items": "العناصر",
+    "viewAll": "عرض الكل"
   },
   "status": {
     "DRAFT": "مسودة",

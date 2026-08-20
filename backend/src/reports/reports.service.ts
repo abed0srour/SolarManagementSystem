@@ -21,7 +21,25 @@ export class ReportsService {
     // One parallel burst — every sequential query here costs a full round-trip
     // to the remote database.
     const completedRefunds = { deletedAt: null, status: 'COMPLETED' as const, createdAt: period };
-    const [salesAgg, receivables, payables, invoiceCount, openClaims, pendingOrders, expensesAgg, activeInstallations, energyAgg, invoices, saleItems, products, clientGroups, refundsAgg, returnedItems] = await Promise.all([
+    const [
+      salesAgg,
+      receivables,
+      payables,
+      invoiceCount,
+      openClaims,
+      pendingOrders,
+      expensesAgg,
+      activeInstallations,
+      energyAgg,
+      invoices,
+      saleItems,
+      products,
+      clientGroups,
+      refundsAgg,
+      returnedItems,
+      newClientsCount,
+      recentInvoices,
+    ] = await Promise.all([
       this.prisma.invoice.aggregate({ where: saleWhere, _sum: { total: true, paidAmount: true } }),
       this.prisma.invoice.aggregate({
         where: { type: 'SALE', status: { notIn: ['CANCELLED', 'PAID'] } },
@@ -39,7 +57,7 @@ export class ReportsService {
       this.prisma.energyReading.aggregate({ where: { readingDate: period }, _sum: { energyKwh: true } }),
       this.prisma.invoice.findMany({
         where: saleWhere,
-        select: { issueDate: true, total: true },
+        select: { issueDate: true, total: true, paidAmount: true },
         orderBy: { issueDate: 'asc' },
       }),
       // Top-level lines only, with each bundle's components attached — see
@@ -72,13 +90,27 @@ export class ReportsService {
         where: { condition: 'RESELLABLE', refund: completedRefunds },
         include: { product: { select: { costPrice: true } } },
       }),
+      this.prisma.client.count({ where: { deletedAt: null, createdAt: period } }),
+      this.prisma.invoice.findMany({
+        where: { type: 'SALE', deletedAt: null, issueDate: period },
+        include: {
+          client: { select: { id: true, name: true, phone: true } },
+          items: { select: { product: { select: { name: true } }, quantity: true, lineTotal: true }, take: 2 },
+        },
+        orderBy: { issueDate: 'desc' },
+        take: 15,
+      }),
     ]);
 
     // Sales by day (for chart)
-    const byDay = new Map<string, number>();
+    const byDay = new Map<string, { total: number; collected: number; count: number }>();
     for (const inv of invoices) {
       const day = inv.issueDate.toISOString().slice(0, 10);
-      byDay.set(day, round2((byDay.get(day) ?? 0) + Number(inv.total)));
+      const cur = byDay.get(day) ?? { total: 0, collected: 0, count: 0 };
+      cur.total = round2(cur.total + Number(inv.total));
+      cur.collected = round2(cur.collected + Number(inv.paidAmount ?? 0));
+      cur.count += 1;
+      byDay.set(day, cur);
     }
 
     // Sales by category
@@ -119,21 +151,39 @@ export class ReportsService {
       (p) => p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0) <= p.lowStockThreshold,
     ).length;
 
-    // Top clients by billed revenue in the period
+    // Top clients by billed revenue in the period (all clients with sales, sorted)
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: clientGroups.map((g) => g.clientId!).filter(Boolean) } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, phone: true },
     });
-    const clientNames = new Map(clientRows.map((c) => [c.id, c.name]));
+    const clientMap = new Map(clientRows.map((c) => [c.id, c]));
     const topClients = clientGroups
-      .map((g) => ({
-        clientId: g.clientId,
-        name: clientNames.get(g.clientId!) ?? '—',
-        invoices: g._count._all,
-        revenue: round2(Number(g._sum.total ?? 0)),
-      }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
+      .map((g) => {
+        const client = clientMap.get(g.clientId!);
+        return {
+          clientId: g.clientId,
+          name: client?.name ?? '—',
+          phone: client?.phone ?? '',
+          invoices: g._count._all,
+          revenue: round2(Number(g._sum.total ?? 0)),
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const topProducts = [...byProduct.entries()]
+      .map(([sku, v]) => ({ sku, ...v }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const recentTransactions = recentInvoices.map((inv) => ({
+      id: inv.id,
+      number: inv.number,
+      clientName: inv.client?.name ?? 'Walk-in Customer',
+      date: inv.issueDate,
+      status: inv.status,
+      total: Number(inv.total),
+      paidAmount: Number(inv.paidAmount),
+      itemsSummary: inv.items.map((i) => `${i.product?.name ?? 'Item'} (x${i.quantity})`).join(', ') || 'General Sale',
+    }));
 
     /*
      * The immediately preceding window of the same length, so "vs previous" is
@@ -145,7 +195,7 @@ export class ReportsService {
     const prior = { gte: new Date(period.gte.getTime() - span - 1), lte: new Date(period.gte.getTime() - 1) };
     const priorSaleWhere = { type: 'SALE' as const, status: { not: 'CANCELLED' as const }, issueDate: prior };
 
-    const [priorAgg, priorInvoiceCount, priorExpenses, priorItems, orderStatusGroups] = await Promise.all([
+    const [priorAgg, priorInvoiceCount, priorExpenses, priorItems, orderStatusGroups, priorNewClientsCount] = await Promise.all([
       this.prisma.invoice.aggregate({ where: priorSaleWhere, _sum: { total: true, paidAmount: true } }),
       this.prisma.invoice.count({ where: priorSaleWhere }),
       this.prisma.expense.aggregate({ where: { deletedAt: null, expenseDate: prior }, _sum: { amount: true } }),
@@ -162,6 +212,7 @@ export class ReportsService {
         where: { deletedAt: null, orderDate: period },
         _count: { _all: true },
       }),
+      this.prisma.client.count({ where: { deletedAt: null, createdAt: prior } }),
     ]);
 
     const priorCogs = expandRevenueLines(priorItems).reduce(
@@ -180,6 +231,8 @@ export class ReportsService {
 
     return {
       topClients,
+      topProducts,
+      recentTransactions,
       previous: {
         revenue: priorRevenue,
         collected: Number(priorAgg._sum.paidAmount ?? 0),
@@ -187,6 +240,7 @@ export class ReportsService {
         expenses: priorExpenseTotal,
         invoiceCount: priorInvoiceCount,
         netProfit: round2(priorGross - priorExpenseTotal),
+        newClients: priorNewClientsCount,
       },
       deltas: {
         revenue: delta(revenue, priorRevenue),
@@ -195,6 +249,7 @@ export class ReportsService {
         expenses: delta(Number(expensesAgg._sum.amount ?? 0), priorExpenseTotal),
         invoiceCount: delta(invoiceCount, priorInvoiceCount),
         netProfit: delta(netProfitNow, round2(priorGross - priorExpenseTotal)),
+        newClients: delta(newClientsCount, priorNewClientsCount),
       },
       /** Doughnut: where orders currently sit in the fulfilment pipeline. */
       orderStatus: orderStatusGroups.map((g) => ({ status: g.status, count: g._count._all })),
@@ -219,45 +274,47 @@ export class ReportsService {
         netProfit: round2(grossProfit - Number(expensesAgg._sum.amount ?? 0)),
         activeInstallations,
         energyKwh: Number(energyAgg._sum.energyKwh ?? 0),
+        newClientsCount,
       },
-      salesByDay: [...byDay.entries()].map(([date, total]) => ({ date, total })),
+      salesByDay: [...byDay.entries()].map(([date, v]) => ({ date, total: v.total, collected: v.collected, count: v.count })),
       salesByCategory: [...byCategory.entries()].map(([category, total]) => ({ category, total })),
-      topProducts: [...byProduct.entries()]
-        .map(([sku, v]) => ({ sku, ...v }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 10),
     };
   }
 
-  /** Profit margin per product over a period. */
+  /** Sales and profit per product over a period. */
   async profitByProduct(from?: string, to?: string) {
     const period = this.range(from, to);
-    const items = await this.prisma.invoiceItem.findMany({ relationLoadStrategy: 'join',
-      where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: period }, parentItemId: null },
-      include: {
-        product: { select: { sku: true, name: true, costPrice: true } },
-        subItems: {
-          select: { quantity: true, lineTotal: true, product: { select: { sku: true, name: true, costPrice: true } } },
+    const completedRefunds = { deletedAt: null, status: 'COMPLETED' as const, createdAt: period };
+    const [soldLines, returns] = await Promise.all([
+      this.prisma.invoiceItem.findMany({
+        relationLoadStrategy: 'join',
+        where: { invoice: { type: 'SALE', status: { not: 'CANCELLED' }, issueDate: period }, parentItemId: null },
+        include: {
+          product: { select: { sku: true, name: true, costPrice: true } },
+          subItems: {
+            select: {
+              quantity: true,
+              lineTotal: true,
+              product: { select: { sku: true, name: true, costPrice: true } },
+            },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.returnItem.findMany({
+        relationLoadStrategy: 'join',
+        where: { refund: completedRefunds },
+        include: { product: { select: { sku: true, name: true, costPrice: true } } },
+      }),
+    ]);
+
     const map = new Map<string, { name: string; qty: number; revenue: number; cost: number }>();
-    // Each bundle contributes its components, carrying their share of what the
-    // customer actually paid — so a discounted bundle shows a thinner margin on
-    // every part of it rather than a phantom one.
-    for (const line of expandRevenueLines(items)) {
+    for (const line of expandRevenueLines(soldLines)) {
       const cur = map.get(line.product.sku) ?? { name: line.product.name, qty: 0, revenue: 0, cost: 0 };
       cur.qty += line.quantity;
       cur.revenue = round2(cur.revenue + line.revenue);
       cur.cost = round2(cur.cost + Number(line.product.costPrice) * line.quantity);
       map.set(line.product.sku, cur);
     }
-    // Completed refunds pull the returned quantity and value back out; a
-    // resellable return also takes its cost out of COGS (it is stock again).
-    const returns = await this.prisma.returnItem.findMany({ relationLoadStrategy: 'join',
-      where: { refund: { deletedAt: null, status: 'COMPLETED', createdAt: period } },
-      include: { product: { select: { sku: true, name: true, costPrice: true } } },
-    });
     for (const ri of returns) {
       const cur = map.get(ri.product.sku) ?? { name: ri.product.name, qty: 0, revenue: 0, cost: 0 };
       cur.qty -= ri.quantity;
