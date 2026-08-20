@@ -265,7 +265,15 @@
     "pageOf": "صفحة {page} من {total}",
     "showingRows": "عرض {from} - {to} من {total}",
     "items": "العناصر",
-    "viewAll": "عرض الكل"
+    "viewAll": "عرض الكل",
+    "netOfRefunds": "بعد خصم {amount} مرتجعات",
+    "shareOfRevenue": "الحصة من الإيرادات",
+    "otherCategories": "{count} فئات أخرى",
+    "rankedByRevenue": "{count} مرتبة حسب الإيرادات",
+    "chartView": "رسم بياني",
+    "tableView": "جدول",
+    "trendNeedsRange": "اليوم الواحد لا يشكّل مؤشراً. اختر شهر أو سنة لعرض المؤشر.",
+    "refresh": "تحديث"
   },
   "status": {
     "DRAFT": "مسودة",
