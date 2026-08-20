@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import {
-  SunMedium, LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
+  LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
   ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
@@ -187,11 +187,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const sidebar = (
     <nav className="flex h-full flex-col overflow-y-auto border-e bg-card">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <SunMedium className="h-6 w-6 text-amber-500" />
+      <div className="flex h-14 items-center border-b px-4">
         <div className="min-w-0">
           <div className="truncate text-sm font-bold leading-tight">{company.name || t('app.title')}</div>
-          <div className="truncate text-[11px] text-muted-foreground">{company.tagline || t('app.subtitle')}</div>
+          {company.tagline && (
+            <div className="truncate text-[11px] text-muted-foreground">{company.tagline}</div>
+          )}
         </div>
       </div>
       <div className="flex-1 space-y-4 p-3">
