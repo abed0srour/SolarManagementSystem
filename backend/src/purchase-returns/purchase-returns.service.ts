@@ -326,4 +326,26 @@ export class PurchaseReturnsService {
     await this.audit.log(userId, 'STATUS_CHANGE', 'SupplierReturn', id, { number: ret.number, status: data.status });
     return ret;
   }
+
+  async remove(userId: string, id: string) {
+    const ret = await this.prisma.supplierReturn.findUnique({ where: { id } });
+    if (!ret) throw new NotFoundException('Supplier return not found');
+    await this.prisma.supplierReturn.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    await this.audit.log(userId, 'DELETE', 'SupplierReturn', id, { number: ret.number });
+    return { success: true };
+  }
+
+  async restore(userId: string, id: string) {
+    const ret = await this.prisma.supplierReturn.findUnique({ where: { id } });
+    if (!ret) throw new NotFoundException('Supplier return not found');
+    await this.prisma.supplierReturn.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    await this.audit.log(userId, 'RESTORE', 'SupplierReturn', id, { number: ret.number });
+    return { success: true };
+  }
 }

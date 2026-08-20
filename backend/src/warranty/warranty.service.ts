@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -141,5 +141,27 @@ export class WarrantyService {
         take: pageSize,
       })
       .then(async (items) => ({ items, total: await totalPromise, page, pageSize }));
+  }
+
+  async remove(userId: string, id: string) {
+    const claim = await this.prisma.warrantyClaim.findUnique({ where: { id } });
+    if (!claim) throw new NotFoundException('Warranty claim not found');
+    await this.prisma.warrantyClaim.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    await this.audit.log(userId, 'DELETE', 'WarrantyClaim', id, { number: claim.number });
+    return { success: true };
+  }
+
+  async restore(userId: string, id: string) {
+    const claim = await this.prisma.warrantyClaim.findUnique({ where: { id } });
+    if (!claim) throw new NotFoundException('Warranty claim not found');
+    await this.prisma.warrantyClaim.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    await this.audit.log(userId, 'RESTORE', 'WarrantyClaim', id, { number: claim.number });
+    return { success: true };
   }
 }

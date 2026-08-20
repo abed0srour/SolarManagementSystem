@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -383,5 +383,27 @@ export class InvoicesService {
       else status = 'UNPAID';
     }
     await tx.invoice.update({ where: { id: invoiceId }, data: { paidAmount: paid, status } });
+  }
+
+  async remove(userId: string, id: string) {
+    const inv = await this.prisma.invoice.findUnique({ where: { id } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    await this.prisma.invoice.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    await this.audit.log(userId, 'DELETE', 'Invoice', id, { number: inv.number });
+    return { success: true };
+  }
+
+  async restore(userId: string, id: string) {
+    const inv = await this.prisma.invoice.findUnique({ where: { id } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    await this.prisma.invoice.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    await this.audit.log(userId, 'RESTORE', 'Invoice', id, { number: inv.number });
+    return { success: true };
   }
 }

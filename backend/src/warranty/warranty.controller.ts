@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { IsIn, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
 import { WarrantyService } from './warranty.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
@@ -66,5 +66,20 @@ export class WarrantyController {
   @Patch('claims/:id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ClaimUpdateDto) {
     return this.service.update(user.id, id, dto);
+  }
+
+  @Delete('claims/:id')
+  removeClaim(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  @Post('claims/:id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 }

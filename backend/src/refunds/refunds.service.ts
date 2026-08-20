@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -227,5 +227,27 @@ export class RefundsService {
     });
     await this.audit.log(userId, 'COMPLETE', 'Refund', id, { number: r.number, method: r.method });
     return this.findOne(id);
+  }
+
+  async remove(userId: string, id: string) {
+    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    if (!refund) throw new NotFoundException('Refund not found');
+    await this.prisma.refund.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    await this.audit.log(userId, 'DELETE', 'Refund', id, { number: refund.number });
+    return { success: true };
+  }
+
+  async restore(userId: string, id: string) {
+    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    if (!refund) throw new NotFoundException('Refund not found');
+    await this.prisma.refund.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    await this.audit.log(userId, 'RESTORE', 'Refund', id, { number: refund.number });
+    return { success: true };
   }
 }

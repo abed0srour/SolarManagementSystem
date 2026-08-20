@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import type { Response } from 'express';
@@ -150,5 +150,15 @@ export class InvoicesController {
   @Post(':id/cancel')
   cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.cancel(user.id, id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 }

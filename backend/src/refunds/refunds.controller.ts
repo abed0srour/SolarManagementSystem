@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { RefundsService } from './refunds.service';
@@ -117,5 +117,15 @@ export class RefundsController {
   @Post(':id/complete')
   complete(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CompleteDto) {
     return this.service.complete(user.id, id, dto.warehouseId);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.remove(user.id, id);
+  }
+
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.restore(user.id, id);
   }
 }
