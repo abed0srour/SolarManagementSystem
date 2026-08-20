@@ -1,17 +1,16 @@
 'use client';
 import {
-  LayoutDashboard, ChevronLeft, ChevronRight, CalendarDays, ArrowUp, ArrowDown, Minus,
-  Sparkles, Layers, ShoppingBag, Users, DollarSign, TrendingUp, Package, AlertCircle,
-  Clock, ArrowRight, ShieldCheck, Zap, Receipt, ExternalLink
+  ChevronLeft, ChevronRight, CalendarDays, ArrowUp, ArrowDown, Minus,
+  Sparkles, Layers, TrendingUp, Package, Clock, ArrowRight, ShieldCheck, Zap,
+  Sun, HandCoins, CreditCard, BarChart3, Table2, RefreshCw,
 } from 'lucide-react';
-import PageHeader from '../../../components/page-header';
-import { useEffect, useMemo, useState } from 'react';
+import { ElementType, ReactNode, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  BarChart, Bar, PieChart, Pie, Cell
+  BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Line
 } from 'recharts';
 import { api, fmtMoney, fmtDate } from '../../../lib/api';
 import { getUser } from '../../../lib/auth';
@@ -68,26 +67,357 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
   );
 }
 
-function MiniBarSparkline({ points, color = '#f97316' }: { points: number[]; color?: string }) {
-  if (!points || points.length === 0) return <div className="h-8" />;
-  const max = Math.max(...points, 1);
+/* ---------------------------------------------------------------------------
+ * Analytics Pro primitives.
+ *
+ * Every mark on the pro view follows one spec: thin bars with a rounded
+ * data-end, 2px lines, a solid hairline grid, and a 2px gap in the surface
+ * colour doing the separating rather than a stroke drawn around the mark.
+ * Series colour comes from the validated palette in `lib/charts` and never
+ * from `--primary`: the accent is user-swappable chrome, so binding data to it
+ * would repaint the meaning of a chart every time someone changes theme.
+ * ------------------------------------------------------------------------- */
+
+/** Axis ticks and dense cells: 940 / 12.9K / 4.2M. Never a headline figure. */
+function compact(n: number): string {
+  // A trailing ".0" is noise on an axis — 4K reads, 4.0K just takes room.
+  const trim = (v: number, digits: number) => String(Number(v.toFixed(digits)));
+  const v = Math.abs(n);
+  if (v >= 1_000_000) return `${trim(n / 1_000_000, v >= 10_000_000 ? 0 : 1)}M`;
+  if (v >= 1_000) return `${trim(n / 1_000, v >= 10_000 ? 0 : 1)}K`;
+  return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+/**
+ * Clean y-axis ticks. Left to itself recharts fits the domain to the data and
+ * lands on labels like 950 and 2.9K; an axis is the reference a reader does
+ * arithmetic against, so it gets round numbers or it is not earning its space.
+ */
+function niceTicks(max: number, count = 5): number[] {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / (count - 1);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
+  return Array.from({ length: count }, (_, i) => i * step);
+}
+
+/** The one micro-label style every tile and card header on the pro view uses. */
+function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className="flex h-7 items-end gap-1">
-      {points.slice(-10).map((p, i) => {
-        const heightPct = Math.max(15, Math.round((p / max) * 100));
-        return (
-          <div
-            key={i}
-            className="flex-1 rounded-sm transition-all hover:opacity-80"
-            style={{
-              height: `${heightPct}%`,
-              backgroundColor: i === points.slice(-10).length - 1 ? color : `${color}88`,
-            }}
-          />
-        );
-      })}
+    <div className={cn('text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground', className)}>
+      {children}
     </div>
   );
+}
+
+/**
+ * Chart tooltip drawn on the popover surface instead of recharts' hard-coded
+ * white box, so it inherits both themes and the accent for free.
+ */
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  format,
+}: {
+  active?: boolean;
+  payload?: {
+    dataKey?: string | number;
+    name?: string;
+    value?: number;
+    color?: string;
+    payload?: { full?: string };
+  }[];
+  label?: string;
+  format?: (v: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  // The x-axis tick is abbreviated to fit ("14", "Mar"); the tooltip has room
+  // for the point's full date, which the series carries alongside it.
+  const heading = payload[0]?.payload?.full ?? label;
+  return (
+    <div className="rounded-lg border bg-popover px-3 py-2 text-xs shadow-lg">
+      {heading && <div className="mb-1.5 font-semibold text-popover-foreground">{heading}</div>}
+      <div className="space-y-1">
+        {payload.map((p) => (
+          <div key={String(p.dataKey)} className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
+              {p.name}
+            </span>
+            <span className="ms-auto font-semibold tabular-nums text-popover-foreground">
+              {format ? format(Number(p.value ?? 0)) : p.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A swatch + name pair. Identity never rests on colour alone. */
+function LegendKey({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The two-bar footer under each metric tile: this period over the one before
+ * it, on a shared scale. It draws the same fact the delta chip states as a
+ * percentage, so the reader sees the size of the base that percentage is
+ * measured against — +300% off a near-empty week stops looking like a triumph.
+ */
+function CompareBars({ current, previous, color }: { current: number; previous: number; color: string }) {
+  const max = Math.max(Math.abs(current), Math.abs(previous));
+  const width = (v: number) => (max <= 0 ? '0%' : `${Math.max(1.5, (Math.abs(v) / max) * 100)}%`);
+  return (
+    <div className="mt-3 flex flex-col gap-[3px]" aria-hidden="true">
+      <div className="h-1.5 w-full rounded-full bg-muted/50">
+        <div className="h-full rounded-full" style={{ width: width(current), backgroundColor: color }} />
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted/50">
+        <div className="h-full rounded-full bg-muted-foreground/30" style={{ width: width(previous) }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A metric tile: label, value, delta against a *named* period, compare bars.
+ * The value uses proportional figures — `tabular-nums` gives every digit the
+ * width of a zero, which leaves a headline number looking loose.
+ */
+function MetricTile({
+  label,
+  value,
+  pct,
+  goodWhenUp = true,
+  current,
+  previous,
+  previousLabel,
+  previousValue,
+  color,
+}: {
+  label: string;
+  value: string;
+  pct?: number | null;
+  goodWhenUp?: boolean;
+  current: number;
+  previous: number;
+  previousLabel: string;
+  previousValue: string;
+  color: string;
+}) {
+  return (
+    <Card className="border-border/60 shadow-none transition-colors hover:border-border">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <Eyebrow className="truncate">{label}</Eyebrow>
+          <Trend pct={pct} goodWhenUp={goodWhenUp} />
+        </div>
+        <div className="mt-2.5 truncate text-[26px] font-semibold leading-none tracking-tight">{value}</div>
+        <div className="mt-2 flex items-baseline gap-1.5 text-xs text-muted-foreground">
+          <span className="shrink-0">{previousLabel}</span>
+          <span className="truncate font-medium text-foreground/70">{previousValue}</span>
+        </div>
+        <CompareBars current={current} previous={previous} color={color} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Part-to-whole meter. The segments touch, so a 2px gap in the surface colour
+ * separates them — a stroke around each fill would add ink that is not data.
+ * Two shares would make a bad pie; as one track they read at a glance and stay
+ * directly labelled underneath, so no value is gated behind a hover.
+ */
+function Meter({ segments }: { segments: { key: string; label: string; value: number; color: string }[] }) {
+  const total = segments.reduce((s, x) => s + Math.max(0, x.value), 0);
+  return (
+    <div>
+      <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted/60">
+        {total > 0 &&
+          segments.map((s) => (
+            <div
+              key={s.key}
+              className="h-full rounded-full"
+              style={{ width: `${(Math.max(0, s.value) / total) * 100}%`, backgroundColor: s.color }}
+            />
+          ))}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {segments.map((s) => (
+          <div key={s.key} className="min-w-0">
+            <LegendKey color={s.color} label={s.label} />
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="truncate text-sm font-semibold tabular-nums">{fmtMoney(s.value)}</span>
+              {total > 0 && (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {Math.round((Math.max(0, s.value) / total) * 100)}%
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One cell of the operations strip: a live figure with somewhere to go. */
+function OpsCell({
+  icon: Icon,
+  label,
+  value,
+  tone = 'default',
+  onClick,
+}: {
+  icon: ElementType;
+  label: string;
+  value: string;
+  tone?: 'default' | 'good' | 'warning' | 'critical';
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex h-full w-full items-center gap-3 p-3.5 text-start transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          {label}
+        </span>
+        <span
+          className={cn(
+            'block truncate text-base font-semibold tabular-nums',
+            tone === 'good' && 'text-emerald-600 dark:text-emerald-400',
+            tone === 'warning' && 'text-amber-600 dark:text-amber-400',
+            tone === 'critical' && 'text-red-600 dark:text-red-400',
+          )}
+        >
+          {value}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-transparent transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
+    </button>
+  );
+}
+
+/**
+ * A ranked bar list. Drawn in HTML rather than as a chart so the label, the
+ * bar and the exact value share one row and no text can be clipped by its own
+ * mark — which also makes it its own table view.
+ */
+function RankedBars({
+  rows,
+  color,
+  empty,
+}: {
+  rows: { key: string; label: string; value: number; caption?: string }[];
+  color: string;
+  empty: string;
+}) {
+  if (rows.length === 0) {
+    return <div className="py-10 text-center text-sm text-muted-foreground">{empty}</div>;
+  }
+  const max = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
+  return (
+    <div className="space-y-3">
+      {rows.map((r) => (
+        <div key={r.key}>
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <span className="truncate text-sm text-foreground">{r.label}</span>
+            <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtMoney(r.value)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 rounded-full bg-muted/50">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${Math.max(1.5, (Math.abs(r.value) / max) * 100)}%`, backgroundColor: color }}
+              />
+            </div>
+            {r.caption && (
+              <span className="w-11 shrink-0 text-end text-[11px] tabular-nums text-muted-foreground">{r.caption}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** `label` is the abbreviated axis tick; `full` is what the tooltip and the table row show. */
+type TrendPoint = { key: string; label: string; full: string; total: number; collected: number; count: number };
+
+/**
+ * Turns the sparse `salesByDay` rows into a continuous series.
+ *
+ * The API only emits days that actually carried an invoice, in map-insertion
+ * order, so plotting it raw both skips the quiet days and can run the x-axis
+ * backwards. A month is filled day by day — a day with no sales is a zero, not
+ * a gap — and a year is rolled up to twelve months, because 365 columns is not
+ * a trend anyone can read.
+ */
+function buildTrend(
+  rows: { date: string; total: number; collected?: number; count?: number }[],
+  gran: Granularity,
+  from: string,
+  to: string,
+): TrendPoint[] {
+  const bucketed = new Map<string, { total: number; collected: number; count: number }>();
+  for (const r of rows ?? []) {
+    const key = gran === 'year' ? r.date.slice(0, 7) : r.date.slice(0, 10);
+    const cur = bucketed.get(key) ?? { total: 0, collected: 0, count: 0 };
+    cur.total += Number(r.total ?? 0);
+    cur.collected += Number(r.collected ?? 0);
+    cur.count += Number(r.count ?? 0);
+    bucketed.set(key, cur);
+  }
+
+  const out: TrendPoint[] = [];
+
+  if (gran === 'year') {
+    const year = Number(from.slice(0, 4));
+    for (let m = 0; m < 12; m += 1) {
+      const key = `${year}-${String(m + 1).padStart(2, '0')}`;
+      const at = new Date(year, m, 1);
+      const v = bucketed.get(key) ?? { total: 0, collected: 0, count: 0 };
+      out.push({
+        key,
+        label: at.toLocaleDateString(undefined, { month: 'short' }),
+        full: at.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        ...v,
+      });
+    }
+    return out;
+  }
+
+  const cursor = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  // 400 is a guard, not a limit: the widest range this branch ever gets is a
+  // single calendar month.
+  while (cursor <= end && out.length < 400) {
+    const key = iso(cursor);
+    const v = bucketed.get(key) ?? { total: 0, collected: 0, count: 0 };
+    out.push({
+      key,
+      label: String(cursor.getDate()),
+      full: cursor.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+      ...v,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
 }
 
 function StatTile({
@@ -306,6 +636,7 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'classic' | 'pro'>('pro');
   const [productsPage, setProductsPage] = useState(1);
   const [clientsPage, setClientsPage] = useState(1);
+  const [trendView, setTrendView] = useState<'chart' | 'table'>('chart');
   const [user, setUserState] = useState<any>(null);
 
   useEffect(() => {
@@ -322,7 +653,7 @@ export default function DashboardPage() {
 
   const { from, to, label } = useMemo(() => periodRange(gran, anchor), [gran, anchor]);
 
-  const { data } = useLocalFirstData(
+  const { data, validating, refresh } = useLocalFirstData(
     `dashboard?from=${from}&to=${to}`,
     () => api.get('/reports/dashboard', { params: { from, to } }).then((r) => r.data),
   );
@@ -366,7 +697,49 @@ export default function DashboardPage() {
 
   const sparkRevenue = (data?.salesByDay ?? []).map((d: any) => d.total);
   const sparkCollected = (data?.salesByDay ?? []).map((d: any) => d.collected ?? d.total * 0.8);
-  const sparkOrders = (data?.salesByDay ?? []).map((d: any) => d.count ?? 1);
+
+  /* --- Analytics Pro derivations --- */
+
+  /** The window every delta chip is measured against, named rather than implied. */
+  const prevLabel = useMemo(() => periodRange(gran, shift(gran, anchor, -1)).label, [gran, anchor]);
+
+  const trend = useMemo(() => buildTrend(data?.salesByDay ?? [], gran, from, to), [data, gran, from, to]);
+
+  /** Both series share one axis, so the ceiling is the taller of the two. */
+  const trendTicks = useMemo(() => niceTicks(Math.max(0, ...trend.map((p) => p.total))), [trend]);
+
+  /** The card surface, for the 2px ring that keeps an active dot legible on the line. */
+  const surface = isDark ? '#1a1a19' : '#fdfcfa';
+
+  const orderStatusTotal = Math.max(1, orderStatus.reduce((s: number, x: any) => s + x.count, 0));
+
+  /**
+   * Categories past the fifth fold into one "other" row. A ranked list stops
+   * being readable well before a long tail of one-percent slivers runs out, and
+   * the fold keeps the total honest instead of silently dropping the remainder.
+   */
+  const categoryRows = useMemo(() => {
+    const rows = [...(data?.salesByCategory ?? [])].sort((a: any, b: any) => b.total - a.total);
+    const total = rows.reduce((s: number, r: any) => s + r.total, 0);
+    const share = (v: number) => (total > 0 ? `${Math.round((v / total) * 100)}%` : '—');
+    const out = rows.slice(0, 5).map((r: any) => ({
+      key: r.category,
+      label: r.category,
+      value: r.total,
+      caption: share(r.total),
+    }));
+    const tail = rows.slice(5);
+    if (tail.length > 0) {
+      const rest = tail.reduce((s: number, r: any) => s + r.total, 0);
+      out.push({
+        key: '__other',
+        label: t('dashboard.otherCategories', { count: tail.length }),
+        value: rest,
+        caption: share(rest),
+      });
+    }
+    return out;
+  }, [data, t]);
 
   if (!data) {
     return (
@@ -388,25 +761,66 @@ export default function DashboardPage() {
 
   const userName = user?.name ? user.name.split(' ')[0] : 'Admin';
 
+  /**
+   * The operational counts, each pointing at the page where you act on it.
+   * Only the two that are genuinely an alert wear a tone — outstanding money is
+   * ordinary business, and colouring it red every day teaches people to ignore
+   * the colour on the day it matters.
+   */
+  const opsCells: {
+    key: string;
+    icon: ElementType;
+    label: string;
+    value: string;
+    tone?: 'default' | 'good' | 'warning' | 'critical';
+    href: string;
+  }[] = [
+    { key: 'grossProfit', icon: TrendingUp, label: t('dashboard.grossProfit'), value: fmtMoney(data.kpis.grossProfit), href: '/reports' },
+    { key: 'receivables', icon: HandCoins, label: t('dashboard.receivables'), value: fmtMoney(data.kpis.accountsReceivable), href: '/invoices' },
+    { key: 'payables', icon: CreditCard, label: t('dashboard.payables'), value: fmtMoney(data.kpis.accountsPayable), href: '/purchase-orders' },
+    { key: 'pendingOrders', icon: Clock, label: t('dashboard.pendingOrders'), value: String(data.kpis.pendingOrders), href: '/sales-orders' },
+    {
+      key: 'lowStock',
+      icon: Package,
+      label: t('dashboard.lowStock'),
+      value: String(data.kpis.lowStockCount),
+      tone: data.kpis.lowStockCount > 0 ? 'warning' : 'good',
+      href: '/inventory',
+    },
+    {
+      key: 'openClaims',
+      icon: ShieldCheck,
+      label: t('dashboard.openClaims'),
+      value: String(data.kpis.openClaims),
+      tone: data.kpis.openClaims > 0 ? 'warning' : 'good',
+      href: '/warranty',
+    },
+    { key: 'activeSystems', icon: Sun, label: t('dashboard.activeSystems'), value: String(data.kpis.activeInstallations), href: '/installations' },
+    { key: 'energy', icon: Zap, label: t('dashboard.energyProduced'), value: `${compact(data.kpis.energyKwh)} kWh`, href: '/monitoring' },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Top Header Row with Greetings, Period Picker & Switch View Button */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+      {/* The one filter row, above everything it scopes: change the period here
+       * and every tile, chart and table below re-renders against the same
+       * slice. No card carries a filter of its own. */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
               {t('dashboard.welcomeBack')}, <span className="text-primary">{userName}</span>
             </h1>
-            <Badge variant="outline" className="hidden sm:inline-flex bg-primary/10 text-primary border-primary/20 font-mono text-xs">
+            <Badge variant="default" className="gap-1.5">
+              {viewMode === 'pro' ? <Sparkles className="h-3 w-3" /> : <Layers className="h-3 w-3" />}
               {viewMode === 'pro' ? t('dashboard.proView') : t('dashboard.classicView')}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="mt-1 text-xs text-muted-foreground">
             {t('dashboard.showingPeriod')}: <span className="font-medium text-foreground">{label}</span>
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <PeriodPicker
             gran={gran}
             anchor={anchor}
@@ -419,21 +833,31 @@ export default function DashboardPage() {
             }}
           />
 
-          {/* Switch Dashboard View Mode Button */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => refresh()}
+            disabled={validating}
+            title={t('dashboard.refresh')}
+            aria-label={t('dashboard.refresh')}
+          >
+            <RefreshCw className={cn('h-4 w-4', validating && 'animate-spin')} />
+          </Button>
+
           <Button
             variant="outline"
             onClick={toggleViewMode}
-            className="flex items-center gap-2 border-primary/40 bg-background/80 font-medium shadow-sm transition-all hover:bg-primary hover:text-primary-foreground"
+            className="gap-2 font-medium"
             title={viewMode === 'pro' ? t('dashboard.classicView') : t('dashboard.proView')}
           >
             {viewMode === 'pro' ? (
               <>
-                <Layers className="h-4 w-4 text-primary group-hover:text-inherit" />
+                <Layers className="h-4 w-4" />
                 <span>{t('dashboard.classicView')}</span>
               </>
             ) : (
               <>
-                <Sparkles className="h-4 w-4 text-amber-500" />
+                <Sparkles className="h-4 w-4" />
                 <span>{t('dashboard.proView')}</span>
               </>
             )}
@@ -441,277 +865,433 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ======================= PRO ANALYTICS DASHBOARD VIEW ======================= */}
+      {/* ============================ ANALYTICS PRO ============================
+       *
+       * Reading order is deliberate: one headline figure and the trend behind
+       * it, then the four metrics that explain it, then the operational counts
+       * you act on, then the breakdowns, then the rows. Nothing on this view is
+       * illustrative — every mark is drawn from the same period the picker
+       * above scopes, and a metric with no data says so instead of drawing a
+       * plausible shape.
+       * ==================================================================== */}
       {viewMode === 'pro' && (
-        <div className="space-y-6 animate-in fade-in-50 duration-300">
-          {/* Top KPI Cards (inspired by reference design with modern dark cards & orange accent) */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* 1. TOTAL REVENUE */}
-            <Card className="relative overflow-hidden border-border/80 bg-card/90 shadow-sm backdrop-blur transition-all hover:border-primary/50 hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>{t('dashboard.totalRevenue')}</span>
-                  <Trend pct={data.deltas.revenue} goodWhenUp={true} />
-                </div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-2xl font-black tabular-nums tracking-tight text-foreground md:text-3xl">
+        <div className={cn('space-y-4 animate-in fade-in-50 duration-300', validating && 'opacity-60 transition-opacity')}>
+          {/* ---------------- Hero: the headline figure and its trend ---------------- */}
+          <Card className="overflow-hidden border-border/60">
+            <div className="grid lg:grid-cols-12">
+              <div className="flex flex-col justify-between gap-6 border-b border-border/60 p-5 lg:col-span-4 lg:border-b-0 lg:border-e">
+                <div>
+                  <Eyebrow>{t('dashboard.totalRevenue')}</Eyebrow>
+                  <div className="mt-2 text-4xl font-semibold leading-none tracking-tight md:text-[42px]">
                     {fmtMoney(data.kpis.revenue)}
-                  </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Trend pct={data.deltas.revenue} goodWhenUp />
+                    <span className="text-xs text-muted-foreground">
+                      {prevLabel}{' '}
+                      <span className="font-medium text-foreground/70">{fmtMoney(data.previous.revenue)}</span>
+                    </span>
+                  </div>
+                  {data.kpis.refunds > 0 && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {t('dashboard.netOfRefunds', { amount: fmtMoney(data.kpis.refunds) })}
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3">
-                  <MiniBarSparkline points={sparkRevenue.length ? sparkRevenue : [2, 5, 3, 8, 4, 9, 7, 12, 10, 15]} color="#f97316" />
-                </div>
-              </CardContent>
-            </Card>
 
-            {/* 2. TOTAL ORDERS / INVOICES */}
-            <Card className="relative overflow-hidden border-border/80 bg-card/90 shadow-sm backdrop-blur transition-all hover:border-primary/50 hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>{t('dashboard.totalOrders')}</span>
-                  <Trend pct={data.deltas.invoiceCount} goodWhenUp={true} />
+                <div>
+                  <Eyebrow className="mb-2.5">{t('dashboard.collectionMix')}</Eyebrow>
+                  <Meter
+                    segments={[
+                      {
+                        key: 'collected',
+                        label: t('dashboard.collected'),
+                        value: data.kpis.collected,
+                        color: statusPalette.good,
+                      },
+                      {
+                        key: 'outstanding',
+                        label: t('dashboard.outstanding'),
+                        value: Math.max(0, data.kpis.revenue - data.kpis.collected),
+                        color: statusPalette.neutral,
+                      },
+                    ]}
+                  />
                 </div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-2xl font-black tabular-nums tracking-tight text-foreground md:text-3xl">
-                    {data.kpis.invoiceCount.toLocaleString()}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{t('orders.received')}: {data.kpis.pendingOrders} {t('status.PENDING').toLowerCase()}</span>
-                </div>
-                <div className="mt-3">
-                  <MiniBarSparkline points={sparkOrders.length ? sparkOrders : [1, 3, 2, 4, 3, 5, 4, 6, 5, 8]} color="#ea580c" />
-                </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* 3. NEW CUSTOMERS / CLIENTS */}
-            <Card className="relative overflow-hidden border-border/80 bg-card/90 shadow-sm backdrop-blur transition-all hover:border-primary/50 hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>{t('dashboard.newCustomers')}</span>
-                  <Trend pct={data.deltas.newClients} goodWhenUp={true} />
-                </div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-2xl font-black tabular-nums tracking-tight text-foreground md:text-3xl">
-                    {(data.kpis.newClientsCount ?? (data.topClients?.length ?? 0)).toLocaleString()}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{allTopClients.length} active</span>
-                </div>
-                <div className="mt-3">
-                  <MiniBarSparkline points={[2, 4, 3, 6, 5, 7, 6, 8, 9, 10]} color="#fb923c" />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 4. NET PROFIT */}
-            <Card className="relative overflow-hidden border-border/80 bg-card/90 shadow-sm backdrop-blur transition-all hover:border-primary/50 hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>{t('dashboard.netProfit')}</span>
-                  <Trend pct={data.deltas.netProfit} goodWhenUp={true} />
-                </div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-2xl font-black tabular-nums tracking-tight text-foreground md:text-3xl">
-                    {fmtMoney(data.kpis.netProfit)}
-                  </span>
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                    {data.kpis.revenue > 0 ? `${((data.kpis.netProfit / data.kpis.revenue) * 100).toFixed(0)}% margin` : ''}
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <MiniBarSparkline points={sparkCollected.length ? sparkCollected : [1, 2, 4, 3, 6, 5, 8, 7, 9, 11]} color="#22c55e" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Quick Operations Bar */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.collected')}</div>
-              <div className="mt-0.5 text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{fmtMoney(data.kpis.collected)}</div>
-            </div>
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.receivables')}</div>
-              <div className="mt-0.5 text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums">{fmtMoney(data.kpis.accountsReceivable)}</div>
-            </div>
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.payables')}</div>
-              <div className="mt-0.5 text-sm font-bold text-red-600 dark:text-red-400 tabular-nums">{fmtMoney(data.kpis.accountsPayable)}</div>
-            </div>
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.expenses')}</div>
-              <div className="mt-0.5 text-sm font-bold tabular-nums">{fmtMoney(data.kpis.expenses)}</div>
-            </div>
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.lowStock')}</div>
-              <div className={cn("mt-0.5 text-sm font-bold tabular-nums", data.kpis.lowStockCount > 0 ? "text-amber-500" : "")}>{data.kpis.lowStockCount}</div>
-            </div>
-            <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-xs">
-              <div className="text-[11px] font-medium text-muted-foreground">{t('dashboard.openClaims')}</div>
-              <div className={cn("mt-0.5 text-sm font-bold tabular-nums", data.kpis.openClaims > 0 ? "text-amber-500" : "")}>{data.kpis.openClaims}</div>
-            </div>
-          </div>
-
-          {/* MAIN SALES TREND CHART & REVENUE DISTRIBUTION */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            {/* Sales Trend Chart (Large 2-column hero chart) */}
-            <Card className="lg:col-span-2 border-border/80 bg-card/90 shadow-sm">
-              <CardHeader className="pb-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base font-bold flex items-center gap-2">
-                      <span>{t('dashboard.salesTrend')}</span>
-                      <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary">{gran.toUpperCase()}</Badge>
-                    </CardTitle>
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <span className="text-xl font-black text-primary tabular-nums">{fmtMoney(data.kpis.revenue)}</span>
-                      <span className="text-xs text-muted-foreground">{t('dashboard.totalRevenue')}</span>
+              <div className="flex min-w-0 flex-col lg:col-span-8">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4 pb-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold">{t('dashboard.salesTrend')}</span>
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <div className="flex items-center gap-3">
+                      <LegendKey color={colors[0]} label={t('dashboard.revenue')} />
+                      <LegendKey color={colors[1]} label={t('dashboard.collected')} />
+                    </div>
+                    {/* Chart and table are the same numbers — nothing is gated behind a hover. */}
+                    <div className="flex rounded-md bg-muted/60 p-0.5">
+                      {(['chart', 'table'] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setTrendView(v)}
+                          aria-pressed={trendView === v}
+                          title={v === 'chart' ? t('dashboard.chartView') : t('dashboard.tableView')}
+                          className={cn(
+                            'rounded p-1.5 transition-colors',
+                            trendView === v
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {v === 'chart' ? <BarChart3 className="h-3.5 w-3.5" /> : <Table2 className="h-3.5 w-3.5" />}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
+
+                {trend.length < 2 ? (
+                  <div className="flex h-[268px] flex-col items-center justify-center gap-3 px-6 text-center">
+                    <p className="max-w-xs text-sm text-muted-foreground">{t('dashboard.trendNeedsRange')}</p>
+                    <Button variant="outline" size="sm" onClick={() => setGran('month')}>
+                      {t('dashboard.perMonth')}
+                    </Button>
+                  </div>
+                ) : trendView === 'chart' ? (
+                  <div dir="ltr" className="min-w-0 px-1 pb-3">
+                    <ResponsiveContainer width="100%" height={268}>
+                      <ComposedChart data={trend} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
+                        <defs>
+                          <linearGradient id="proRevenueWash" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={colors[0]} stopOpacity={0.22} />
+                            <stop offset="100%" stopColor={colors[0]} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={ink.grid} vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tickLine={false}
+                          axisLine={{ stroke: ink.baseline }}
+                          tick={{ fontSize: 11, fill: ink.muted }}
+                          interval="preserveStartEnd"
+                          minTickGap={14}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          width={54}
+                          domain={[0, trendTicks[trendTicks.length - 1]]}
+                          ticks={trendTicks}
+                          tick={{ fontSize: 11, fill: ink.muted }}
+                          tickFormatter={(v) => compact(Number(v))}
+                        />
+                        <Tooltip
+                          cursor={{ stroke: ink.baseline, strokeWidth: 1 }}
+                          content={<ChartTooltip format={(v) => fmtMoney(v)} />}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="total"
+                          name={t('dashboard.revenue')}
+                          stroke={colors[0]}
+                          strokeWidth={2}
+                          fill="url(#proRevenueWash)"
+                          activeDot={{ r: 4, strokeWidth: 2, stroke: surface }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="collected"
+                          name={t('dashboard.collected')}
+                          stroke={colors[1]}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, strokeWidth: 2, stroke: surface }}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="max-h-[268px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('common.date')}</TableHead>
+                          <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
+                          <TableHead className="text-end">{t('dashboard.collected')}</TableHead>
+                          <TableHead className="text-end">{t('dashboard.ordersCount')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {trend.filter((p) => p.count > 0).length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
+                              {t('dashboard.noSales')}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          trend
+                            .filter((p) => p.count > 0)
+                            .map((p) => (
+                              <TableRow key={p.key}>
+                                <TableCell className="text-xs tabular-nums text-muted-foreground">{p.full}</TableCell>
+                                <TableCell className="text-end text-sm font-semibold tabular-nums">
+                                  {fmtMoney(p.total)}
+                                </TableCell>
+                                <TableCell className="text-end text-sm tabular-nums">{fmtMoney(p.collected)}</TableCell>
+                                <TableCell className="text-end text-sm tabular-nums">{p.count}</TableCell>
+                              </TableRow>
+                            ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* ---------------- The four metrics that explain the headline ---------------- */}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricTile
+              label={t('dashboard.netProfit')}
+              value={fmtMoney(data.kpis.netProfit)}
+              pct={data.deltas.netProfit}
+              current={data.kpis.netProfit}
+              previous={data.previous.netProfit}
+              previousLabel={prevLabel}
+              previousValue={fmtMoney(data.previous.netProfit)}
+              color={colors[0]}
+            />
+            <MetricTile
+              label={t('dashboard.expenses')}
+              value={fmtMoney(data.kpis.expenses)}
+              pct={data.deltas.expenses}
+              goodWhenUp={false}
+              current={data.kpis.expenses}
+              previous={data.previous.expenses}
+              previousLabel={prevLabel}
+              previousValue={fmtMoney(data.previous.expenses)}
+              color={colors[4]}
+            />
+            <MetricTile
+              label={t('dashboard.totalOrders')}
+              value={data.kpis.invoiceCount.toLocaleString()}
+              pct={data.deltas.invoiceCount}
+              current={data.kpis.invoiceCount}
+              previous={data.previous.invoiceCount}
+              previousLabel={prevLabel}
+              previousValue={data.previous.invoiceCount.toLocaleString()}
+              color={colors[3]}
+            />
+            <MetricTile
+              label={t('dashboard.newCustomers')}
+              value={(data.kpis.newClientsCount ?? 0).toLocaleString()}
+              pct={data.deltas.newClients}
+              current={data.kpis.newClientsCount ?? 0}
+              previous={data.previous.newClients ?? 0}
+              previousLabel={prevLabel}
+              previousValue={(data.previous.newClients ?? 0).toLocaleString()}
+              color={colors[2]}
+            />
+          </div>
+
+          {/* ---------------- Operations: counts you act on, each a way in ----------------
+           * `gap-px` over a border-coloured ground draws the hairlines between
+           * cells, so the rules stay perfect at every breakpoint the grid
+           * reflows through without a single conditional border class.
+           */}
+          <Card className="overflow-hidden border-border/60">
+            <div className="grid gap-px bg-border/60 sm:grid-cols-2 lg:grid-cols-4">
+              {opsCells.map((c) => (
+                <div key={c.key} className="bg-card">
+                  <OpsCell
+                    icon={c.icon}
+                    label={c.label}
+                    value={c.value}
+                    tone={c.tone}
+                    onClick={() => router.push(c.href)}
+                  />
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* ---------------- Where the revenue came from, and what is in flight ---------------- */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="border-border/60 lg:col-span-2">
+              <CardHeader className="pb-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <CardTitle className="text-sm font-semibold">{t('dashboard.salesByCategory')}</CardTitle>
+                  <span className="text-xs text-muted-foreground">{t('dashboard.shareOfRevenue')}</span>
+                </div>
               </CardHeader>
               <CardContent>
-                <div dir="ltr" className="pt-2">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={data.salesByDay} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                      <CartesianGrid stroke={ink.grid} strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 10, fill: ink.muted }}
-                        stroke={ink.baseline}
-                        tickFormatter={(v) => (gran === 'day' ? v.slice(11, 16) || v : v.slice(5))}
-                      />
-                      <YAxis tick={{ fontSize: 10, fill: ink.muted }} stroke={ink.baseline} width={65} />
-                      <Tooltip
-                        formatter={(v: any, name: any) => [fmtMoney(v), name === 'total' ? t('dashboard.revenue') : t('dashboard.collected')]}
-                        labelFormatter={(l) => fmtDate(l)}
-                        contentStyle={tooltipStyle}
-                      />
-                      <Bar dataKey="total" name={t('dashboard.revenue')} fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                      <Bar dataKey="collected" name={t('dashboard.collected')} fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <RankedBars rows={categoryRows} color={colors[0]} empty={t('dashboard.noSales')} />
               </CardContent>
             </Card>
 
-            {/* Sales by Category breakdown */}
-            <Card className="border-border/80 bg-card/90 shadow-sm flex flex-col justify-between">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-bold">{t('dashboard.salesByCategory')}</CardTitle>
-                <CardDescription className="text-xs">{t('dashboard.revenue')} breakdown by category</CardDescription>
+            <Card className="border-border/60">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-sm font-semibold">{t('dashboard.orderStatus')}</CardTitle>
+                <CardDescription className="pt-1 text-2xl font-semibold leading-none tracking-tight text-foreground">
+                  {orderStatus.length > 0 ? orderStatusTotal.toLocaleString() : '—'}
+                  <span className="ms-2 text-xs font-normal text-muted-foreground">
+                    {t('dashboard.ordersCount').toLowerCase()}
+                  </span>
+                </CardDescription>
               </CardHeader>
-              <CardContent className="flex-1">
-                <div dir="ltr">
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart
-                      data={data.salesByCategory}
-                      layout="vertical"
-                      margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
-                    >
-                      <CartesianGrid stroke={ink.grid} horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10, fill: ink.muted }} stroke={ink.baseline} />
-                      <YAxis type="category" dataKey="category" tick={{ fontSize: 11, fill: ink.muted }} stroke={ink.baseline} width={75} />
-                      <Tooltip formatter={(v: any) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                      <Bar dataKey="total" fill="#f97316" radius={[0, 4, 4, 0]} maxBarSize={22} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+              <CardContent>
+                {orderStatus.length === 0 ? (
+                  <div className="py-10 text-center text-sm text-muted-foreground">{t('dashboard.noSales')}</div>
+                ) : (
+                  <div className="space-y-3">
+                    {orderStatus.map((s: any) => (
+                      <div key={s.status}>
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <StatusChip status={s.status} />
+                          <span className="text-sm font-semibold tabular-nums">{s.count}</span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-muted/50">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.max(1.5, (s.count / orderStatusTotal) * 100)}%`,
+                              backgroundColor: colors[0],
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* RECENT TRANSACTIONS TABLE */}
+          {/* ---------------- Recent transactions ---------------- */}
           {data.recentTransactions && data.recentTransactions.length > 0 && (
-            <Card className="border-border/80 bg-card/90 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle className="text-base font-bold">{t('dashboard.recentTransactions')}</CardTitle>
-                  <CardDescription className="text-xs">Latest invoices and sales orders</CardDescription>
+            <Card className="border-border/60">
+              <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+                <div className="min-w-0">
+                  <CardTitle className="text-sm font-semibold">{t('dashboard.recentTransactions')}</CardTitle>
+                  <CardDescription className="text-xs">{t('dashboard.recentSales')}</CardDescription>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/invoices')} className="text-xs text-primary gap-1">
-                  {t('dashboard.viewAll')} <ArrowRight className="h-3.5 w-3.5" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 gap-1 text-xs text-primary"
+                  onClick={() => router.push('/invoices')}
+                >
+                  {t('dashboard.viewAll')}
+                  <ArrowRight className="h-3.5 w-3.5 rtl:rotate-180" />
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="text-xs">
-                        <TableHead className="w-28">{t('quotations.number')}</TableHead>
-                        <TableHead>{t('common.client')}</TableHead>
-                        <TableHead>{t('dashboard.items')}</TableHead>
-                        <TableHead>{t('common.status')}</TableHead>
-                        <TableHead className="text-end">{t('common.date')}</TableHead>
-                        <TableHead className="text-end">{t('common.total')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.recentTransactions.slice(0, 7).map((tx: any) => (
-                        <TableRow key={tx.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/invoices/${tx.id}`)}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-28">{t('quotations.number')}</TableHead>
+                      <TableHead>{t('common.client')}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t('dashboard.items')}</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead className="hidden text-end sm:table-cell">{t('common.date')}</TableHead>
+                      <TableHead className="text-end">{t('common.total')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.recentTransactions.slice(0, 8).map((tx: any) => {
+                      const paidShare = tx.total > 0 ? Math.min(1, Math.max(0, tx.paidAmount / tx.total)) : 0;
+                      return (
+                        <TableRow
+                          key={tx.id}
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => router.push(`/invoices/${tx.id}`)}
+                        >
                           <TableCell className="font-mono text-xs font-semibold text-primary">{tx.number}</TableCell>
-                          <TableCell className="font-medium text-sm">{tx.clientName}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-56 truncate">{tx.itemsSummary}</TableCell>
-                          <TableCell><StatusChip status={tx.status} /></TableCell>
-                          <TableCell className="text-end text-xs text-muted-foreground">{fmtDate(tx.date)}</TableCell>
-                          <TableCell className="text-end font-bold tabular-nums text-foreground">{fmtMoney(tx.total)}</TableCell>
+                          <TableCell className="text-sm font-medium">{tx.clientName}</TableCell>
+                          <TableCell className="hidden max-w-64 truncate text-xs text-muted-foreground lg:table-cell">
+                            {tx.itemsSummary}
+                          </TableCell>
+                          <TableCell>
+                            <StatusChip status={tx.status} />
+                          </TableCell>
+                          <TableCell className="hidden text-end text-xs tabular-nums text-muted-foreground sm:table-cell">
+                            {fmtDate(tx.date)}
+                          </TableCell>
+                          <TableCell className="text-end">
+                            <div className="text-sm font-semibold tabular-nums">{fmtMoney(tx.total)}</div>
+                            {/* The status chip already names the state; this only shows how far along it is. */}
+                            <div
+                              className="ms-auto mt-1.5 h-1 w-16 rounded-full bg-muted/60"
+                              title={`${t('dashboard.collected')}: ${fmtMoney(tx.paidAmount)}`}
+                            >
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${paidShare * 100}%`, backgroundColor: statusPalette.good }}
+                              />
+                            </div>
+                          </TableCell>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}
 
-          {/* TOP PRODUCTS & TOP CLIENTS WITH 10-RECORDS PAGINATION */}
+          {/* ---------------- Leaderboards ---------------- */}
           <div className="grid gap-4 lg:grid-cols-2">
-            {/* Top Products (10 per page pagination) */}
-            <Card className="border-border/80 bg-card/90 shadow-sm flex flex-col justify-between">
-              <div>
-                <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base font-bold">{t('dashboard.topProducts')}</CardTitle>
-                    <CardDescription className="text-xs">{allTopProducts.length} items ranked by sales</CardDescription>
-                  </div>
-                  <Badge variant="outline" className="font-mono text-xs">{allTopProducts.length}</Badge>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="text-xs">
-                        <TableHead className="w-24">{t('products.sku')}</TableHead>
-                        <TableHead>{t('common.product')}</TableHead>
-                        <TableHead className="text-end w-20">{t('dashboard.qtySold')}</TableHead>
-                        <TableHead className="text-end w-28">{t('dashboard.revenue')}</TableHead>
+            <Card className="flex min-w-0 flex-col border-border/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">{t('dashboard.topProducts')}</CardTitle>
+                <CardDescription className="text-xs">
+                  {t('dashboard.rankedByRevenue', { count: allTopProducts.length })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>{t('common.product')}</TableHead>
+                      <TableHead className="w-20 text-end">{t('dashboard.qtySold')}</TableHead>
+                      <TableHead className="w-32 text-end">{t('dashboard.revenue')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
+                          {t('dashboard.noSales')}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pagedProducts.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="py-8 text-center text-muted-foreground text-sm">
-                            {t('dashboard.noSales')}
+                    ) : (
+                      pagedProducts.map((p: any, idx: number) => (
+                        <TableRow key={p.sku} className="hover:bg-muted/40">
+                          <TableCell>
+                            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
+                              {(productsPage - 1) * PAGE_SIZE + idx + 1}
+                            </span>
+                          </TableCell>
+                          <TableCell className="max-w-[220px]">
+                            <div className="truncate text-sm font-medium">{p.name}</div>
+                            <div className="truncate font-mono text-[11px] text-muted-foreground">{p.sku}</div>
+                          </TableCell>
+                          <TableCell className="text-end text-sm tabular-nums">{p.qty}</TableCell>
+                          <TableCell className="text-end text-sm font-semibold tabular-nums">
+                            {fmtMoney(p.revenue)}
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        pagedProducts.map((p: any, idx: number) => (
-                          <TableRow key={p.sku} className="hover:bg-muted/40">
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              <span className="inline-block w-4 text-[10px] text-muted-foreground/60 mr-1">
-                                {(productsPage - 1) * PAGE_SIZE + idx + 1}.
-                              </span>
-                              {p.sku}
-                            </TableCell>
-                            <TableCell className="font-medium text-sm">{p.name}</TableCell>
-                            <TableCell className="text-end tabular-nums text-sm font-semibold">{p.qty}</TableCell>
-                            <TableCell className="text-end tabular-nums text-sm font-bold text-foreground">{fmtMoney(p.revenue)}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </div>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
               <TablePagination
                 page={productsPage}
                 totalPages={totalProductsPages}
@@ -721,52 +1301,58 @@ export default function DashboardPage() {
               />
             </Card>
 
-            {/* Top Clients (10 per page pagination) */}
-            <Card className="border-border/80 bg-card/90 shadow-sm flex flex-col justify-between">
-              <div>
-                <CardHeader className="pb-3 flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base font-bold">{t('dashboard.topClients')}</CardTitle>
-                    <CardDescription className="text-xs">{allTopClients.length} clients ranked by sales</CardDescription>
-                  </div>
-                  <Badge variant="outline" className="font-mono text-xs">{allTopClients.length}</Badge>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="text-xs">
-                        <TableHead className="w-10">#</TableHead>
-                        <TableHead>{t('common.client')}</TableHead>
-                        <TableHead className="text-end w-24">{t('dashboard.ordersCount')}</TableHead>
-                        <TableHead className="text-end w-28">{t('dashboard.revenue')}</TableHead>
+            <Card className="flex min-w-0 flex-col border-border/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">{t('dashboard.topClients')}</CardTitle>
+                <CardDescription className="text-xs">
+                  {t('dashboard.rankedByRevenue', { count: allTopClients.length })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>{t('common.client')}</TableHead>
+                      <TableHead className="w-20 text-end">{t('dashboard.ordersCount')}</TableHead>
+                      <TableHead className="w-32 text-end">{t('dashboard.revenue')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedClients.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
+                          {t('dashboard.noSales')}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pagedClients.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="py-8 text-center text-muted-foreground text-sm">
-                            {t('dashboard.noSales')}
+                    ) : (
+                      pagedClients.map((c: any, idx: number) => (
+                        <TableRow
+                          key={c.clientId ?? idx}
+                          className={cn('hover:bg-muted/40', c.clientId && 'cursor-pointer')}
+                          onClick={() => c.clientId && router.push(`/clients/${c.clientId}`)}
+                        >
+                          <TableCell>
+                            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
+                              {(clientsPage - 1) * PAGE_SIZE + idx + 1}
+                            </span>
+                          </TableCell>
+                          <TableCell className="max-w-[220px]">
+                            <div className="truncate text-sm font-medium">{c.name}</div>
+                            {c.phone && (
+                              <div className="truncate font-mono text-[11px] text-muted-foreground">{c.phone}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-end text-sm tabular-nums">{c.invoices}</TableCell>
+                          <TableCell className="text-end text-sm font-semibold tabular-nums">
+                            {fmtMoney(c.revenue)}
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        pagedClients.map((c: any, idx: number) => (
-                          <TableRow key={c.clientId ?? idx} className="hover:bg-muted/40 cursor-pointer" onClick={() => c.clientId && router.push(`/clients/${c.clientId}`)}>
-                            <TableCell className="font-mono text-xs text-muted-foreground/60">
-                              {(clientsPage - 1) * PAGE_SIZE + idx + 1}
-                            </TableCell>
-                            <TableCell className="font-medium text-sm">
-                              <div>{c.name}</div>
-                              {c.phone && <div className="text-[11px] text-muted-foreground font-mono">{c.phone}</div>}
-                            </TableCell>
-                            <TableCell className="text-end tabular-nums text-sm font-semibold">{c.invoices}</TableCell>
-                            <TableCell className="text-end tabular-nums text-sm font-bold text-foreground">{fmtMoney(c.revenue)}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </div>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
               <TablePagination
                 page={clientsPage}
                 totalPages={totalClientsPages}
