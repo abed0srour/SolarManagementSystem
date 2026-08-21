@@ -251,7 +251,9 @@ function Meter({ segments }: { segments: { key: string; label: string; value: nu
             />
           ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3">
+      {/* Two columns cannot hold a currency figure on a 320px phone — the amount
+          truncates to "91,230.50 U…". Below that the segments stack instead. */}
+      <div className="mt-3 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
         {segments.map((s) => (
           <div key={s.key} className="min-w-0">
             <LegendKey color={s.color} label={s.label} />
@@ -495,8 +497,15 @@ function PeriodPicker({
   const t = useTranslations();
   const isToday = anchor === todayIso();
 
+  /*
+   * Two deliberate layouts rather than one that wraps. Letting the row wrap put
+   * the granularity switch on one line and the date navigator on the next, with
+   * the vertical divider stranded at the end of the first line as a stray
+   * floating tick. Below `sm` the picker is a full-width stack with no
+   * dividers; from `sm` up it is the single inline row it always was.
+   */
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-background/80 p-1 shadow-sm backdrop-blur">
+    <div className="flex w-full flex-col gap-1 rounded-lg border bg-background/80 p-1 shadow-sm backdrop-blur sm:w-auto sm:flex-row sm:items-center">
       <div className="flex rounded-md bg-muted/60 p-0.5">
         {(['day', 'month', 'year'] as const).map((g) => (
           <button
@@ -504,7 +513,7 @@ function PeriodPicker({
             type="button"
             onClick={() => onChange(g, anchor)}
             className={cn(
-              'rounded px-2.5 py-1 text-xs font-medium transition-all',
+              'flex-1 rounded px-2.5 py-2 text-xs sm:py-1 font-medium transition-all sm:flex-none',
               gran === g
                 ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',
@@ -515,22 +524,22 @@ function PeriodPicker({
         ))}
       </div>
 
-      <div className="h-4 w-px bg-border mx-0.5" />
+      <div className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-1 sm:justify-start">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
           onClick={() => onChange(gran, shift(gran, anchor, -1))}
           title={t('dashboard.previousPeriod')}
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
         </Button>
 
-        <label className="relative flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium hover:bg-muted">
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-          <span>{label}</span>
+        <label className="relative flex cursor-pointer items-center justify-center gap-1.5 rounded px-2 py-2 text-xs sm:py-1 font-medium hover:bg-muted">
+          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="whitespace-nowrap">{label}</span>
           <input
             type={gran === 'year' ? 'number' : gran === 'month' ? 'month' : 'date'}
             value={gran === 'year' ? anchor.slice(0, 4) : gran === 'month' ? anchor.slice(0, 7) : anchor}
@@ -548,21 +557,21 @@ function PeriodPicker({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 text-muted-foreground hover:text-foreground"
           onClick={() => onChange(gran, shift(gran, anchor, 1))}
           title={t('dashboard.nextPeriod')}
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-4 w-4 rtl:rotate-180" />
         </Button>
       </div>
 
       {!isToday && (
         <>
-          <div className="h-4 w-px bg-border mx-0.5" />
+          <div className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs font-medium text-primary hover:bg-primary/10"
+            className="h-7 w-full px-2 text-xs font-medium text-primary hover:bg-primary/10 sm:w-auto"
             onClick={() => onChange(gran, todayIso())}
           >
             {t('dashboard.today')}
@@ -1191,13 +1200,13 @@ export default function DashboardPage() {
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                <Table>
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-28">{t('quotations.number')}</TableHead>
+                      <TableHead className="hidden sm:table-cell sm:w-28">{t('quotations.number')}</TableHead>
                       <TableHead>{t('common.client')}</TableHead>
                       <TableHead className="hidden lg:table-cell">{t('dashboard.items')}</TableHead>
-                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t('common.status')}</TableHead>
                       <TableHead className="hidden text-end sm:table-cell">{t('common.date')}</TableHead>
                       <TableHead className="text-end">{t('common.total')}</TableHead>
                     </TableRow>
@@ -1211,12 +1220,18 @@ export default function DashboardPage() {
                           className="cursor-pointer hover:bg-muted/40"
                           onClick={() => router.push(`/invoices/${tx.id}`)}
                         >
-                          <TableCell className="font-mono text-xs font-semibold text-primary">{tx.number}</TableCell>
-                          <TableCell className="text-sm font-medium">{tx.clientName}</TableCell>
+                          <TableCell className="hidden font-mono text-xs font-semibold text-primary sm:table-cell">{tx.number}</TableCell>
+                        <TableCell className="max-w-[150px] sm:max-w-none">
+                          <div className="truncate text-sm font-medium">{tx.clientName}</div>
+                          {/* The number column is hidden on phones; it rides here instead. */}
+                          <div className="truncate font-mono text-[11px] font-semibold text-primary sm:hidden">
+                            {tx.number}
+                          </div>
+                        </TableCell>
                           <TableCell className="hidden max-w-64 truncate text-xs text-muted-foreground lg:table-cell">
                             {tx.itemsSummary}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <StatusChip status={tx.status} />
                           </TableCell>
                           <TableCell className="hidden text-end text-xs tabular-nums text-muted-foreground sm:table-cell">
@@ -1254,13 +1269,13 @@ export default function DashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 p-0">
-                <Table>
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">#</TableHead>
+                      <TableHead className="hidden w-12 sm:table-cell">#</TableHead>
                       <TableHead>{t('common.product')}</TableHead>
-                      <TableHead className="w-20 text-end">{t('dashboard.qtySold')}</TableHead>
-                      <TableHead className="w-32 text-end">{t('dashboard.revenue')}</TableHead>
+                      <TableHead className="hidden w-20 text-end sm:table-cell">{t('dashboard.qtySold')}</TableHead>
+                      <TableHead className="w-28 text-end sm:w-32">{t('dashboard.revenue')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1273,16 +1288,19 @@ export default function DashboardPage() {
                     ) : (
                       pagedProducts.map((p: any, idx: number) => (
                         <TableRow key={p.sku} className="hover:bg-muted/40">
-                          <TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
                               {(productsPage - 1) * PAGE_SIZE + idx + 1}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-[220px]">
+                          <TableCell className="max-w-[130px] sm:max-w-[220px]">
                             <div className="truncate text-sm font-medium">{p.name}</div>
-                            <div className="truncate font-mono text-[11px] text-muted-foreground">{p.sku}</div>
+                            <div className="truncate font-mono text-[11px] text-muted-foreground">
+                              {p.sku}
+                              <span className="sm:hidden"> · {t('dashboard.qtySold')} {p.qty}</span>
+                            </div>
                           </TableCell>
-                          <TableCell className="text-end text-sm tabular-nums">{p.qty}</TableCell>
+                          <TableCell className="hidden text-end text-sm tabular-nums sm:table-cell">{p.qty}</TableCell>
                           <TableCell className="text-end text-sm font-semibold tabular-nums">
                             {fmtMoney(p.revenue)}
                           </TableCell>
@@ -1309,13 +1327,13 @@ export default function DashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 p-0">
-                <Table>
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">#</TableHead>
+                      <TableHead className="hidden w-12 sm:table-cell">#</TableHead>
                       <TableHead>{t('common.client')}</TableHead>
-                      <TableHead className="w-20 text-end">{t('dashboard.ordersCount')}</TableHead>
-                      <TableHead className="w-32 text-end">{t('dashboard.revenue')}</TableHead>
+                      <TableHead className="hidden w-20 text-end sm:table-cell">{t('dashboard.ordersCount')}</TableHead>
+                      <TableHead className="w-28 text-end sm:w-32">{t('dashboard.revenue')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1332,18 +1350,23 @@ export default function DashboardPage() {
                           className={cn('hover:bg-muted/40', c.clientId && 'cursor-pointer')}
                           onClick={() => c.clientId && router.push(`/clients/${c.clientId}`)}
                         >
-                          <TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
                               {(clientsPage - 1) * PAGE_SIZE + idx + 1}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-[220px]">
+                          <TableCell className="max-w-[130px] sm:max-w-[220px]">
                             <div className="truncate text-sm font-medium">{c.name}</div>
-                            {c.phone && (
-                              <div className="truncate font-mono text-[11px] text-muted-foreground">{c.phone}</div>
-                            )}
+                            <div className="truncate font-mono text-[11px] text-muted-foreground">
+                              {c.phone}
+                              <span className="sm:hidden">
+                                {c.phone ? ' · ' : ''}
+                                {t('dashboard.ordersCount')} {c.invoices}
+                              </span>
+                            </div>
+
                           </TableCell>
-                          <TableCell className="text-end text-sm tabular-nums">{c.invoices}</TableCell>
+                          <TableCell className="hidden text-end text-sm tabular-nums sm:table-cell">{c.invoices}</TableCell>
                           <TableCell className="text-end text-sm font-semibold tabular-nums">
                             {fmtMoney(c.revenue)}
                           </TableCell>
@@ -1552,18 +1575,18 @@ export default function DashboardPage() {
 
           {/* Top Products & Top Clients with 10-item pagination in Classic View too */}
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card className="flex flex-col justify-between">
+            <Card className="flex min-w-0 flex-col justify-between">
               <div>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">{t('dashboard.topProducts')}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <Table>
+                  <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{t('products.sku')}</TableHead>
+                        <TableHead className="hidden sm:table-cell">{t('products.sku')}</TableHead>
                         <TableHead>{t('common.product')}</TableHead>
-                        <TableHead className="text-end">{t('dashboard.qtySold')}</TableHead>
+                        <TableHead className="hidden text-end sm:table-cell">{t('dashboard.qtySold')}</TableHead>
                         <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1577,9 +1600,14 @@ export default function DashboardPage() {
                       )}
                       {pagedProducts.map((p: any) => (
                         <TableRow key={p.sku}>
-                          <TableCell className="font-mono text-xs">{p.sku}</TableCell>
-                          <TableCell>{p.name}</TableCell>
-                          <TableCell className="text-end tabular-nums">{p.qty}</TableCell>
+                          <TableCell className="hidden font-mono text-xs sm:table-cell">{p.sku}</TableCell>
+                          <TableCell className="max-w-[150px] sm:max-w-none">
+                            <div className="truncate">{p.name}</div>
+                            <div className="truncate font-mono text-[11px] text-muted-foreground sm:hidden">
+                              {p.sku} · {t('dashboard.qtySold')} {p.qty}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden text-end tabular-nums sm:table-cell">{p.qty}</TableCell>
                           <TableCell className="text-end tabular-nums font-semibold">{fmtMoney(p.revenue)}</TableCell>
                         </TableRow>
                       ))}
@@ -1596,17 +1624,17 @@ export default function DashboardPage() {
               />
             </Card>
 
-            <Card className="flex flex-col justify-between">
+            <Card className="flex min-w-0 flex-col justify-between">
               <div>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">{t('dashboard.topClients')}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <Table>
+                  <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t('common.client')}</TableHead>
-                        <TableHead className="text-end">{t('dashboard.ordersCount')}</TableHead>
+                        <TableHead className="hidden text-end sm:table-cell">{t('dashboard.ordersCount')}</TableHead>
                         <TableHead className="text-end">{t('dashboard.revenue')}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1620,8 +1648,13 @@ export default function DashboardPage() {
                       )}
                       {pagedClients.map((c: any) => (
                         <TableRow key={c.clientId ?? c.name}>
-                          <TableCell className="font-medium">{c.name}</TableCell>
-                          <TableCell className="text-end tabular-nums">{c.invoices}</TableCell>
+                          <TableCell className="max-w-[150px] font-medium sm:max-w-none">
+                            <div className="truncate">{c.name}</div>
+                            <div className="truncate text-[11px] font-normal text-muted-foreground sm:hidden">
+                              {t('dashboard.ordersCount')} {c.invoices}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden text-end tabular-nums sm:table-cell">{c.invoices}</TableCell>
                           <TableCell className="text-end tabular-nums font-semibold">{fmtMoney(c.revenue)}</TableCell>
                         </TableRow>
                       ))}

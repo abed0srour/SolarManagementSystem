@@ -261,7 +261,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col md:ms-60">
         {/* Navbar */}
         <header className="no-print sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(true)}>
+          <Button variant="ghost" size="icon" className="shrink-0 md:hidden" onClick={() => setMobileOpen(true)}>
             <Menu />
           </Button>
           {/* Breadcrumbs */}
@@ -292,7 +292,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Sync now — drops every cached module and refetches from the database */}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon" className="shrink-0"
             title={t('common.syncNow')}
             onClick={() => {
               refreshAllCaches();
@@ -302,18 +302,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <RefreshCw />
           </Button>
           {/* Language */}
-          <Button variant="ghost" size="icon" onClick={switchLocale} title={t('common.language')}>
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={switchLocale} title={t('common.language')}>
             <Languages />
           </Button>
           {/* Theme */}
-          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={t('common.theme')}>
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={t('common.theme')}>
             <Sun className="hidden dark:block" />
             <Moon className="dark:hidden" />
           </Button>
           {/* Notifications */}
           <DropdownMenu open={notifOpen} onOpenChange={setNotifOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
+              <Button variant="ghost" size="icon" className="shrink-0 relative">
                 <Bell />
                 {unread > 0 && (
                   <span className="absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
