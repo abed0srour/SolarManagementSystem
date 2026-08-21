@@ -326,7 +326,7 @@ export default function OrderRefundPage() {
             </div>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label={t('refunds.reason')}>
               <Select value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}>
                 {['DEFECTIVE', 'WRONG_ITEM', 'CHANGE_OF_MIND', 'OTHER'].map((x) => (
@@ -341,16 +341,16 @@ export default function OrderRefundPage() {
                 ))}
               </Select>
             </Field>
-            <Field label={t('common.notes')} className="col-span-2">
+            <Field label={t('common.notes')} className="sm:col-span-2">
               <Textarea rows={3} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t('refunds.notesPlaceholder')} />
             </Field>
           </div>
 
-          <div className="mt-4 flex items-center justify-between border-t pt-4">
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-4">
             <div className="text-sm font-semibold">
               {t('refunds.refundTotal')}: <span className="tabular-nums">{fmtMoney(refundTotal)}</span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
               <Button variant="outline" onClick={() => router.back()}>{t('common.cancel')}</Button>
               <Button disabled={busy || refundTotal <= 0} onClick={submit}>
                 <Undo2 /> {t('refunds.newRefund')}

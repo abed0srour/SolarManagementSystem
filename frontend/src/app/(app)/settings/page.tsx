@@ -222,7 +222,7 @@ export default function SettingsPage() {
       <PageHeader icon={SettingsIcon} title={t('settings.title')} subtitle={t('settings.subtitle')} />
 
       <Tabs defaultValue="company">
-        <TabsList className="flex-wrap">
+        <TabsList className="w-full sm:w-auto flex flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="company"><Building2 className="me-1.5 h-4 w-4" />{t('settings.company')}</TabsTrigger>
           <TabsTrigger value="finance"><Coins className="me-1.5 h-4 w-4" />{t('settings.finance')}</TabsTrigger>
           <TabsTrigger value="sequences"><Hash className="me-1.5 h-4 w-4" />{t('settings.sequences')}</TabsTrigger>

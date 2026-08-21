@@ -133,7 +133,7 @@ export default function PurchaseOrderReturnPage() {
           {t('purchaseReturns.newReturn')} — {po.number}
         </h1>
         <StatusChip status={po.status} />
-        <div className="ms-auto flex gap-2">
+        <div className="ms-auto flex flex-wrap gap-2 w-full sm:w-auto">
           <Button variant={mode === 'ITEMS' ? 'default' : 'outline'} onClick={() => setMode('ITEMS')}>
             <ListPlus /> {t('refunds.specificItems')}
           </Button>
@@ -402,9 +402,9 @@ export default function PurchaseOrderReturnPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between border-t pt-4">
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-4">
             <div className="text-xs text-muted-foreground">{t('purchaseReturns.effect')}</div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
               <Button variant="outline" onClick={() => router.back()}>
                 {t('common.cancel')}
               </Button>

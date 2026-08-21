@@ -90,7 +90,7 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <PageHeader icon={PageIcon} title={t('categories.title')} subtitle={t('subtitles.categories')} />
         <Button onClick={() => openDialog({ kind: 'category' })}>
           <Plus /> {t('categories.newCategory')}

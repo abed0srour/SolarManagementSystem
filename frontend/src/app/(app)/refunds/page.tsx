@@ -69,7 +69,7 @@ export default function RefundsPage() {
         refreshKey={refreshKey}
         extraParams={statusFilter ? { status: statusFilter } : undefined}
         filters={
-          <Select className="w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select className="w-full sm:w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
             {['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED'].map((s) => (
               <option key={s} value={s}>{t(`status.${s}`)}</option>

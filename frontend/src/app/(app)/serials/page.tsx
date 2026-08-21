@@ -79,7 +79,7 @@ export default function SerialsPage() {
         onRowClick={openEdit}
         filters={
           <>
-            <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <Select className="w-full sm:w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">{t('common.all')}</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
@@ -87,7 +87,7 @@ export default function SerialsPage() {
                 </option>
               ))}
             </Select>
-            <Select className="w-44" value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}>
+            <Select className="w-full sm:w-44" value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}>
               <option value="">{t('inventory.warehouses')}</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -95,7 +95,7 @@ export default function SerialsPage() {
                 </option>
               ))}
             </Select>
-            <div className="w-56">
+            <div className="w-full sm:w-56">
               <ProductPicker value={product} onChange={setProduct} />
             </div>
           </>

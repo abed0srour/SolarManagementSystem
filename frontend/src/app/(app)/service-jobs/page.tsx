@@ -73,7 +73,7 @@ export default function ServiceJobsPage() {
         extraParams={statusFilter ? { status: statusFilter } : undefined}
         onRowClick={openEdit}
         filters={
-          <Select className="w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select className="w-full sm:w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
             {['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map((s) => (
               <option key={s} value={s}>{t(`status.${s}`)}</option>
@@ -103,7 +103,7 @@ export default function ServiceJobsPage() {
             <Field label={t('common.client')}>
               <ClientPicker value={form.client} onChange={(c) => setForm({ ...form, client: c })} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label={t('serviceJobs.jobType')}>
                 <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                   {['INSTALLATION', 'MAINTENANCE', 'SURVEY', 'REPAIR'].map((x) => (

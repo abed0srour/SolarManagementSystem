@@ -145,11 +145,11 @@ export default function ProfilePage() {
             <CardDescription>{t('profile.accountHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-end gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-2">
               <Field label={t('common.name')} className="flex-1">
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
-              <Button onClick={saveName} disabled={savingName || !name.trim() || name.trim() === profile.name}>
+              <Button onClick={saveName} disabled={savingName || !name.trim() || name.trim() === profile.name} className="w-full sm:w-auto">
                 <Check /> {t('common.save')}
               </Button>
             </div>

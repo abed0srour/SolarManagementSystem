@@ -215,7 +215,7 @@ export default function InstallationDetailPage() {
         <Button variant="outline" className="text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 /> {t('common.delete')}</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <InfoTile icon={Sun} label={t('installations.system')} value={`${Number(inst.capacityKw)} kWp`} sub={`${inst.panelCount} ${t('installations.panelCount')} · ${Number(inst.batteryKwh)} kWh · ${t(`installations.${inst.systemType}`)}`} />
         <InfoTile icon={Zap} label={`${t('installations.production')} (${t('installations.allTime')})`} value={`${p.kwhAllTime.toLocaleString()} kWh`} sub={`${t('installations.last30')}: ${p.kwhLast30.toLocaleString()} kWh`} />
         <InfoTile icon={Wrench} label={t('installations.savings')} value={fmtMoney(p.savingsAllTime)} sub={`${t('installations.tariff')}: ${Number(inst.tariffPerKwh)}`} />
@@ -224,7 +224,7 @@ export default function InstallationDetailPage() {
 
       <div className="grid gap-4 text-sm lg:grid-cols-3">
         <Card className="lg:col-span-3">
-          <CardContent className="grid grid-cols-2 gap-x-6 gap-y-2 p-4 md:grid-cols-4">
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 p-4">
             <div><span className="text-muted-foreground">{t('installations.site')}: </span>{[inst.siteAddress, inst.city].filter(Boolean).join(', ') || '—'}</div>
             <div><span className="text-muted-foreground">{t('installations.installedAt')}: </span>{fmtDate(inst.installedAt)}</div>
             <div><span className="text-muted-foreground">{t('installations.commissionedAt')}: </span>{fmtDate(inst.commissionedAt)}</div>

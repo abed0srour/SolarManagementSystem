@@ -72,7 +72,7 @@ export default function QuotationsPage() {
         // Archived rows are read-only — restore before editing.
         onRowClick={archived ? undefined : openEdit}
         filters={
-          <Select className="w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select className="w-full sm:w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
             {['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED', 'CANCELLED'].map((s) => (
               <option key={s} value={s}>{t(`status.${s}`)}</option>

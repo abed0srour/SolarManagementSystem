@@ -474,8 +474,8 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
           )}
         </TableBody>
       </Table>
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex gap-2">
+      <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => onChange([...lines, emptyLine()])}>
             <Plus /> {t('common.addLine')}
           </Button>
@@ -483,7 +483,7 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
             <Package /> {t('orders.addBundle')}
           </Button>
         </div>
-        <div className="text-sm font-semibold">
+        <div className="text-sm font-semibold text-start sm:text-end">
           {t('common.items')}: {fmtMoney(lines.reduce((s, l) => s + lineTotal(l), 0))}
         </div>
       </div>

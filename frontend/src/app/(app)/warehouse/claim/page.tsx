@@ -69,7 +69,7 @@ export default function ClaimPage() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-56 flex-1">
+            <div className="w-full sm:w-auto flex-1 min-w-[200px]">
               <label className="mb-1.5 block text-sm font-medium">{t('claim.codeLabel')}</label>
               <div className="relative">
                 <ScanLine className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -85,7 +85,7 @@ export default function ClaimPage() {
                 />
               </div>
             </div>
-            <Button onClick={() => lookup()} disabled={looking || !code.trim()}>
+            <Button onClick={() => lookup()} disabled={looking || !code.trim()} className="w-full sm:w-auto">
               <Search /> {looking ? t('common.loading') : t('claim.lookup')}
             </Button>
           </div>

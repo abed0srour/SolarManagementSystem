@@ -87,7 +87,7 @@ export default function InventoryPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <PageHeader icon={PageIcon} title={t('inventory.title')} subtitle={t('subtitles.inventory')} />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Button variant="outline" onClick={() => { setForm({}); setAdjustOpen(true); }}>
             <SlidersHorizontal /> {t('inventory.adjust')}
           </Button>
@@ -98,7 +98,7 @@ export default function InventoryPage() {
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="w-full sm:w-auto flex flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="overview">{t('inventory.overview')}</TabsTrigger>
           <TabsTrigger value="movements">{t('inventory.movements')}</TabsTrigger>
           <TabsTrigger value="serials">{t('inventory.serials')}</TabsTrigger>

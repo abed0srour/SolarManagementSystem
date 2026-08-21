@@ -162,7 +162,7 @@ export default function ExpensesPage() {
         // Archived rows are read-only — restore before editing.
         onRowClick={archived ? undefined : openEdit}
         filters={
-          <Select className="w-40" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <Select className="w-full sm:w-40" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
             {CATEGORIES.map((c) => <option key={c} value={c}>{t(`expenses.${c}`)}</option>)}
           </Select>
@@ -180,20 +180,21 @@ export default function ExpensesPage() {
           { key: 'vendor', label: t('expenses.vendor') },
           { key: 'paymentMethod', label: t('common.method'), render: (r) => t(`payments.${r.paymentMethod}`) },
           { key: 'amount', label: t('common.amount'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.amount)}</span> },
+          { key: 'reference', label: t('common.reference'), render: (r) => r.reference ?? '—' },
           {
             key: 'actions', label: '',
             render: (r) =>
               archived ? (
                 <Button
-                  variant="ghost" size="icon" className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                  variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400"
                   title={t('common.restore')}
-                  onClick={(e) => { e.stopPropagation(); restore(r); }}
+                  onClick={(e) => { e.stopPropagation(); void restore(r); }}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-4 w-4" />
                 </Button>
               ) : (
                 <Button
-                  variant="ghost" size="icon" className="h-7 w-7 text-red-600 dark:text-red-400"
+                  variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   title={t('common.archive')}
                   onClick={(e) => { e.stopPropagation(); setDeleteId(r.id); }}
                 >
@@ -208,7 +209,7 @@ export default function ExpensesPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editing ? editing.number : t('expenses.newExpense')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label={t('expenses.category')}>
                 <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{t(`expenses.${c}`)}</option>)}

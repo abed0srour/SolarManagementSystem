@@ -102,18 +102,18 @@ export default function WorkersPage() {
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-wrap items-end gap-2">
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="mb-1.5 block text-sm font-medium">{t('workers.payPeriod')}</label>
-              <Select className="w-36" value={period} onChange={(e) => setPeriod(e.target.value as any)}>
+              <Select className="w-full sm:w-36" value={period} onChange={(e) => setPeriod(e.target.value as any)}>
                 <option value="WEEKLY">{t('workers.weekly')}</option>
                 <option value="MONTHLY">{t('workers.monthly')}</option>
               </Select>
             </div>
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="mb-1.5 block text-sm font-medium">{t('common.date')}</label>
-              <Input type="date" className="w-40" value={anchor} onChange={(e) => e.target.value && setAnchor(e.target.value)} />
+              <Input type="date" className="w-full sm:w-40" value={anchor} onChange={(e) => e.target.value && setAnchor(e.target.value)} />
             </div>
-            <div className="ms-auto text-end">
+            <div className="w-full sm:w-auto sm:ms-auto text-start sm:text-end pt-2 sm:pt-0">
               <div className="text-xs text-muted-foreground">{t('workers.periodTotal')}</div>
               <div className="text-2xl font-bold">{fmtMoney(summary?.grandTotal ?? 0)}</div>
               <div className="text-xs text-muted-foreground">{fmtDate(from)} — {fmtDate(to)}</div>
@@ -212,7 +212,7 @@ export default function WorkersPage() {
           <DialogHeader>
             <DialogTitle>{t('workers.logAttendance')} — {attFor?.name}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
             <Field label={t('common.date')}><Input type="date" value={att.date ?? ''} onChange={(e) => setAtt({ ...att, date: e.target.value })} /></Field>
             <Field label={t('common.status')}>
               <Select value={att.status} onChange={(e) => setAtt({ ...att, status: e.target.value })}>
@@ -230,7 +230,7 @@ export default function WorkersPage() {
             )}
             <Field label={t('workers.bonus')}><Input type="number" step="0.01" value={att.bonus ?? 0} onChange={(e) => setAtt({ ...att, bonus: e.target.value })} /></Field>
             <Field label={t('workers.deduction')}><Input type="number" step="0.01" value={att.deduction ?? 0} onChange={(e) => setAtt({ ...att, deduction: e.target.value })} /></Field>
-            <Field label={t('common.notes')} className="col-span-2"><Input value={att.notes ?? ''} onChange={(e) => setAtt({ ...att, notes: e.target.value })} /></Field>
+            <Field label={t('common.notes')} className="sm:col-span-2"><Input value={att.notes ?? ''} onChange={(e) => setAtt({ ...att, notes: e.target.value })} /></Field>
           </div>
           <p className="text-xs text-muted-foreground">{t('workers.attendanceHint')}</p>
           <DialogFooter>

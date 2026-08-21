@@ -64,7 +64,7 @@ export default function MonitoringPage() {
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('monitoring.title')} subtitle={t('subtitles.monitoring')} />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <KpiTile icon={Activity} label={t('monitoring.activeSystems')} value={String(k.activeSystems)} />
         <KpiTile icon={Sun} label={t('monitoring.totalCapacity')} value={`${k.totalCapacityKw.toLocaleString()} kWp`} />
         <KpiTile icon={BatteryCharging} label={t('monitoring.totalBattery')} value={`${k.totalBatteryKwh.toLocaleString()} kWh`} />

@@ -110,7 +110,7 @@ export default function SalesOrderDetailPage() {
         <h1 className="text-2xl font-bold">{so.number}</h1>
         <StatusChip status={so.status} />
         {so.status !== 'CANCELLED' && <StatusChip status={so.paymentStatus ?? 'UNPAID'} />}
-        <div className="ms-auto flex flex-wrap gap-2">
+        <div className="ms-auto flex flex-wrap gap-2 w-full sm:w-auto">
           {so.status === 'PENDING' && (
             <Button size="sm" onClick={() => { setSerialInputs({}); setConfirmOpen(true); }}>
               <CheckCircle2 /> {t('orders.confirmOrder')}

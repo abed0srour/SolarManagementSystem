@@ -228,7 +228,7 @@ export default function SalesOrderForm({
         )}
       </Section>
 
-      <div className="sticky bottom-0 flex items-center justify-end gap-2 rounded-lg border bg-card/90 px-4 py-3 backdrop-blur">
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 rounded-lg border bg-card/90 px-4 py-3 backdrop-blur shadow-sm">
         {locked && <span className="me-auto text-sm text-muted-foreground">{t('orders.onlyPendingEditable')}</span>}
         <Button variant="outline" onClick={() => router.push(returnTo)} disabled={saving}>
           {t('common.cancel')}

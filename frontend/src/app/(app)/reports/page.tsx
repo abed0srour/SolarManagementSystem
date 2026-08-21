@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 function ExportButtons({ report }: { report: string }) {
   const t = useTranslations();
   return (
-    <div className="no-print flex gap-2">
+    <div className="no-print flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onClick={() => downloadFile(`/reports/${report}/export?format=csv`, `${report}.csv`)}>
         <FileDown /> {t('common.exportCsv')}
       </Button>
@@ -57,7 +57,7 @@ export default function ReportsPage() {
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('reports.title')} subtitle={t('subtitles.reports')} />
       <Tabs defaultValue="profit">
-        <TabsList className="flex-wrap">
+        <TabsList className="w-full sm:w-auto flex flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="profit">{t('reports.profitByProduct')}</TabsTrigger>
           <TabsTrigger value="valuation">{t('reports.inventoryValuation')}</TabsTrigger>
           <TabsTrigger value="receivables">{t('reports.receivables')}</TabsTrigger>

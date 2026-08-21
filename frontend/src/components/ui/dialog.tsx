@@ -42,7 +42,7 @@ const DialogContent = React.forwardRef<
         if ((e.target as HTMLElement)?.closest?.('[data-entity-picker-list]')) e.preventDefault();
       }}
       className={cn(
-        'fixed left-[50%] top-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-4 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:p-5 sm:rounded-lg',
+        'fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-1.5rem)] sm:w-full translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-4 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:p-5 rounded-xl sm:rounded-lg',
         // Taller on a phone, where 8vh of dimmed backdrop is wasted space and
         // forms are stacked into one long column.
         'max-h-[96vh] overflow-y-auto sm:max-h-[92vh]',

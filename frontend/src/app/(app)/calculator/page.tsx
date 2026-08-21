@@ -334,7 +334,7 @@ export default function CalculatorPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <Field label={t('calculator.phase')}>
                     <Select value={form.phase} onChange={(e) => setForm({ ...form, phase: e.target.value })}>
                       <option value="DC">{t('calculator.phaseDC')}</option>
@@ -377,7 +377,7 @@ export default function CalculatorPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <Field label={t('calculator.monthlyKwh')}>
                   <Input type="number" value={form.monthlyKwh} onChange={(e) => setForm({ ...form, monthlyKwh: e.target.value })} />
                 </Field>
@@ -413,7 +413,7 @@ export default function CalculatorPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Field label={t('installations.systemType')}>
                 <Select value={form.systemType} onChange={(e) => setForm({ ...form, systemType: e.target.value })}>
                   {['ON_GRID', 'OFF_GRID', 'HYBRID'].map((x) => <option key={x} value={x}>{t(`installations.${x}`)}</option>)}
@@ -438,7 +438,7 @@ export default function CalculatorPage() {
           </Step>
 
           <Step n={3} title={t('calculator.stepMoney')} hint={t('calculator.stepMoneyHint')} last>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Field label={t('calculator.tariff')}>
                 <Input type="number" step="0.01" value={form.tariffPerKwh} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
               </Field>
@@ -446,10 +446,10 @@ export default function CalculatorPage() {
           </Step>
 
           {/* The action sits on its own bar so it reads as "done with the form". */}
-          <div className="flex items-center justify-between gap-3 border-t bg-muted/30 px-4 py-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t bg-muted/30 px-4 py-3">
             <p className="text-xs text-muted-foreground">{t('calculator.calculateHint')}</p>
             <Button
-              className="h-11 px-6 text-base"
+              className="h-11 px-6 text-base w-full sm:w-auto"
               onClick={calculate}
               disabled={busy || (isLoad ? !form.dayAmps && !form.nightAmps : !form.monthlyKwh)}
             >
@@ -461,7 +461,7 @@ export default function CalculatorPage() {
 
       {result && (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card><CardContent className="p-4">
               <div className="text-xs text-muted-foreground">{t('calculator.dailyUse')}</div>
               <div className="text-xl font-bold tabular-nums">{result.sizing.dailyKwh} kWh</div>
@@ -515,7 +515,7 @@ export default function CalculatorPage() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center gap-2 rounded-md border p-2">
                     <Sun className="h-4 w-4 text-amber-500" />
                     <span className="text-muted-foreground">{t('calculator.dayLoad')}</span>

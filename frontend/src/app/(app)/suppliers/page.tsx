@@ -118,15 +118,15 @@ export default function SuppliersPage() {
           <DialogHeader>
             <DialogTitle>{editing ? t('suppliers.editSupplier') : t('suppliers.newSupplier')}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Field label={t('common.name')} className="md:col-span-2"><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <Field label={t('common.name')} className="sm:col-span-2"><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label={t('suppliers.contactName')}><Input value={form.contactName ?? ''} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></Field>
             <Field label={t('suppliers.taxId')}><Input value={form.taxId ?? ''} onChange={(e) => setForm({ ...form, taxId: e.target.value })} /></Field>
             <Field label={t('common.phone')}><Input value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
             <Field label={t('common.email')}><Input type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             <Field label={t('common.address')}><Input value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
             <Field label={t('suppliers.leadTime')}><Input type="number" min={0} value={form.leadTimeDays ?? ''} onChange={(e) => setForm({ ...form, leadTimeDays: e.target.value })} /></Field>
-            <Field label={t('common.notes')} className="col-span-2 md:col-span-4">
+            <Field label={t('common.notes')} className="sm:col-span-2 md:col-span-4">
               <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>

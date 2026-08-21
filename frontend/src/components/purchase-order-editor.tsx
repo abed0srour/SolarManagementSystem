@@ -226,7 +226,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           )}
 
           <div className="flex justify-end border-t pt-4">
-            <div className="w-64 space-y-1 text-sm">
+            <div className="w-full sm:w-72 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">{t('common.subtotal')}</span><span className="tabular-nums">{fmtMoney(subtotal, form.currency)}</span></div>
               {form.hasDeliveryCost && (
                 <div className="flex justify-between"><span className="text-muted-foreground">{t('orders.deliveryCost')}</span><span className="tabular-nums">{fmtMoney(deliveryCost, form.currency)}</span></div>
@@ -237,7 +237,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2 pb-4">
+      <div className="flex flex-wrap items-center justify-end gap-2 pb-4">
         <Button variant="outline" onClick={() => router.push('/purchase-orders')}>{t('common.cancel')}</Button>
         {isCancellable && (
           <Button variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setCancelOpen(true)}>

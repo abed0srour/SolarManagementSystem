@@ -62,7 +62,7 @@ export default function WarrantyPage() {
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('warranty.title')} subtitle={t('subtitles.warranty')} />
       <Tabs defaultValue="units">
-        <TabsList>
+        <TabsList className="w-full sm:w-auto flex flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="units">{t('warranty.soldUnits')}</TabsTrigger>
           <TabsTrigger value="claims">{t('warranty.claims')}</TabsTrigger>
           <TabsTrigger value="expiring">{t('warranty.expiring')}</TabsTrigger>
@@ -103,7 +103,7 @@ export default function WarrantyPage() {
               setEditForm({ status: r.status, resolution: r.resolution ?? '' });
             }}
             filters={
-              <Select className="w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <Select className="w-full sm:w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="">{t('common.all')}</option>
                 {['OPEN', 'SENT_TO_SUPPLIER', 'RESOLVED', 'REPLACED', 'REJECTED'].map((s) => (
                   <option key={s} value={s}>{t(`status.${s}`)}</option>

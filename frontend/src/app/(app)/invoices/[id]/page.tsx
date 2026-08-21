@@ -184,7 +184,7 @@ export default function InvoiceDetailPage() {
           </Table>
 
           <div className="mt-4 flex justify-end">
-            <div className="w-64 space-y-1 text-sm">
+            <div className="w-full sm:w-72 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">{t('common.subtotal')}</span><span className="tabular-nums">{fmtMoney(inv.subtotal, inv.currency)}</span></div>
               {inv.discountType && (
                 <div className="flex justify-between">

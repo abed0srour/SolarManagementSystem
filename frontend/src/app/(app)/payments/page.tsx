@@ -100,7 +100,7 @@ export default function PaymentsPage() {
         refreshKey={refreshKey}
         extraParams={directionFilter ? { direction: directionFilter } : undefined}
         filters={
-          <Select className="w-36" value={directionFilter} onChange={(e) => setDirectionFilter(e.target.value)}>
+          <Select className="w-full sm:w-36" value={directionFilter} onChange={(e) => setDirectionFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
             <option value="INCOMING">{t('payments.INCOMING')}</option>
             <option value="OUTGOING">{t('payments.OUTGOING')}</option>

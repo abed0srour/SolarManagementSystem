@@ -87,7 +87,7 @@ export default function ThemesPage() {
           <h2 className="text-sm font-semibold">{t('themes.mode')}</h2>
           <p className="text-sm text-muted-foreground">{t('themes.modeHint')}</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {MODES.map(({ id, icon: Icon }) => (
             <OptionCard key={id} selected={mounted && theme === id} onSelect={() => setTheme(id)}>
               <ModePreview mode={id} />
@@ -109,7 +109,7 @@ export default function ThemesPage() {
           <h2 className="text-sm font-semibold">{t('themes.colorTheme')}</h2>
           <p className="text-sm text-muted-foreground">{t('themes.colorThemeHint')}</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {ACCENTS.map(({ id, swatch }) => (
             <OptionCard key={id} selected={accent === id} onSelect={() => setAccent(id as AccentId)}>
               <div className="flex items-center gap-3 p-1">
