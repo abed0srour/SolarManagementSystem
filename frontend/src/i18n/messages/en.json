@@ -198,6 +198,7 @@
     "deleteForever": "Delete permanently",
     "deleteForeverDescription": "Nothing references this record, so it will be removed completely. This cannot be undone.",
     "usedBy": "Referenced by",
+    "hasRelationsBlocked": "This record cannot be deleted because it has existing transactions or relations.",
     "archived": "Archive",
     "restore": "Restore",
     "restored": "Restored to the active list",

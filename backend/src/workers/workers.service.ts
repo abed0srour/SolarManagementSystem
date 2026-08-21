@@ -96,18 +96,24 @@ export class WorkersService {
     return { used: !isUnused(counts), usedBy: usedBy(counts) };
   }
 
-  /** Purge a worker with no attendance history; archive one who has been paid. */
+  /** Purge a worker with no attendance history. */
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const worker = await this.prisma.worker.findUnique({ where: { id } });
+    if (!worker) throw new NotFoundException('Worker not found');
+
     const counts = await this.workerUsage(id);
-    if (isUnused(counts)) {
-      await this.prisma.worker.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'Worker', id);
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts: string[] = [];
+      if (used.attendance) parts.push(`${used.attendance} attendance record(s)`);
+      const details = parts.length > 0 ? parts.join(', ') : 'linked records';
+      throw new BadRequestException(
+        `Cannot delete worker "${worker.name}" because they have existing relations (${details}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.worker.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Worker', id, { usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+    await this.prisma.worker.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'Worker', id);
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   async restore(userId: string, id: string) {

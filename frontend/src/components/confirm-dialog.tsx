@@ -112,21 +112,23 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
                   ? t('common.loading')
                   : blockedReason
                     ? t('common.blocked.' + blockedReason)
-                    : canDelete
-                      ? t('common.deleteForeverDescription')
-                      : (description ?? t('common.confirmDelete'))}
+                    : usage?.used
+                      ? t('common.hasRelationsBlocked')
+                      : canDelete
+                        ? t('common.deleteForeverDescription')
+                        : (description ?? t('common.confirmDelete'))}
               </DialogDescription>
               {/* Say exactly what is holding the record back from deletion. */}
               {usage?.used && Object.keys(usage.usedBy).length > 0 && (
-                <p className="text-xs text-muted-foreground">
+                <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2.5 text-xs text-destructive font-medium">
                   {t('common.usedBy')}: {Object.entries(usage.usedBy).map(([k, n]) => `${k} (${n})`).join(', ')}
-                </p>
+                </div>
               )}
             </div>
           </div>
         </DialogHeader>
 
-        {requireText && !canDelete && !checking && !blockedReason && (
+        {requireText && !canDelete && !checking && !blockedReason && !usage?.used && (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">{t('common.typeToConfirm', { word: requireText })}</p>
             <Input
@@ -160,7 +162,7 @@ export default function ConfirmDialog({ open, onOpenChange, title, description, 
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button variant={destructive ? 'destructive' : 'default'} disabled={busy || blocked || checking || !!blockedReason} onClick={run}>
+          <Button variant={destructive ? 'destructive' : 'default'} disabled={busy || blocked || checking || !!blockedReason || (usage !== null && usage.used)} onClick={run}>
             {busy ? t('common.loading') : canDelete ? t('common.deleteForever') : t('common.confirm')}
           </Button>
         </DialogFooter>

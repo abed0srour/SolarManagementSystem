@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -245,19 +245,19 @@ export class QuotationsService {
     if (!q) throw new NotFoundException('Quotation not found');
     if (q.salesOrders.length) throw new BadRequestException('Quotation is linked to a sales order');
 
-    // A draft nobody ever acted on has no history worth keeping. Anything that
-    // reached a customer decision does, so it is archived instead.
     const { counts } = await this.quotationUsage(id);
-    if (isUnused(counts)) {
-      // Items cascade with the quotation.
-      await this.prisma.quotation.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'Quotation', id, { number: q.number });
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts = Object.entries(used).map(([k, v]) => `${v} ${k}`);
+      throw new BadRequestException(
+        `Cannot delete quotation "${q.number}" because it has existing relations (${parts.join(', ')}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.quotation.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'Quotation', id, { number: q.number });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    // Items cascade with the quotation.
+    await this.prisma.quotation.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'Quotation', id, { number: q.number });
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   /** Bring an archived quotation back into the active list. */

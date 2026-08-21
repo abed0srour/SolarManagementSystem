@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -128,8 +128,25 @@ export class InstallationsService {
   }
 
   async remove(userId: string, id: string) {
+    const inst = await this.prisma.installation.findUnique({ where: { id } });
+    if (!inst) throw new NotFoundException('Installation not found');
+
+    const [contracts, readings] = await Promise.all([
+      this.prisma.maintenanceContract.count({ where: { installationId: id, deletedAt: null } }),
+      this.prisma.energyReading.count({ where: { installationId: id } }),
+    ]);
+
+    if (contracts > 0 || readings > 0) {
+      const parts: string[] = [];
+      if (contracts > 0) parts.push(`${contracts} maintenance contract(s)`);
+      if (readings > 0) parts.push(`${readings} energy reading(s)`);
+      throw new BadRequestException(
+        `Cannot delete installation "${inst.number || id}" because it has existing relations (${parts.join(', ')}).`,
+      );
+    }
+
     await this.prisma.installation.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'Installation', id);
+    await this.audit.log(userId, 'DELETE', 'Installation', id, { number: inst.number });
     return { deleted: true };
   }
 

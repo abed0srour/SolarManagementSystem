@@ -469,16 +469,18 @@ export class PurchaseOrdersService {
       throw new BadRequestException('Only a cancelled purchase order can be deleted — cancel it first');
 
     const counts = await this.orderUsage(id);
-    if (isUnused(counts)) {
-      // Items cascade with the order.
-      await this.prisma.purchaseOrder.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'PurchaseOrder', id, { number: po.number });
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts = Object.entries(used).map(([k, v]) => `${v} ${k}`);
+      throw new BadRequestException(
+        `Cannot delete purchase order "${po.number}" because it has existing relations (${parts.join(', ')}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.purchaseOrder.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'PurchaseOrder', id, { number: po.number, usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    // Items cascade with the order.
+    await this.prisma.purchaseOrder.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'PurchaseOrder', id, { number: po.number });
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   /** Bring an archived purchase order back into the active list. */

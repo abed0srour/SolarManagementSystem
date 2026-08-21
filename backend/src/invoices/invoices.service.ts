@@ -388,6 +388,21 @@ export class InvoicesService {
   async remove(userId: string, id: string) {
     const inv = await this.prisma.invoice.findUnique({ where: { id } });
     if (!inv) throw new NotFoundException('Invoice not found');
+
+    const [payments, refunds] = await Promise.all([
+      this.prisma.payment.count({ where: { invoiceId: id, deletedAt: null } }),
+      this.prisma.refund.count({ where: { invoiceId: id, deletedAt: null } }),
+    ]);
+
+    if (payments > 0 || refunds > 0) {
+      const parts: string[] = [];
+      if (payments > 0) parts.push(`${payments} payment(s)`);
+      if (refunds > 0) parts.push(`${refunds} refund(s)`);
+      throw new BadRequestException(
+        `Cannot delete invoice "${inv.number}" because it has existing relations (${parts.join(', ')}).`,
+      );
+    }
+
     await this.prisma.invoice.update({
       where: { id },
       data: { deletedAt: new Date() },

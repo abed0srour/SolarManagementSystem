@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHmac, randomInt, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -705,16 +705,18 @@ export class SalesOrdersService {
       throw new BadRequestException('Only a cancelled order can be deleted — cancel it first');
 
     const counts = await this.orderUsage(id);
-    if (isUnused(counts)) {
-      // Items cascade with the order.
-      await this.prisma.salesOrder.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'SalesOrder', id, { number: so.number });
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts = Object.entries(used).map(([k, v]) => `${v} ${k}`);
+      throw new BadRequestException(
+        `Cannot delete sales order "${so.number}" because it has existing relations (${parts.join(', ')}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.salesOrder.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log(userId, 'DELETE', 'SalesOrder', id, { number: so.number, usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    // Items cascade with the order.
+    await this.prisma.salesOrder.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'SalesOrder', id, { number: so.number });
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   /** Bring an archived order back into the active list. */

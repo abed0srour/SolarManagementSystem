@@ -159,26 +159,53 @@ export default function DataTable({
       if (onBatchDelete) {
         const selectedRows = rows.filter((r) => selectedIds.has(r.id));
         await onBatchDelete(ids, selectedRows);
+        setSelectedIds(new Set());
+        setConfirmOpen(false);
+        setSelectionMode(false);
       } else {
         const results = await Promise.allSettled(
           ids.map((id) => api.delete(`${endpoint}/${id}`))
         );
-        const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-        const failed = results.filter((r) => r.status === 'rejected').length;
-        if (succeeded > 0) {
-          toast.success(t('common.deletedCount', { count: succeeded }));
+        const succeededIds: string[] = [];
+        const failedErrors: string[] = [];
+
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled') {
+            succeededIds.push(ids[idx]);
+          } else {
+            failedErrors.push(errMsg(r.reason));
+          }
+        });
+
+        if (succeededIds.length > 0) {
+          toast.success(t('common.deletedCount', { count: succeededIds.length }));
+          invalidateCache(resource);
+          void refresh();
         }
-        if (failed > 0) {
-          toast.error(t('common.failedToDeleteCount', { count: failed }));
+
+        if (failedErrors.length > 0) {
+          const uniqueErrors = Array.from(new Set(failedErrors));
+          uniqueErrors.forEach((err) => {
+            toast.error(err, { duration: 6000 });
+          });
+        }
+
+        if (failedErrors.length === 0) {
+          setSelectedIds(new Set());
+          setConfirmOpen(false);
+          setSelectionMode(false);
+        } else {
+          // Keep only failed IDs selected so user sees which records could not be deleted
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            succeededIds.forEach((id) => next.delete(id));
+            return next;
+          });
+          setConfirmOpen(false);
         }
       }
-      invalidateCache(resource);
-      setSelectedIds(new Set());
-      setConfirmOpen(false);
-      setSelectionMode(false);
-      void refresh();
     } catch (err) {
-      toast.error(errMsg(err));
+      toast.error(errMsg(err), { duration: 6000 });
     } finally {
       setBatchDeleting(false);
     }

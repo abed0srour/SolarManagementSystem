@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -197,16 +197,30 @@ export class ClientsService {
   }
 
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const client = await this.prisma.client.findUnique({ where: { id } });
+    if (!client) throw new NotFoundException('Client not found');
+
     const counts = await this.clientUsage(id);
 
-    if (isUnused(counts)) {
-      await this.prisma.client.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'Client', id);
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts: string[] = [];
+      if (used.salesOrders) parts.push(`${used.salesOrders} sales order(s)`);
+      if (used.invoices) parts.push(`${used.invoices} invoice(s)`);
+      if (used.payments) parts.push(`${used.payments} payment(s)`);
+      if (used.quotations) parts.push(`${used.quotations} quotation(s)`);
+      if (used.installations) parts.push(`${used.installations} installation(s)`);
+      if (used.warrantyClaims) parts.push(`${used.warrantyClaims} warranty claim(s)`);
+      if (used.serviceJobs) parts.push(`${used.serviceJobs} service job(s)`);
+      if (used.refunds) parts.push(`${used.refunds} refund(s)`);
+      const details = parts.length > 0 ? parts.join(', ') : 'linked records';
+      throw new BadRequestException(
+        `Cannot delete client "${client.name}" because they have existing relations (${details}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.client.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Client', id, { usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    await this.prisma.client.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'Client', id);
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 }

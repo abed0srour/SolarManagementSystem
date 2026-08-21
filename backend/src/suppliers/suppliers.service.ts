@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -130,17 +130,26 @@ export class SuppliersService {
   }
 
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const supplier = await this.prisma.supplier.findUnique({ where: { id } });
+    if (!supplier) throw new NotFoundException('Supplier not found');
+
     const counts = await this.supplierUsage(id);
 
-    if (isUnused(counts)) {
-      await this.prisma.supplier.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'Supplier', id);
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts: string[] = [];
+      if (used.purchaseOrders) parts.push(`${used.purchaseOrders} purchase order(s)`);
+      if (used.purchaseReturns) parts.push(`${used.purchaseReturns} return(s)`);
+      if (used.expenses) parts.push(`${used.expenses} expense(s)`);
+      const details = parts.length > 0 ? parts.join(', ') : 'linked transactions';
+      throw new BadRequestException(
+        `Cannot delete supplier "${supplier.name}" because it has existing relations (${details}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.supplier.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Supplier', id, { usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    await this.prisma.supplier.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'Supplier', id);
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   async setSupplierPrice(userId: string, supplierId: string, productId: string, supplierPrice: number, currency = 'USD') {

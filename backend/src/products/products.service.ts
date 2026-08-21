@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -492,18 +492,33 @@ export class ProductsService {
    * existing documents keep resolving. See `common/safe-delete.ts`.
    */
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new NotFoundException('Product not found');
+
     const counts = await this.productUsage(id);
-    if (isUnused(counts)) {
-      // Cascades take priceHistory, stockLevels, supplierProducts and
-      // compatibility links with it.
-      await this.prisma.product.delete({ where: { id } });
-      await this.audit.log(userId, 'PURGE', 'Product', id);
-      return { success: true, mode: 'PURGED', usedBy: {} };
+    if (!isUnused(counts)) {
+      const used = usedBy(counts);
+      const parts: string[] = [];
+      if (used.invoiceItems) parts.push(`${used.invoiceItems} invoice item(s)`);
+      if (used.salesOrderItems) parts.push(`${used.salesOrderItems} sales order item(s)`);
+      if (used.purchaseOrderItems) parts.push(`${used.purchaseOrderItems} purchase order item(s)`);
+      if (used.quotationItems) parts.push(`${used.quotationItems} quotation item(s)`);
+      if (used.warrantyClaims) parts.push(`${used.warrantyClaims} warranty claim(s)`);
+      if (used.returnItems) parts.push(`${used.returnItems} return item(s)`);
+      if (used.stockOnHand) parts.push(`${used.stockOnHand} warehouse(s) with stock on hand`);
+      if (used.stockMovements) parts.push(`${used.stockMovements} stock movement(s)`);
+      if (used.units) parts.push(`${used.units} tracked serial unit(s)`);
+      const details = parts.length > 0 ? parts.join(', ') : 'linked transactions';
+      throw new BadRequestException(
+        `Cannot delete product "${product.name}" (${product.sku}) because it has existing relations (${details}).`,
+      );
     }
-    const used = usedBy(counts);
-    await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    await this.audit.log(userId, 'DELETE', 'Product', id, { usedBy: used });
-    return { success: true, mode: 'ARCHIVED', usedBy: used };
+
+    // Cascades take priceHistory, stockLevels, supplierProducts and
+    // compatibility links with it.
+    await this.prisma.product.delete({ where: { id } });
+    await this.audit.log(userId, 'PURGE', 'Product', id);
+    return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
   /**
