@@ -205,33 +205,42 @@ export default function DataTable({
   const shown = columns.filter((c) => c.mobile !== 'hide');
   const actionCols = shown.filter((c) => isBlank(c.label));
   const dataCols = shown.filter((c) => !isBlank(c.label));
-  const headingCol = dataCols.find((c) => c.mobile === 'primary') ?? dataCols[0];
+  const headingCol =
+    dataCols.find((c) => c.mobile === 'primary') ??
+    dataCols.find((c) => ['name', 'title', 'client', 'supplier', 'description', 'customer', 'number'].includes(c.key)) ??
+    dataCols[0];
   const detailCols = dataCols.filter((c) => c !== headingCol);
   const cell = (c: Column, row: any) => (c.render ? c.render(row) : (row[c.key] ?? '—'));
 
   const cards = (
-    <div className="divide-y">
+    <div className="space-y-3 p-3 bg-muted/5 dark:bg-muted/10">
       {loading ? (
         Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="space-y-2 p-4">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-1/2" />
+          <div key={i} className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              <Skeleton className="h-3.5 w-full" />
+              <Skeleton className="h-3.5 w-4/5" />
+              <Skeleton className="h-3.5 w-1/2" />
+            </div>
           </div>
         ))
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
           <Inbox className="h-8 w-8 opacity-50" />
-          <span className="text-sm">{t('common.noRecords')}</span>
+          <span className="text-sm font-medium">{t('common.noRecords')}</span>
         </div>
       ) : (
         rows.map((row, i) => (
           <div
             key={row.id ?? i}
             className={cn(
-              'p-4 transition-colors',
-              (onRowClick || selectionMode) && 'cursor-pointer active:bg-muted/50',
-              row.id && selectedIds.has(row.id) && 'bg-destructive/5 dark:bg-destructive/10'
+              'group relative rounded-xl border bg-card p-4 shadow-sm transition-all space-y-3',
+              (onRowClick || selectionMode) && 'cursor-pointer hover:border-primary/50 hover:shadow active:scale-[0.99] active:bg-muted/20',
+              row.id && selectedIds.has(row.id) && 'border-destructive/60 bg-destructive/5 dark:bg-destructive/10 ring-1 ring-destructive/40'
             )}
             onClick={(e) => {
               if (selectionMode && row.id) {
@@ -241,31 +250,42 @@ export default function DataTable({
               }
             }}
           >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              {selectionMode && row.id && (
-                <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-input cursor-pointer accent-primary"
-                    checked={selectedIds.has(row.id)}
-                    onChange={() => toggleSelectRow(row.id)}
-                  />
+            {/* Card Header: Selection checkbox & prominent Title */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                {selectionMode && row.id && (
+                  <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-input cursor-pointer accent-primary"
+                      checked={selectedIds.has(row.id)}
+                      onChange={() => toggleSelectRow(row.id)}
+                    />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-semibold leading-snug tracking-tight text-foreground break-words">
+                    {headingCol && cell(headingCol, row)}
+                  </div>
                 </div>
-              )}
-              <div className="flex-1 min-w-0 font-medium">
-                {headingCol && cell(headingCol, row)}
               </div>
             </div>
-            <dl className="space-y-1.5">
-              {detailCols.map((c) => (
-                <div key={c.key} className="flex items-start justify-between gap-3 text-sm">
-                  <dt className="shrink-0 text-muted-foreground">{c.label}</dt>
-                  <dd className="min-w-0 text-end">{cell(c, row)}</dd>
-                </div>
-              ))}
-            </dl>
+
+            {/* Card Body: Details key-values */}
+            {detailCols.length > 0 && (
+              <dl className="space-y-1.5 pt-2 border-t border-border/40 text-xs">
+                {detailCols.map((c) => (
+                  <div key={c.key} className="flex items-start justify-between gap-3">
+                    <dt className="shrink-0 text-muted-foreground">{c.label}</dt>
+                    <dd className="min-w-0 text-end font-medium text-foreground">{cell(c, row)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
+            {/* Card Action Buttons */}
             {actionCols.length > 0 && !selectionMode && (
-              <div className="mt-3 flex justify-end gap-1 border-t pt-3">
+              <div className="flex items-center justify-end gap-1.5 border-t border-border/40 pt-2.5">
                 {actionCols.map((c) => (
                   <div key={c.key}>{cell(c, row)}</div>
                 ))}
@@ -278,70 +298,65 @@ export default function DataTable({
   );
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="no-print flex flex-wrap items-center gap-2 border-b p-3">
-        {searchable && (
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="ps-8"
-              placeholder={t('common.search')}
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
+    <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="no-print flex flex-col gap-2.5 border-b p-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-1 flex-wrap items-center gap-2 w-full sm:w-auto">
+          {searchable && (
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="ps-8 w-full"
+                placeholder={t('common.search')}
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+          )}
+          {filters && <div className="flex flex-wrap items-center gap-2">{filters}</div>}
+          {onArchivedChange && (
+            <div className="inline-flex rounded-md border p-0.5" role="group">
+              {[false, true].map((mode) => (
+                <button
+                  key={String(mode)}
+                  type="button"
+                  onClick={() => onArchivedChange(mode)}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    archived === mode
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {mode ? t('common.archived') : t('common.active')}
+                </button>
+              ))}
+            </div>
+          )}
+          {canBatchDelete && (
+            <Button
+              type="button"
+              variant={selectionMode ? 'destructive' : 'outline'}
+              size="icon"
+              className={cn(
+                'h-9 w-9 shrink-0 transition-colors',
+                selectionMode
+                  ? 'bg-destructive text-destructive-foreground'
+                  : 'text-muted-foreground hover:text-destructive hover:border-destructive/40'
+              )}
+              title={t('common.selectToDelete')}
+              onClick={() => {
+                setSelectionMode((prev) => !prev);
+                if (selectionMode) setSelectedIds(new Set());
               }}
-            />
-          </div>
-        )}
-        {filters}
-        {/*
-          Active / Archive switch. A segmented control rather than a checkbox so
-          it is obvious which set is on screen — an archive that looks like the
-          normal list is how records get "deleted twice". Uses logical padding
-          so it mirrors correctly in Arabic.
-        */}
-        {onArchivedChange && (
-          <div className="inline-flex rounded-md border p-0.5" role="group">
-            {[false, true].map((mode) => (
-              <button
-                key={String(mode)}
-                type="button"
-                onClick={() => onArchivedChange(mode)}
-                className={cn(
-                  'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                  archived === mode
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {mode ? t('common.archived') : t('common.active')}
-              </button>
-            ))}
-          </div>
-        )}
-        {canBatchDelete && (
-          <Button
-            type="button"
-            variant={selectionMode ? 'destructive' : 'outline'}
-            size="icon"
-            className={cn(
-              'h-9 w-9 shrink-0 transition-colors',
-              selectionMode
-                ? 'bg-destructive text-destructive-foreground'
-                : 'text-muted-foreground hover:text-destructive hover:border-destructive/40'
-            )}
-            title={t('common.selectToDelete')}
-            onClick={() => {
-              setSelectionMode((prev) => !prev);
-              if (selectionMode) setSelectedIds(new Set());
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        )}
-        <div className="flex-1" />
-        {toolbar}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        {toolbar && <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">{toolbar}</div>}
       </div>
 
       {selectionMode && (

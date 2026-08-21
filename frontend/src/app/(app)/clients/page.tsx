@@ -110,7 +110,7 @@ export default function ClientsPage() {
           </Button>
         }
         columns={[
-          { key: 'name', label: t('common.name') },
+          { key: 'name', label: t('common.name'), mobile: 'primary' },
           { key: 'type', label: t('clients.type'), render: (r) => t(`clients.${r.type}`) },
           { key: 'tier', label: t('clients.tier'), render: (r) => <Badge variant="outline">{t(`clients.${r.tier}`)}</Badge> },
           { key: 'phone', label: t('common.phone') },

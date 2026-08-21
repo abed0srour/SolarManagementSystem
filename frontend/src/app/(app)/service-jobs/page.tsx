@@ -86,7 +86,7 @@ export default function ServiceJobsPage() {
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), mobile: 'primary', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           { key: 'client', label: t('common.client'), render: (r) => r.client?.name },
           { key: 'type', label: t('serviceJobs.jobType'), render: (r) => t(`serviceJobs.${r.type}`) },
           { key: 'technicianName', label: t('serviceJobs.technician') },

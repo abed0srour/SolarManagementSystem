@@ -146,7 +146,7 @@ export default function SalesOrdersPage() {
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), mobile: 'primary', className: 'w-28', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           {
             key: 'client', label: t('common.client'),
             render: (r) => <EntityLink href={linkTo.client(r.clientId)}>{r.client?.name}</EntityLink>,

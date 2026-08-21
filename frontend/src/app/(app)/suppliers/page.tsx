@@ -89,7 +89,7 @@ export default function SuppliersPage() {
           </Button>
         }
         columns={[
-          { key: 'name', label: t('common.name'), sortable: true },
+          { key: 'name', label: t('common.name'), mobile: 'primary', sortable: true },
           { key: 'contactName', label: t('suppliers.contactName') },
           { key: 'phone', label: t('common.phone') },
           { key: 'address', label: t('suppliers.location'), render: (r) => r.address ?? '—' },

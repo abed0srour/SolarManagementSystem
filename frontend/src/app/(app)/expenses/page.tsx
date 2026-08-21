@@ -176,7 +176,7 @@ export default function ExpensesPage() {
           { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
           { key: 'expenseDate', label: t('expenses.expenseDate'), render: (r) => fmtDate(r.expenseDate) },
           { key: 'category', label: t('expenses.category'), render: (r) => <Badge variant="muted">{t(`expenses.${r.category}`)}</Badge> },
-          { key: 'description', label: t('expenses.description') },
+          { key: 'description', label: t('expenses.description'), mobile: 'primary' },
           { key: 'vendor', label: t('expenses.vendor') },
           { key: 'paymentMethod', label: t('common.method'), render: (r) => t(`payments.${r.paymentMethod}`) },
           { key: 'amount', label: t('common.amount'), className: 'text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.amount)}</span> },

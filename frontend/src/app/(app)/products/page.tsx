@@ -146,26 +146,40 @@ export default function ProductsPage() {
           </Select>
         }
         toolbar={
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { setImportOpen(true); setImportCsv(''); setImportResult(null); }}>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-initial"
+              onClick={() => { setImportOpen(true); setImportCsv(''); setImportResult(null); }}
+            >
               <FileUp /> {t('products.importProducts')}
             </Button>
-            <Button variant="outline" onClick={() => { setBulkOpen(true); setBulkCsv(''); }}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-initial"
+              onClick={() => { setBulkOpen(true); setBulkCsv(''); }}
+            >
               <Upload /> {t('products.bulkPrices')}
             </Button>
-            <Button onClick={() => router.push('/products/new')}>
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-initial"
+              onClick={() => router.push('/products/new')}
+            >
               <Plus /> {t('products.newProduct')}
             </Button>
           </div>
         }
         columns={[
-          { key: 'sku', label: t('products.sku'), sortable: true, render: (r) => <span className="font-mono text-xs">{r.sku}</span> },
-          { key: 'name', label: t('common.name'), sortable: true },
+          { key: 'name', label: t('common.name'), mobile: 'primary', sortable: true },
+          { key: 'sku', label: t('products.sku'), sortable: true, render: (r) => <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground">{r.sku}</span> },
           { key: 'brand', label: t('products.brand'), sortable: true },
           { key: 'model', label: t('products.model'), sortable: true },
           { key: 'cat', label: t('products.category'), render: (r) => `${r.subCategory?.category?.name ?? ''} / ${r.subCategory?.name ?? ''}` },
-          { key: 'costPrice', label: t('products.costPrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.costPrice)}</span> },
-          { key: 'salePrice', label: t('products.salePrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums">{fmtMoney(r.salePrice)}</span> },
+          { key: 'costPrice', label: t('products.costPrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums font-mono">{fmtMoney(r.costPrice)}</span> },
+          { key: 'salePrice', label: t('products.salePrice'), sortable: true, className: 'text-end', render: (r) => <span className="tabular-nums font-mono font-semibold text-primary">{fmtMoney(r.salePrice)}</span> },
           { key: 'priceUpdatedAt', label: t('products.priceAsOf'), sortable: true, render: (r) => fmtDate(r.priceUpdatedAt) },
           {
             key: 'actions',

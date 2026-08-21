@@ -78,7 +78,7 @@ export default function RefundsPage() {
         }
         onRowClick={(r) => setDetailsFor(r)}
         columns={[
-          { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), mobile: 'primary', className: 'w-28', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           {
             key: 'order', label: t('nav.salesOrders'), className: 'w-28',
             render: (r) => <EntityLink href={linkTo.salesOrder(r.invoice?.salesOrder?.id)} mono>{r.invoice?.salesOrder?.number}</EntityLink>,

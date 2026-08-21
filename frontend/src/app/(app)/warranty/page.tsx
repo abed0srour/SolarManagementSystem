@@ -116,7 +116,7 @@ export default function WarrantyPage() {
               </Button>
             }
             columns={[
-              { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+              { key: 'number', label: t('quotations.number'), mobile: 'primary', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
               { key: 'client', label: t('common.client'), render: (r) => r.client?.name },
               { key: 'product', label: t('common.product'), render: (r) => `${r.product?.name} ${r.serialNumber ? `(SN ${r.serialNumber})` : ''}` },
               { key: 'issue', label: t('warranty.issue'), render: (r) => <span className="line-clamp-1 max-w-64">{r.issue}</span> },

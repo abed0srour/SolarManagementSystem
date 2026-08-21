@@ -167,8 +167,8 @@ export default function WorkersPage() {
           </Button>
         }
         columns={[
-          { key: 'code', label: t('workers.code'), render: (r) => <span className="font-mono text-xs">{r.code}</span> },
-          { key: 'name', label: t('common.name'), sortable: true },
+          { key: 'name', label: t('common.name'), mobile: 'primary', sortable: true },
+          { key: 'code', label: t('workers.code'), render: (r) => <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground">{r.code}</span> },
           { key: 'jobTitle', label: t('workers.jobTitle'), render: (r) => r.jobTitle ?? '—' },
           { key: 'phone', label: t('common.phone'), render: (r) => r.phone ?? '—' },
           {

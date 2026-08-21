@@ -112,7 +112,7 @@ export default function PaymentsPage() {
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), mobile: 'primary', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           {
             key: 'direction', label: t('payments.direction'),
             render: (r) => <Badge variant={r.direction === 'INCOMING' ? 'success' : 'warning'}>{t(`payments.${r.direction}`)}</Badge>,

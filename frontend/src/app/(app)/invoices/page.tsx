@@ -85,7 +85,7 @@ export default function InvoicesPage() {
           </Button>
         }
         columns={[
-          { key: 'number', label: t('invoices.number'), render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('invoices.number'), mobile: 'primary', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           { key: 'type', label: t('clients.type'), render: (r) => (r.type === 'SALE' ? t('invoices.sale') : t('invoices.purchase')) },
           {
             key: 'party', label: `${t('common.client')} / ${t('common.supplier')}`,

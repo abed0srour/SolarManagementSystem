@@ -265,24 +265,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Menu />
           </Button>
           {/* Breadcrumbs */}
-          <div className="flex min-w-0 items-center gap-1 text-sm">
-            <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
+          <div className="flex min-w-0 items-center gap-1.5 text-xs sm:text-sm">
+            <Link href="/dashboard" className="hidden sm:inline text-muted-foreground hover:text-foreground">
               {t('common.home')}
             </Link>
             {activeItem && pathname === activeItem.href && (
               <>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
-                <span className="truncate font-medium">{t(`nav.${activeItem.key}`)}</span>
+                <ChevronRight className="hidden sm:inline h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+                <span className="truncate font-semibold text-foreground sm:font-medium">{t(`nav.${activeItem.key}`)}</span>
               </>
             )}
             {activeItem && pathname !== activeItem.href && (
               <>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+                <ChevronRight className="hidden sm:inline h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
                 <Link href={activeItem.href} className="truncate text-muted-foreground hover:text-foreground">
                   {t(`nav.${activeItem.key}`)}
                 </Link>
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
-                <span className="truncate font-medium">
+                <span className="truncate font-semibold text-foreground sm:font-medium">
                   {pathname.endsWith('/orders') ? t('clients.ordersCrumb') : pathname.endsWith('/refund') ? t('refunds.newRefund') : t('common.details')}
                 </span>
               </>
@@ -292,7 +292,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Sync now — drops every cached module and refetches from the database */}
           <Button
             variant="ghost"
-            size="icon" className="shrink-0"
+            size="icon"
+            className="hidden sm:inline-flex shrink-0"
             title={t('common.syncNow')}
             onClick={() => {
               refreshAllCaches();

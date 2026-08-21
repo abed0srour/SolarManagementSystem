@@ -120,7 +120,7 @@ export default function PurchaseOrdersPage() {
           </Button>
         }
         columns={[
-          { key: 'number', label: t('quotations.number'), className: 'w-28', render: (r) => <span className="font-mono text-xs">{r.number}</span> },
+          { key: 'number', label: t('quotations.number'), mobile: 'primary', className: 'w-28', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
           { key: 'supplier', label: t('common.supplier'), render: (r) => r.supplier?.name },
           { key: 'createdAt', label: t('common.date'), className: 'w-24 whitespace-nowrap', render: (r) => fmtDate(r.createdAt) },
           { key: 'total', label: t('common.total'), className: 'w-28 text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total, r.currency)}</span> },
