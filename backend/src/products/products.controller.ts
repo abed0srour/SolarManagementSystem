@@ -59,6 +59,10 @@ class CreateProductDto {
 
   @IsOptional()
   @IsBoolean()
+  requireSerialOnSale?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isService?: boolean;
 
   @IsOptional()

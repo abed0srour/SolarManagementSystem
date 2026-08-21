@@ -101,7 +101,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
 
   const [form, setForm] = useState<any>({
     sku: '', name: '', brand: '', model: '', subCategoryId: '', costPrice: 0, salePrice: 0,
-    isService: false, trackSerials: true, lowStockThreshold: 5, warrantyYears: '',
+    isService: false, trackSerials: true, requireSerialOnSale: true, lowStockThreshold: 5, warrantyYears: '',
     performanceWarrantyYears: '', shelfLifeMonths: '', barcode: '', notes: '',
   });
   const [attrs, setAttrs] = useState<Record<string, any>>({});
@@ -128,7 +128,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
         setForm({
           sku: p.sku, name: p.name, brand: p.brand ?? '', model: p.model ?? '',
           subCategoryId: p.subCategoryId, costPrice: Number(p.costPrice), salePrice: Number(p.salePrice),
-          isService: !!p.isService, trackSerials: p.trackSerials, lowStockThreshold: p.lowStockThreshold,
+          isService: !!p.isService, trackSerials: p.trackSerials, requireSerialOnSale: p.requireSerialOnSale ?? true, lowStockThreshold: p.lowStockThreshold,
           warrantyYears: monthsToYears(p.warrantyMonths), performanceWarrantyYears: monthsToYears(p.performanceWarrantyMonths),
           shelfLifeMonths: p.shelfLifeMonths ?? '', barcode: p.barcode ?? '', notes: p.notes ?? '',
           isActive: p.isActive, priceChangeReason: '',
@@ -369,8 +369,22 @@ export default function ProductForm({ productId }: { productId?: string }) {
               id="trackSerials"
               label={t('products.trackSerials')}
               checked={!!form.trackSerials}
-              onChange={(v) => setForm({ ...form, trackSerials: v })}
+              onChange={(v) =>
+                // Nothing is captured on the way in, so there is nothing to
+                // match on the way out either.
+                setForm({ ...form, trackSerials: v, requireSerialOnSale: v ? form.requireSerialOnSale : false })
+              }
             />
+            {/* Only meaningful once units are being captured at all. */}
+            {form.trackSerials && (
+              <CheckRow
+                id="requireSerialOnSale"
+                label={t('products.requireSerialOnSale')}
+                title={t('products.requireSerialOnSaleHint')}
+                checked={!!form.requireSerialOnSale}
+                onChange={(v) => setForm({ ...form, requireSerialOnSale: v })}
+              />
+            )}
           </Section>
         )}
         </div>

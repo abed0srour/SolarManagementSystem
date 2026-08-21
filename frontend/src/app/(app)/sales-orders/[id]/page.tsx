@@ -292,7 +292,7 @@ export default function SalesOrderDetailPage() {
                 <div className="mb-1.5 text-sm font-medium">
                   {i.product?.name} <span className="text-muted-foreground">× {i.quantity}</span>
                 </div>
-                {i.product?.trackSerials && (
+                {i.product?.trackSerials && i.product?.requireSerialOnSale !== false && (
                   <SerialSelector
                     productId={i.productId}
                     required={i.quantity}

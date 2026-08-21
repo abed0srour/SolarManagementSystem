@@ -205,7 +205,16 @@ model Product {
   priceUpdatedAt            DateTime  @default(now())
   // Services (installation, delivery…) are sellable but carry no stock
   isService                 Boolean   @default(false)
+  /// Capture a serial per unit when goods are received.
   trackSerials              Boolean   @default(true)
+  /// Ask which specific units are leaving when an order is confirmed.
+  ///
+  /// Separate from `trackSerials` because the two directions have different
+  /// economics. Panels arrive 270 at a time and are interchangeable to the
+  /// customer, so they are worth recording against a supplier on the way in
+  /// but not worth matching one by one on the way out. An inverter is worth
+  /// both, because a warranty claim needs to know which unit went where.
+  requireSerialOnSale       Boolean   @default(true)
   lowStockThreshold         Int       @default(5)
   warrantyMonths            Int? // product warranty
   performanceWarrantyMonths Int? // panels: output/performance warranty

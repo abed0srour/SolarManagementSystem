@@ -114,6 +114,7 @@ export class ProductsService {
   private static serviceDefaults() {
     return {
       trackSerials: false,
+      requireSerialOnSale: false,
       lowStockThreshold: 0,
       brand: null,
       model: null,
@@ -174,6 +175,7 @@ export class ProductsService {
               salePrice: data.salePrice,
               isService: false,
               trackSerials: data.trackSerials ?? true,
+              requireSerialOnSale: data.requireSerialOnSale ?? true,
               lowStockThreshold: data.lowStockThreshold ?? 5,
               warrantyMonths: data.warrantyMonths,
               performanceWarrantyMonths: data.performanceWarrantyMonths,
@@ -241,6 +243,7 @@ export class ProductsService {
               subCategoryId: data.subCategoryId,
               attributes: data.attributes,
               trackSerials: data.trackSerials,
+              requireSerialOnSale: data.requireSerialOnSale,
               lowStockThreshold: data.lowStockThreshold,
               warrantyMonths: data.warrantyMonths,
               performanceWarrantyMonths: data.performanceWarrantyMonths,

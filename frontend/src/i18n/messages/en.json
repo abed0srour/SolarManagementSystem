@@ -373,7 +373,9 @@
     "importedCount": "Imported {count} products",
     "warrantyYears": "Warranty (years)",
     "performanceWarrantyYears": "Performance warranty (years)",
-    "warrantyAppliesToRestock": "Applies to every unit sold from now on, including future restocks."
+    "warrantyAppliesToRestock": "Applies to every unit sold from now on, including future restocks.",
+    "requireSerialOnSale": "Pick serials when selling",
+    "requireSerialOnSaleHint": "Off for high-volume goods like panels: units are still recorded against the supplier when received, but selling does not ask you to match them one by one."
   },
   "clients": {
     "title": "Clients",
