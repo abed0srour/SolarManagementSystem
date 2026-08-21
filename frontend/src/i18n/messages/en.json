@@ -456,7 +456,9 @@
     "convert": "Convert to order",
     "converted": "Converted to sales order",
     "generalInfo": "Quotation Details",
-    "notesPlaceholder": "Optional notes or terms for the client..."
+    "notesPlaceholder": "Optional notes or terms for the client...",
+    "shareWhatsApp": "Share via WhatsApp",
+    "waMessage": "Hello, thank you for contacting us! Here is your quotation #{number}.\nTotal: {total}{validUntil, select, none {} other {\nValid Until: {validUntil}}}\nWe look forward to working with you!"
   },
   "orders": {
     "salesTitle": "Sales Orders",

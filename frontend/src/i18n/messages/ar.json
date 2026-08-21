@@ -456,7 +456,9 @@
     "convert": "تحويل إلى طلب بيع",
     "converted": "تم التحويل إلى طلب بيع",
     "generalInfo": "تفاصيل عرض السعر",
-    "notesPlaceholder": "ملاحظات أو شروط إضافية للعميل..."
+    "notesPlaceholder": "ملاحظات أو شروط إضافية للعميل...",
+    "shareWhatsApp": "مشاركة عبر واتساب",
+    "waMessage": "مرحبًا، شكرًا لتواصلكم معنا! إليك عرض السعر رقم {number}.\nالإجمالي: {total}{validUntil, select, none {} other {\nصالح حتى: {validUntil}}}\nنتطلع للتعامل معكم!"
   },
   "orders": {
     "salesTitle": "طلبات البيع",

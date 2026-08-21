@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, FileText, Percent, DollarSign, Calendar, User, ShieldCheck, FileDown } from 'lucide-react';
+import { ArrowLeft, FileText, Percent, DollarSign, Calendar, User, ShieldCheck, FileDown, MessageCircle } from 'lucide-react';
 import { api, errMsg, fmtDate, fmtMoney, downloadFile } from '../lib/api';
+import { openWhatsApp, waMoney } from '../lib/whatsapp';
 import { invalidateCache } from '../lib/cache';
 import ConfirmDialog from './confirm-dialog';
 import Field from './form-field';
@@ -367,15 +368,35 @@ export default function QuotationForm({
           {t('common.cancel')}
         </Button>
         {quotationId && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => downloadQuotationPdf(quotationId, existing?.number)}
-            disabled={downloadingPdf || saving}
-          >
-            <FileDown />
-            {downloadingPdf ? t('common.loading') : t('common.downloadPdf')}
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => downloadQuotationPdf(quotationId, existing?.number)}
+              disabled={downloadingPdf || saving}
+            >
+              <FileDown />
+              {downloadingPdf ? t('common.loading') : t('common.downloadPdf')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-green-600 hover:text-green-600 dark:text-green-400"
+              onClick={() => {
+                const clientPhone = form.client?.phone ?? existing?.client?.phone;
+                const text = t('quotations.waMessage', {
+                  number: existing?.number ?? quotationId,
+                  total: waMoney(quotationTotal),
+                  validUntil: form.validUntil ? fmtDate(form.validUntil) : 'none',
+                });
+                if (!openWhatsApp(clientPhone, text)) toast.warning(t('common.waNoNumber'));
+              }}
+              disabled={saving}
+            >
+              <MessageCircle />
+              {t('quotations.shareWhatsApp')}
+            </Button>
+          </>
         )}
         <Button type="button" onClick={attemptSave} disabled={blocked}>
           {saving ? t('common.loading') : t('common.save')}

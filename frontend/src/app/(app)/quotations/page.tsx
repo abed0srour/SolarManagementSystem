@@ -3,8 +3,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, ArrowRightCircle, Archive, RotateCcw, FileDown, FileText as PageIcon } from 'lucide-react';
+import { Plus, ArrowRightCircle, Archive, RotateCcw, FileDown, MessageCircle, FileText as PageIcon } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
+import { openWhatsApp, waMoney } from '../../../lib/whatsapp';
 import PageHeader from '../../../components/page-header';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -117,6 +118,23 @@ export default function QuotationsPage() {
                       }}
                     >
                       <FileDown />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-green-600 dark:text-green-400"
+                      title={t('quotations.shareWhatsApp')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const text = t('quotations.waMessage', {
+                          number: r.number,
+                          total: waMoney(r.total),
+                          validUntil: r.validUntil ? fmtDate(r.validUntil) : 'none',
+                        });
+                        if (!openWhatsApp(r.client?.phone, text)) toast.warning(t('common.waNoNumber'));
+                      }}
+                    >
+                      <MessageCircle />
                     </Button>
                     {['DRAFT', 'SENT', 'ACCEPTED'].includes(r.status) && r.salesOrders?.length === 0 && (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('quotations.convert')} onClick={(e) => { e.stopPropagation(); setConvertFor(r); }}>

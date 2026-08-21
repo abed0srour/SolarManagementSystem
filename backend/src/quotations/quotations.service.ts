@@ -33,7 +33,7 @@ export class QuotationsService {
     return this.prisma.quotation
       .findMany({ relationLoadStrategy: 'join',
         where,
-        include: { client: { select: { name: true } }, items: { where: { parentItemId: null } } },
+        include: { client: { select: { id: true, name: true, phone: true } }, items: { where: { parentItemId: null } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,

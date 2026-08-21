@@ -533,12 +533,6 @@ export class InvoicePdfService {
       }
     }
 
-    // Acceptance line
-    y = Math.max(130, y - 20);
-    page.drawText('Accepted by: ________________________   Signature: ________________________   Date: ____________', {
-      x: 50, y, size: 8.5, font, color: GRAY,
-    });
-
     this.footer(
       page,
       fonts,
