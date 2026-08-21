@@ -29,7 +29,6 @@ import { Skeleton } from '../../../../../components/ui/skeleton';
 
 /** The backend rejects anything longer; catch it at the scanner instead of on submit. */
 const MAX_SERIAL_LEN = 18;
-const READER_ID = 'po-receive-reader';
 
 type Line = {
   productId: string;
@@ -117,7 +116,9 @@ export default function ReceivePurchaseOrderPage() {
   const [autoAdd, setAutoAdd] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
+  /** ZXing scanner controls: stop() and, where supported, switchTorch(). */
   const scannerRef = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   /** Read inside the decode callback, which closes over its first render. */
   const autoAddRef = useRef(autoAdd);
   autoAddRef.current = autoAdd;
@@ -168,15 +169,14 @@ export default function ReceivePurchaseOrderPage() {
   /* ------------------------------ camera ---------------------------------- */
 
   const stopCamera = useCallback(async () => {
-    const s = scannerRef.current;
+    const controls = scannerRef.current;
     scannerRef.current = null;
     setScanning(false);
     setTorchOn(false);
     setTorchable(false);
-    if (!s) return;
+    if (!controls) return;
     try {
-      await s.stop();
-      await s.clear();
+      controls.stop();
     } catch {
       /* already stopped */
     }
@@ -186,38 +186,54 @@ export default function ReceivePurchaseOrderPage() {
     setCameraError(null);
     setScanning(true);
     try {
-      // Loaded on demand — the decoder is large and only this screen needs it.
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
-      const scanner = new Html5Qrcode(READER_ID, {
-        // Serial labels come as 1D barcodes far more often than QR, so the 1D
-        // symbologies are declared explicitly rather than left to the default.
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.CODE_93,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.ITF,
-          Html5QrcodeSupportedFormats.CODABAR,
-          Html5QrcodeSupportedFormats.DATA_MATRIX,
-        ],
-        verbose: false,
-      } as any);
-      scannerRef.current = scanner;
+      /*
+       * ZXing directly, rather than the html5-qrcode wrapper the pickup
+       * scanner uses.
+       *
+       * That wrapper reads QR fine but would not decode a Code 128 strip at
+       * all — verified by feeding Chrome a fake camera showing a generated
+       * barcode: html5-qrcode saw nothing across a 25-second run, while the
+       * same image handed straight to ZXing decoded first time. Its
+       * `useBarCodeDetectorIfSupported` flag only helps where the browser has
+       * a native BarcodeDetector, which rules out iOS Safari entirely.
+       *
+       * Both decoders are loaded on demand; neither is in the main bundle.
+       */
+      const [{ BrowserMultiFormatReader }, { DecodeHintType, BarcodeFormat }] = await Promise.all([
+        import('@zxing/browser'),
+        import('@zxing/library'),
+      ]);
 
-      await scanner.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          // A wide, short box suits a barcode strip; a QR still fits inside it.
-          qrbox: { width: 260, height: 160 },
-          aspectRatio: 1.4,
-        },
-        (decoded: string) => {
-          const value = decoded.trim();
+      const hints = new Map();
+      // Serial labels are 1D far more often than QR, so the 1D symbologies are
+      // listed explicitly. Naming the formats also keeps the decoder from
+      // spending every frame testing ones this app will never see.
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.DATA_MATRIX,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.CODE_93,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.ITF,
+        BarcodeFormat.CODABAR,
+      ]);
+      // Worth the extra work per frame: a label is usually held at an angle.
+      hints.set(DecodeHintType.TRY_HARDER, true);
+
+      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 100 });
+      const video = videoRef.current;
+      if (!video) throw new Error('viewfinder not mounted');
+
+      const controls = await reader.decodeFromConstraints(
+        { video: { facingMode: 'environment' } },
+        video,
+        (result) => {
+          if (!result) return; // a frame with nothing in it is the normal case
+          const value = result.getText().trim();
           if (!value) return;
           if (autoAddRef.current) {
             void addSerial(value, { silentDuplicate: true });
@@ -227,18 +243,11 @@ export default function ReceivePurchaseOrderPage() {
             buzz(20);
           }
         },
-        () => {
-          /* per-frame misses are normal */
-        },
       );
+      scannerRef.current = controls;
 
       // Torch is only exposed on some Android browsers.
-      try {
-        const caps = scanner.getRunningTrackCapabilities?.();
-        setTorchable(Boolean(caps && 'torch' in caps));
-      } catch {
-        setTorchable(false);
-      }
+      setTorchable(Boolean(controls.switchTorch));
     } catch (e: any) {
       setScanning(false);
       setCameraError(
@@ -250,10 +259,10 @@ export default function ReceivePurchaseOrderPage() {
   }, [t]);
 
   const toggleTorch = async () => {
-    const s = scannerRef.current;
-    if (!s) return;
+    const controls = scannerRef.current;
+    if (!controls?.switchTorch) return;
     try {
-      await s.applyVideoConstraints({ advanced: [{ torch: !torchOn }] } as any);
+      await controls.switchTorch(!torchOn);
       setTorchOn((v) => !v);
     } catch {
       toast.error(t('receive.torchFailed'));
@@ -436,7 +445,18 @@ export default function ReceivePurchaseOrderPage() {
 
         {/* Camera */}
         <div className="relative shrink-0 bg-black" style={{ height: 'min(42vh, 340px)' }}>
-          <div id={READER_ID} className="h-full w-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+          {/* ZXing decodes the whole frame, so object-contain keeps the preview
+              and the decoded picture identical — with object-cover you would be
+              aiming at a crop of what is actually being read.
+              Kept mounted rather than conditional: the decoder is handed this
+              element before the stream resolves. */}
+          <video
+            ref={videoRef}
+            className={cn('h-full w-full object-contain', !scanning && 'invisible')}
+            muted
+            playsInline
+            autoPlay
+          />
 
           {!scanning && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
@@ -457,12 +477,16 @@ export default function ReceivePurchaseOrderPage() {
             <>
               {/* Aiming frame. Pointer-events off so it never eats a tap. */}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="relative h-[160px] w-[260px] max-w-[80%]">
-                  {['-top-px -start-px border-t-4 border-s-4 rounded-ts-lg',
-                    '-top-px -end-px border-t-4 border-e-4 rounded-te-lg',
-                    '-bottom-px -start-px border-b-4 border-s-4 rounded-bs-lg',
-                    '-bottom-px -end-px border-b-4 border-e-4 rounded-be-lg'].map((pos) => (
-                    <span key={pos} className={cn('absolute h-7 w-7 border-white/90', pos)} />
+                {/* Purely an aiming hint — ZXing reads the whole frame, so a
+                    label outside these corners still scans. The drop shadow is
+                    load-bearing: white-on-white corners vanish against the
+                    label itself, which is the surface they sit over most. */}
+                <div className="relative aspect-[10/7] w-[85%] drop-shadow-[0_0_2px_rgba(0,0,0,0.85)]">
+                  {['-top-px -start-px border-t-4 border-s-4',
+                    '-top-px -end-px border-t-4 border-e-4',
+                    '-bottom-px -start-px border-b-4 border-s-4',
+                    '-bottom-px -end-px border-b-4 border-e-4'].map((pos) => (
+                    <span key={pos} className={cn('absolute h-7 w-7 rounded-sm border-white', pos)} />
                   ))}
                 </div>
               </div>
