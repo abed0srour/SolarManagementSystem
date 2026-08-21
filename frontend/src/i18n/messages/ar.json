@@ -1134,6 +1134,7 @@
     "nothingToReceive": "امسح أو حدد وحدة واحدة على الأقل أولاً",
     "receivedUnits": "تم استلام {count} وحدة",
     "torch": "الإضاءة",
-    "torchFailed": "تعذّر تشغيل الإضاءة على هذا الجهاز"
+    "torchFailed": "تعذّر تشغيل الإضاءة على هذا الجهاز",
+    "fromLabel": "من {label}"
   }
 }

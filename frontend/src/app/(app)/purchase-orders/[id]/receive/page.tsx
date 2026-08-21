@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { api, errMsg } from '../../../../../lib/api';
 import { invalidateCache } from '../../../../../lib/cache';
+import { extractSerial, isLabelPayload } from '../../../../../lib/serial';
 import { cn } from '../../../../../lib/utils';
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
@@ -312,7 +313,9 @@ export default function ReceivePurchaseOrderPage() {
   const addSerial = async (raw: string, opts: { silentDuplicate?: boolean } = {}) => {
     const line = activeRef.current;
     if (!line) return;
-    const serial = raw.trim();
+    // Every path lands here — camera, typing, paste — so the label record is
+    // unwrapped once, in one place, rather than at each call site.
+    const serial = extractSerial(raw);
     if (!serial) return;
 
     if (serial.length > MAX_SERIAL_LEN) {
@@ -426,7 +429,7 @@ export default function ReceivePurchaseOrderPage() {
   if (active) {
     const done = active.serials.length;
     const remaining = active.outstanding - done;
-    const tooLong = manual.trim().length > MAX_SERIAL_LEN;
+    const tooLong = extractSerial(manual).length > MAX_SERIAL_LEN;
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -524,9 +527,18 @@ export default function ReceivePurchaseOrderPage() {
                 <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('receive.scanned')}
                 </div>
+                {/* The extracted serial is what gets stored, so it is the one
+                    shown large. The full label stays visible underneath: the
+                    operator is the last check that the right digits were
+                    pulled out, and they cannot check what they cannot see. */}
                 <div className="truncate font-mono text-base font-semibold" dir="ltr">
-                  {pending}
+                  {extractSerial(pending)}
                 </div>
+                {isLabelPayload(pending) && (
+                  <div className="truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
+                    {t('receive.fromLabel', { label: pending })}
+                  </div>
+                )}
               </div>
               <Button variant="outline" size="icon" className="h-12 w-12 shrink-0" onClick={() => setPending('')}>
                 <X className="h-5 w-5" />

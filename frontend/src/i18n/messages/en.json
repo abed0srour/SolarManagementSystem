@@ -1134,6 +1134,7 @@
     "nothingToReceive": "Scan or count at least one unit first",
     "receivedUnits": "{count} units received",
     "torch": "Flashlight",
-    "torchFailed": "This device would not turn the flashlight on"
+    "torchFailed": "This device would not turn the flashlight on",
+    "fromLabel": "from {label}"
   }
 }
