@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   ChevronRight,
@@ -111,6 +112,8 @@ export default function ReceivePurchaseOrderPage() {
   const [pending, setPending] = useState('');
   const [manual, setManual] = useState('');
   const [checking, setChecking] = useState(false);
+  /** Why the last serial was refused. Shown beside the input, not as a toast. */
+  const [scanError, setScanError] = useState<string | null>(null);
   const [autoAdd, setAutoAdd] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
@@ -271,9 +274,23 @@ export default function ReceivePurchaseOrderPage() {
     }
   };
 
+  /**
+   * Refuse a serial and clear the field for the next one.
+   *
+   * Clearing matters as much as the message: leaving a rejected value sitting
+   * in the box means the next scan lands behind it, and someone working through
+   * a pallet has to stop and empty the field by hand every time a label is a
+   * duplicate. The buzz pattern is deliberately unlike the single pulse a
+   * successful add gives, so a bad read is felt without looking at the screen.
+   */
   const reject = (message: string) => {
-    toast.error(message);
+    // Inline rather than a toast: the toaster sits bottom-right, which on a
+    // phone lands squarely on top of the fixed footer button — and a scanning
+    // error belongs beside the input the operator is already looking at.
+    setScanError(message);
     buzz([40, 60, 40]);
+    setPending('');
+    setManual('');
   };
 
   /**
@@ -284,29 +301,28 @@ export default function ReceivePurchaseOrderPage() {
    * so it runs only after the local checks pass.
    */
   const addSerial = async (raw: string, opts: { silentDuplicate?: boolean } = {}) => {
-    console.log("[dbg] addSerial enter", raw);
     const line = activeRef.current;
     if (!line) return;
     const serial = raw.trim();
     if (!serial) return;
 
-    if (serial.length > MAX_SERIAL_LEN) { console.log("[dbg] gate: too long");
+    if (serial.length > MAX_SERIAL_LEN) {
       reject(t('receive.serialTooLong', { max: MAX_SERIAL_LEN }));
       return;
     }
-    if (line.serials.length >= line.outstanding) { console.log("[dbg] gate: line full", line.serials.length, line.outstanding);
+    if (line.serials.length >= line.outstanding) {
       reject(t('receive.lineFull', { count: line.outstanding }));
       return;
     }
     const clash = allSerials.get(serial.toUpperCase());
-    if (clash) { console.log("[dbg] gate: clash", clash);
+    if (clash) {
       // Auto-add re-reads the same label many times a second; that is expected,
       // not an error worth shouting about.
       if (!opts.silentDuplicate) reject(t('receive.duplicateInBatch', { product: clash }));
       return;
     }
 
-    console.log("[dbg] pre-lookup"); setChecking(true);
+    setChecking(true);
     try {
       await api.get(`/inventory/units/serial/${encodeURIComponent(serial)}`);
       // A hit means the serial is already registered to a unit in stock.
@@ -325,6 +341,7 @@ export default function ReceivePurchaseOrderPage() {
     setLines((prev) =>
       prev.map((l) => (l.productId === line.productId ? { ...l, serials: [...l.serials, serial] } : l)),
     );
+    setScanError(null);
     setPending('');
     setManual('');
     buzz(35);
@@ -344,6 +361,7 @@ export default function ReceivePurchaseOrderPage() {
 
   const openProduct = (id: string) => {
     setActiveId(id);
+    setScanError(null);
     setPending('');
     setManual('');
   };
@@ -535,9 +553,10 @@ export default function ReceivePurchaseOrderPage() {
             </form>
           )}
 
-          {tooLong && (
-            <p className="mt-1.5 text-xs font-medium text-destructive">
-              {t('receive.serialTooLong', { max: MAX_SERIAL_LEN })}
+          {(tooLong || scanError) && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>{tooLong ? t('receive.serialTooLong', { max: MAX_SERIAL_LEN }) : scanError}</span>
             </p>
           )}
 
