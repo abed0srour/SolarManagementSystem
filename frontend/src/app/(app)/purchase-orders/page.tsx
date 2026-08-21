@@ -22,8 +22,6 @@ export default function PurchaseOrdersPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
-  const [receiveFor, setReceiveFor] = useState<any>(null);
-  const [receiveLines, setReceiveLines] = useState<Record<string, { qty: number; serials: string }>>({});
   const [payFor, setPayFor] = useState<any>(null);
   const [payForm, setPayForm] = useState<any>({});
   const [cancelTarget, setCancelTarget] = useState<any>(null);
@@ -34,30 +32,6 @@ export default function PurchaseOrdersPage() {
     try {
       await api.post(`/purchase-orders/${row.id}/restore`);
       toast.success(t('common.saved'));
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
-
-  const openReceive = async (row: any) => {
-    const { data } = await api.get(`/purchase-orders/${row.id}`);
-    setReceiveFor(data);
-    setReceiveLines(Object.fromEntries(data.items.map((i: any) => [i.productId, { qty: i.quantity - i.receivedQty, serials: '' }])));
-  };
-
-  const doReceive = async () => {
-    try {
-      const linesPayload = Object.entries(receiveLines)
-        .filter(([, v]) => Number(v.qty) > 0)
-        .map(([productId, v]) => ({
-          productId,
-          quantity: Number(v.qty),
-          serialNumbers: v.serials.trim() ? v.serials.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
-        }));
-      await api.post(`/purchase-orders/${receiveFor.id}/receive`, { lines: linesPayload });
-      toast.success(t('common.saved'));
-      setReceiveFor(null);
       setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(errMsg(e));
@@ -142,7 +116,7 @@ export default function PurchaseOrdersPage() {
             render: (r) => (
               <div className="flex justify-end gap-1">
                 {!archived && ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'].includes(r.status) && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.receive')} onClick={(e) => { e.stopPropagation(); openReceive(r); }}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 dark:text-green-400" title={t('orders.receive')} onClick={(e) => { e.stopPropagation(); router.push(`/purchase-orders/${r.id}/receive`); }}>
                     <PackageCheck />
                   </Button>
                 )}
@@ -177,41 +151,6 @@ export default function PurchaseOrdersPage() {
           },
         ]}
       />
-
-      {/* Receive */}
-      <Dialog open={!!receiveFor} onOpenChange={(v) => !v && setReceiveFor(null)}>
-        <DialogContent wide>
-          <DialogHeader><DialogTitle>{t('orders.receive')} — {receiveFor?.number}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            {(receiveFor?.items ?? []).map((i: any) => (
-              <div key={i.id} className="rounded-md border p-3">
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-medium">{i.product?.name}</span>
-                  <span className="text-muted-foreground">{t('orders.received')}: {i.receivedQty}/{i.quantity}</span>
-                </div>
-                <div className="grid gap-2 md:grid-cols-3">
-                  <Input
-                    type="number" min={0} placeholder={t('common.quantity')}
-                    value={receiveLines[i.productId]?.qty ?? 0}
-                    onChange={(e) => setReceiveLines({ ...receiveLines, [i.productId]: { ...receiveLines[i.productId], qty: Number(e.target.value) } })}
-                  />
-                  {i.product?.trackSerials && (
-                    <Input
-                      dir="ltr" className="md:col-span-2" placeholder={t('orders.serialsHint')}
-                      value={receiveLines[i.productId]?.serials ?? ''}
-                      onChange={(e) => setReceiveLines({ ...receiveLines, [i.productId]: { ...receiveLines[i.productId], serials: e.target.value } })}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReceiveFor(null)}>{t('common.cancel')}</Button>
-            <Button onClick={doReceive}>{t('common.confirm')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Pay */}
       <Dialog open={!!payFor} onOpenChange={(v) => !v && setPayFor(null)}>

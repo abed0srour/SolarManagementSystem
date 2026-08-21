@@ -8,8 +8,8 @@ import {
   LayoutDashboard, BarChart3, Package, FolderTree, Warehouse as WarehouseIcon,
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
-  ChevronRight, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
-  Check, CheckCheck, Trash2,
+  ChevronRight, ChevronDown, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
+  Check, CheckCheck, Trash2, ShoppingBag, ShieldAlert, UsersRound, DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -47,36 +47,34 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
       { key: 'clients', href: '/clients', icon: Users },
       { key: 'quotations', href: '/quotations', icon: FileText },
       { key: 'salesOrders', href: '/sales-orders', icon: ShoppingCart },
-      { key: 'productBuyers', href: '/product-buyers', icon: PackageSearch },
-      { key: 'payments', href: '/payments', icon: CreditCard },
-      { key: 'receipts', href: '/receipts', icon: Receipt },
+      { key: 'invoices', href: '/invoices', icon: Receipt },
+      { key: 'payments', href: '/payments', icon: DollarSign },
       { key: 'refunds', href: '/refunds', icon: RotateCcw },
+      { key: 'productBuyers', href: '/product-buyers', icon: UsersRound },
     ],
   },
   {
     group: 'purchasing',
     items: [
       { key: 'suppliers', href: '/suppliers', icon: Truck },
-      { key: 'purchaseOrders', href: '/purchase-orders', icon: PackagePlus },
+      { key: 'purchaseOrders', href: '/purchase-orders', icon: ShoppingBag },
       { key: 'purchaseReturns', href: '/purchase-returns', icon: Undo2 },
-      { key: 'scan', href: '/warehouse/scan', icon: QrCode },
-      { key: 'claim', href: '/warehouse/claim', icon: PackageCheck },
-      { key: 'expenses', href: '/expenses', icon: Wallet },
-    ],
-  },
-  {
-    group: 'solar',
-    items: [
-      { key: 'installations', href: '/installations', icon: HardHat },
-      { key: 'monitoring', href: '/monitoring', icon: Activity },
-      { key: 'calculator', href: '/calculator', icon: Calculator },
+      { key: 'expenses', href: '/expenses', icon: CreditCard },
     ],
   },
   {
     group: 'afterSales',
     items: [
-      { key: 'warranty', href: '/warranty', icon: ShieldCheck },
+      { key: 'warranty', href: '/warranty', icon: ShieldAlert },
       { key: 'serviceJobs', href: '/service-jobs', icon: Wrench },
+    ],
+  },
+  {
+    group: 'solar',
+    items: [
+      { key: 'installations', href: '/installations', icon: Sun },
+      { key: 'monitoring', href: '/monitoring', icon: Activity },
+      { key: 'calculator', href: '/calculator', icon: Calculator },
     ],
   },
   {
@@ -108,6 +106,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [notifs, setNotifs] = useState<any[]>([]);
   const [userName, setUserName] = useState('');
   const [company, setCompany] = useState<any>({});
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sidebar_collapsed_sections');
+        if (stored) setCollapsedSections(JSON.parse(stored));
+      } catch {}
+    }
+  }, []);
+
+  const toggleSection = (group: string) => {
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [group]: !prev[group] };
+      try {
+        localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     // Middleware already turned anonymous visitors away; this is the in-tab
@@ -185,6 +203,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     .sort((a, b) => b.length - a.length)[0];
   const activeItem = NAV.flatMap((s) => s.items).find((i) => i.href === activeHref);
 
+  // Auto-expand the section containing the active route
+  useEffect(() => {
+    if (!activeHref) return;
+    const activeSection = NAV.find((s) => s.items.some((i) => i.href === activeHref));
+    if (activeSection && collapsedSections[activeSection.group]) {
+      setCollapsedSections((prev) => {
+        if (!prev[activeSection.group]) return prev;
+        const next = { ...prev, [activeSection.group]: false };
+        try {
+          localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+  }, [activeHref, collapsedSections]);
+
   const sidebar = (
     <nav className="flex h-full flex-col overflow-y-auto border-e bg-card">
       <div className="flex min-h-16 items-center border-b px-6 py-3">
@@ -195,46 +229,63 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </div>
-      <div className="flex-1 space-y-4 p-3">
-        {NAV.map((section) => (
-          <div key={section.group}>
-            <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {t(`nav.${section.group}`)}
+      <div className="flex-1 space-y-2 p-3">
+        {NAV.map((section) => {
+          const isCollapsed = Boolean(collapsedSections[section.group]);
+          const hasActiveChild = section.items.some((i) => i.href === activeHref);
+
+          return (
+            <div key={section.group} className="select-none">
+              <button
+                type="button"
+                onClick={() => toggleSection(section.group)}
+                className="group/section flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate">{t(`nav.${section.group}`)}</span>
+                  {isCollapsed && hasActiveChild && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  )}
+                </div>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover/section:text-foreground rtl:rotate-180',
+                    isCollapsed ? '-rotate-90 rtl:rotate-90' : 'rotate-0'
+                  )}
+                />
+              </button>
+
+              <div
+                className={cn(
+                  'space-y-0.5 overflow-hidden transition-all duration-200',
+                  isCollapsed ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-96 opacity-100 mt-0.5'
+                )}
+              >
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = item.href === activeHref;
+                  return (
+                    <button
+                      key={item.href}
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        router.push(item.href);
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-start text-sm transition-colors',
+                        active ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{t(`nav.${item.key}`)}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const active = item.href === activeHref;
-                return (
-                  /*
-                   * A button, not a link. The browser paints the target URL in
-                   * a status bubble at the bottom-left whenever an anchor is
-                   * hovered, and that is not suppressible from script — the only
-                   * way to be rid of it is to not use an href. The trade-off is
-                   * real and deliberate: middle-click and ctrl-click no longer
-                   * open a nav item in a new tab. Navigation itself is identical,
-                   * since the router push is what Link does anyway.
-                   */
-                  <button
-                    key={item.href}
-                    type="button"
-                    onClick={() => {
-                      setMobileOpen(false);
-                      router.push(item.href);
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-start text-sm transition-colors',
-                      active ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {t(`nav.${item.key}`)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </nav>
   );

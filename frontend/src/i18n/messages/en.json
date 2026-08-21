@@ -476,7 +476,6 @@
     "quickAddProductPlaceholder": "Search products to add…",
     "received": "Received",
     "delivered": "Delivered",
-    "serialsHint": "Serial numbers (comma-separated, count must match quantity)",
     "pickSerials": "Search in-stock serial numbers…",
     "confirmCancels": "Cancelling restores stock if it was deducted. Continue?",
     "pay": "Pay",
@@ -1116,5 +1115,25 @@
       "settings": "Settings & backup",
       "users": "Users & roles"
     }
+  },
+  "receive": {
+    "cameraIdle": "Start the camera to scan, or type the serial below",
+    "typeSerial": "Type or paste a serial",
+    "scanned": "Scanned",
+    "autoAdd": "Add automatically on scan",
+    "noneYet": "Nothing scanned yet — {count} units to go",
+    "doneProduct": "Done",
+    "doneWithRemaining": "Done — {count} still outstanding",
+    "toReceive": "To receive",
+    "allReceived": "Every line on this order has already been received.",
+    "noSerials": "No serial tracking",
+    "serialTooLong": "Serial numbers must be {max} characters or less",
+    "lineFull": "All {count} units are already scanned",
+    "duplicateInBatch": "Already scanned in this receipt ({product})",
+    "alreadyRegistered": "This serial is already registered to a unit in stock",
+    "nothingToReceive": "Scan or count at least one unit first",
+    "receivedUnits": "{count} units received",
+    "torch": "Flashlight",
+    "torchFailed": "This device would not turn the flashlight on"
   }
 }
