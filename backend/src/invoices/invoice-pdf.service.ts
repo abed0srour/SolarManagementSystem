@@ -471,9 +471,7 @@ export class InvoicePdfService {
         y = 780;
       }
       const name = item.product?.name || item.description || 'Custom Item';
-      const sku = item.product?.sku ? `[${item.product.sku}] ` : '';
-      const fullName = `${sku}${name}`;
-      const desc = fullName.length > 55 ? fullName.slice(0, 55) + '…' : fullName;
+      const desc = name.length > 55 ? name.slice(0, 55) + '…' : name;
       page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
       rightAt(qty(item.quantity), colQty, y, 10.5, font);
       rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
