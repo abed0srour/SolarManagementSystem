@@ -1,7 +1,9 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { QuotationsService } from './quotations.service';
+import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 import { LineItemDto } from '../common/line-item.dto';
 
@@ -54,11 +56,22 @@ class ConvertDto {
 
 @Controller('quotations')
 export class QuotationsController {
-  constructor(private service: QuotationsService) {}
+  constructor(
+    private service: QuotationsService,
+    private pdfService: InvoicePdfService,
+  ) {}
 
   @Get()
   findAll(@Query() query: any) {
     return this.service.findAll(query);
+  }
+
+  @Get(':id/pdf')
+  @Header('Content-Type', 'application/pdf')
+  async pdf(@Param('id') id: string, @Res() res: Response) {
+    const bytes = await this.pdfService.quotation(id);
+    res.setHeader('Content-Disposition', `inline; filename=quotation-${id}.pdf`);
+    res.send(Buffer.from(bytes));
   }
 
   @Get(':id')

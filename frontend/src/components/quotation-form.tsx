@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, FileText, Percent, DollarSign, Calendar, User, ShieldCheck } from 'lucide-react';
-import { api, errMsg, fmtDate, fmtMoney } from '../lib/api';
+import { ArrowLeft, FileText, Percent, DollarSign, Calendar, User, ShieldCheck, FileDown } from 'lucide-react';
+import { api, errMsg, fmtDate, fmtMoney, downloadFile } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
 import ConfirmDialog from './confirm-dialog';
 import Field from './form-field';
@@ -79,7 +79,20 @@ export default function QuotationForm({
   const [loading, setLoading] = useState(Boolean(quotationId || lockedClientId));
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [lossConfirmOpen, setLossConfirmOpen] = useState(false);
+
+  const downloadQuotationPdf = async (id: string, number?: string) => {
+    setDownloadingPdf(true);
+    try {
+      await downloadFile(`/quotations/${id}/pdf`, `quotation-${number || id}.pdf`);
+      toast.success(t('common.downloadPdf'));
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   // Pre-fill the client when creating from a client's page.
   useEffect(() => {
@@ -109,10 +122,12 @@ export default function QuotationForm({
           status: data.status,
           validUntil: data.validUntil ? data.validUntil.slice(0, 10) : '',
           discountType: data.discountType ?? '',
-          discountValue: Number(data.discountValue) || 0,
+          discountValue: data.discountValue ?? 0,
           notes: data.notes ?? '',
         });
-        setLines(linesFromStored(data.items ?? []));
+        if (data.items?.length) {
+          setLines(linesFromStored(data.items));
+        }
       })
       .catch(() => !cancelled && setNotFound(true))
       .finally(() => !cancelled && setLoading(false));
@@ -164,8 +179,14 @@ export default function QuotationForm({
       invalidateCache('quotations', 'clients', 'products');
       toast.success(t('common.saved'));
 
+      const savedQuotation = result.data;
+      if (!editing && savedQuotation?.id) {
+        // Automatically initiate PDF download for newly created quotation
+        void downloadQuotationPdf(savedQuotation.id, savedQuotation.number);
+      }
+
       if (onSaved) {
-        onSaved(result.data);
+        onSaved(savedQuotation);
       } else {
         router.push(returnTo);
       }
@@ -345,6 +366,17 @@ export default function QuotationForm({
         >
           {t('common.cancel')}
         </Button>
+        {quotationId && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => downloadQuotationPdf(quotationId, existing?.number)}
+            disabled={downloadingPdf || saving}
+          >
+            <FileDown />
+            {downloadingPdf ? t('common.loading') : t('common.downloadPdf')}
+          </Button>
+        )}
         <Button type="button" onClick={attemptSave} disabled={blocked}>
           {saving ? t('common.loading') : t('common.save')}
         </Button>

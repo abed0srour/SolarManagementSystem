@@ -392,4 +392,159 @@ export class InvoicePdfService {
     this.footer(page, fonts, company, `Thank you for choosing ${company.name ?? 'us'}. This receipt confirms your payment.`);
     return pdf.save();
   }
+
+  /** Quotation / Estimate document in the same clean visual style. */
+  async quotation(quotationId: string): Promise<Uint8Array> {
+    const q = await this.prisma.quotation.findUnique({
+      relationLoadStrategy: 'join',
+      where: { id: quotationId },
+      include: {
+        client: { include: { addresses: true } },
+        items: {
+          where: { parentItemId: null },
+          include: {
+            product: { select: { sku: true, name: true } },
+            subItems: { orderBy: { id: 'asc' }, include: { product: { select: { sku: true, name: true } } } },
+          },
+        },
+      },
+    });
+    if (!q) throw new NotFoundException('Quotation not found');
+    const company = await this.company();
+
+    const pdf = await PDFDocument.create();
+    let page = pdf.addPage([595, 842]);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const fonts = { font, bold };
+    const width = page.getWidth();
+    const money = (n: any) => `$${Number(n).toFixed(2)}`;
+    const qty = (n: any) => {
+      const v = Number(n);
+      return Number.isInteger(v) ? String(v) : String(parseFloat(v.toFixed(3)));
+    };
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+      page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
+
+    let y = await this.header(pdf, page, fonts, 'Quotation', company);
+
+    const party = q.client;
+    const partyRows: { text: string; bold?: boolean }[] = [{ text: party?.name ?? '—', bold: true }];
+    if (party?.phone) partyRows.push({ text: party.phone });
+    if (party?.email) partyRows.push({ text: party.email });
+    if (party?.addresses?.[0]?.line1) partyRows.push({ text: party.addresses[0].line1 });
+
+    const rightMeta = [
+      { label: 'Quotation #', value: q.number.replace(/^\D+/, '') || q.number },
+      { label: 'Date', value: this.fmtDate(q.createdAt) },
+    ];
+    if (q.validUntil) {
+      rightMeta.push({ label: 'Valid until', value: this.fmtDate(q.validUntil) });
+    }
+
+    y = this.band(
+      page,
+      fonts,
+      y,
+      { label: 'Quote to', rows: partyRows },
+      rightMeta,
+      'Quote info',
+    );
+
+    // Items table
+    const colQty = 360;
+    const colPrice = 460;
+    const colAmount = width - 50;
+    page.drawLine({ start: { x: 40, y: y + 6 }, end: { x: width - 40, y: y + 6 }, thickness: 1, color: LIGHT });
+    y -= 16;
+    page.drawText('Item', { x: 50, y, size: 11, font: bold, color: DARK });
+    rightAt('Quantity', colQty, y, 11, bold);
+    rightAt('Unit Price', colPrice, y, 11, bold);
+    rightAt('Amount', colAmount, y, 11, bold);
+    y -= 10;
+    page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 1, color: LIGHT });
+    y -= 22;
+
+    for (const item of q.items) {
+      if (y < 200) {
+        page = pdf.addPage([595, 842]);
+        y = 780;
+      }
+      const name = item.product?.name || item.description || 'Custom Item';
+      const sku = item.product?.sku ? `[${item.product.sku}] ` : '';
+      const fullName = `${sku}${name}`;
+      const desc = fullName.length > 55 ? fullName.slice(0, 55) + '…' : fullName;
+      page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
+      rightAt(qty(item.quantity), colQty, y, 10.5, font);
+      rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
+      rightAt(money(item.lineTotal), colAmount, y, 10.5, font);
+      y -= 12;
+
+      if (item.subItems?.length) {
+        for (const sub of item.subItems) {
+          if (y < 120) {
+            page = pdf.addPage([595, 842]);
+            y = 780;
+          }
+          const subName = sub.product?.name || sub.description || 'Component';
+          const label = `• ${subName}  (${qty(sub.quantity)})`;
+          page.drawText(label.length > 70 ? label.slice(0, 70) + '…' : label, {
+            x: 62, y, size: 9, font, color: GRAY,
+          });
+          y -= 13;
+        }
+        y -= 4;
+      }
+
+      page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
+      y -= 20;
+    }
+
+    // Totals
+    y -= 6;
+    if (y < 240) {
+      page = pdf.addPage([595, 842]);
+      y = 780;
+    }
+    const totalRow = (label: string, value: string, isBold = false, size = 11) => {
+      rightAt(label, colPrice, y, size, isBold ? bold : font, isBold ? DARK : GRAY);
+      rightAt(value, colAmount, y, size, bold);
+      y -= 8;
+      page.drawLine({ start: { x: colQty - 40, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
+      y -= 18;
+    };
+    totalRow('Subtotal', money(q.subtotal));
+    if (q.discountType && Number(q.discountValue) > 0) {
+      const d = q.discountType === 'PERCENT' ? `${Number(q.discountValue)}%` : money(q.discountValue);
+      const discountVal =
+        q.discountType === 'PERCENT' ? Number(q.subtotal) * (Number(q.discountValue) / 100) : Number(q.discountValue);
+      totalRow(`Discount (${d})`, `-${money(discountVal)}`);
+    }
+    totalRow('Total Quote', money(q.total), true, 12);
+
+    if (q.notes) {
+      y -= 10;
+      page.drawText('Notes / Terms:', { x: 50, y, size: 10, font: bold, color: DARK });
+      y -= 14;
+      const noteLines = q.notes.split('\n').slice(0, 4);
+      for (const nl of noteLines) {
+        page.drawText(nl.length > 80 ? nl.slice(0, 80) + '…' : nl, { x: 50, y, size: 9, font, color: GRAY });
+        y -= 12;
+      }
+    }
+
+    // Acceptance line
+    y = Math.max(130, y - 20);
+    page.drawText('Accepted by: ________________________   Signature: ________________________   Date: ____________', {
+      x: 50, y, size: 8.5, font, color: GRAY,
+    });
+
+    this.footer(
+      page,
+      fonts,
+      company,
+      `Thank you for considering ${company.name ?? 'us'}. This quote is valid until ${q.validUntil ? this.fmtDate(q.validUntil) : '30 days from issue'}.`,
+    );
+    return pdf.save();
+  }
 }
