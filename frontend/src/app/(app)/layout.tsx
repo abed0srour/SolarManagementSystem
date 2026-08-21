@@ -174,6 +174,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => clearInterval(timer);
   }, [router]);
 
+  /*
+   * Longest match wins. A plain `startsWith` would light up both Settings and
+   * Themes on /settings/themes, since one route is a prefix of the other.
+   */
+  const activeHref = NAV.flatMap((s) => s.items)
+    .map((i) => i.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+  const activeItem = NAV.flatMap((s) => s.items).find((i) => i.href === activeHref);
+
+  // Auto-expand the section containing the active route
+  useEffect(() => {
+    if (!activeHref) return;
+    const activeSection = NAV.find((s) => s.items.some((i) => i.href === activeHref));
+    if (!activeSection) return;
+    setCollapsedSections((prev) => {
+      if (!prev || !prev[activeSection.group]) return prev;
+      const next = { ...prev, [activeSection.group]: false };
+      try {
+        localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [activeHref]);
+
   if (!ready)
     return (
       <div className="flex min-h-screen flex-col gap-4 p-6">
@@ -192,32 +217,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     clearCache();
     router.replace('/login');
   };
-
-  /*
-   * Longest match wins. A plain `startsWith` would light up both Settings and
-   * Themes on /settings/themes, since one route is a prefix of the other.
-   */
-  const activeHref = NAV.flatMap((s) => s.items)
-    .map((i) => i.href)
-    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
-    .sort((a, b) => b.length - a.length)[0];
-  const activeItem = NAV.flatMap((s) => s.items).find((i) => i.href === activeHref);
-
-  // Auto-expand the section containing the active route
-  useEffect(() => {
-    if (!activeHref) return;
-    const activeSection = NAV.find((s) => s.items.some((i) => i.href === activeHref));
-    if (activeSection && collapsedSections[activeSection.group]) {
-      setCollapsedSections((prev) => {
-        if (!prev[activeSection.group]) return prev;
-        const next = { ...prev, [activeSection.group]: false };
-        try {
-          localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-    }
-  }, [activeHref, collapsedSections]);
 
   const sidebar = (
     <nav className="flex h-full flex-col overflow-y-auto border-e bg-card">

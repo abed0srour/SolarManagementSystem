@@ -750,7 +750,7 @@ export default function DashboardPage() {
     return out;
   }, [data, t]);
 
-  if (!data) {
+  if (!data || !data.kpis) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -784,28 +784,28 @@ export default function DashboardPage() {
     tone?: 'default' | 'good' | 'warning' | 'critical';
     href: string;
   }[] = [
-    { key: 'grossProfit', icon: TrendingUp, label: t('dashboard.grossProfit'), value: fmtMoney(data.kpis.grossProfit), href: '/reports' },
-    { key: 'receivables', icon: HandCoins, label: t('dashboard.receivables'), value: fmtMoney(data.kpis.accountsReceivable), href: '/invoices' },
-    { key: 'payables', icon: CreditCard, label: t('dashboard.payables'), value: fmtMoney(data.kpis.accountsPayable), href: '/purchase-orders' },
-    { key: 'pendingOrders', icon: Clock, label: t('dashboard.pendingOrders'), value: String(data.kpis.pendingOrders), href: '/sales-orders' },
+    { key: 'grossProfit', icon: TrendingUp, label: t('dashboard.grossProfit'), value: fmtMoney(data?.kpis?.grossProfit ?? 0), href: '/reports' },
+    { key: 'receivables', icon: HandCoins, label: t('dashboard.receivables'), value: fmtMoney(data?.kpis?.accountsReceivable ?? 0), href: '/invoices' },
+    { key: 'payables', icon: CreditCard, label: t('dashboard.payables'), value: fmtMoney(data?.kpis?.accountsPayable ?? 0), href: '/purchase-orders' },
+    { key: 'pendingOrders', icon: Clock, label: t('dashboard.pendingOrders'), value: String(data?.kpis?.pendingOrders ?? 0), href: '/sales-orders' },
     {
       key: 'lowStock',
       icon: Package,
       label: t('dashboard.lowStock'),
-      value: String(data.kpis.lowStockCount),
-      tone: data.kpis.lowStockCount > 0 ? 'warning' : 'good',
+      value: String(data?.kpis?.lowStockCount ?? 0),
+      tone: (data?.kpis?.lowStockCount ?? 0) > 0 ? 'warning' : 'good',
       href: '/inventory',
     },
     {
       key: 'openClaims',
       icon: ShieldCheck,
       label: t('dashboard.openClaims'),
-      value: String(data.kpis.openClaims),
-      tone: data.kpis.openClaims > 0 ? 'warning' : 'good',
+      value: String(data?.kpis?.openClaims ?? 0),
+      tone: (data?.kpis?.openClaims ?? 0) > 0 ? 'warning' : 'good',
       href: '/warranty',
     },
-    { key: 'activeSystems', icon: Sun, label: t('dashboard.activeSystems'), value: String(data.kpis.activeInstallations), href: '/installations' },
-    { key: 'energy', icon: Zap, label: t('dashboard.energyProduced'), value: `${compact(data.kpis.energyKwh)} kWh`, href: '/monitoring' },
+    { key: 'activeSystems', icon: Sun, label: t('dashboard.activeSystems'), value: String(data?.kpis?.activeInstallations ?? 0), href: '/installations' },
+    { key: 'energy', icon: Zap, label: t('dashboard.energyProduced'), value: `${compact(data?.kpis?.energyKwh ?? 0)} kWh`, href: '/monitoring' },
   ];
 
   return (
@@ -892,18 +892,18 @@ export default function DashboardPage() {
                 <div>
                   <Eyebrow>{t('dashboard.totalRevenue')}</Eyebrow>
                   <div className="mt-2 text-4xl font-semibold leading-none tracking-tight md:text-[42px]">
-                    {fmtMoney(data.kpis.revenue)}
+                    {fmtMoney(data?.kpis?.revenue ?? 0)}
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <Trend pct={data.deltas.revenue} goodWhenUp />
+                    <Trend pct={data?.deltas?.revenue} goodWhenUp />
                     <span className="text-xs text-muted-foreground">
                       {prevLabel}{' '}
-                      <span className="font-medium text-foreground/70">{fmtMoney(data.previous.revenue)}</span>
+                      <span className="font-medium text-foreground/70">{fmtMoney(data?.previous?.revenue ?? 0)}</span>
                     </span>
                   </div>
-                  {data.kpis.refunds > 0 && (
+                  {(data?.kpis?.refunds ?? 0) > 0 && (
                     <div className="mt-2 text-xs text-muted-foreground">
-                      {t('dashboard.netOfRefunds', { amount: fmtMoney(data.kpis.refunds) })}
+                      {t('dashboard.netOfRefunds', { amount: fmtMoney(data?.kpis?.refunds ?? 0) })}
                     </div>
                   )}
                 </div>
@@ -915,13 +915,13 @@ export default function DashboardPage() {
                       {
                         key: 'collected',
                         label: t('dashboard.collected'),
-                        value: data.kpis.collected,
+                        value: data?.kpis?.collected ?? 0,
                         color: statusPalette.good,
                       },
                       {
                         key: 'outstanding',
                         label: t('dashboard.outstanding'),
-                        value: Math.max(0, data.kpis.revenue - data.kpis.collected),
+                        value: Math.max(0, (data?.kpis?.revenue ?? 0) - (data?.kpis?.collected ?? 0)),
                         color: statusPalette.neutral,
                       },
                     ]}
@@ -1067,43 +1067,43 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricTile
               label={t('dashboard.netProfit')}
-              value={fmtMoney(data.kpis.netProfit)}
-              pct={data.deltas.netProfit}
-              current={data.kpis.netProfit}
-              previous={data.previous.netProfit}
+              value={fmtMoney(data?.kpis?.netProfit ?? 0)}
+              pct={data?.deltas?.netProfit}
+              current={data?.kpis?.netProfit ?? 0}
+              previous={data?.previous?.netProfit ?? 0}
               previousLabel={prevLabel}
-              previousValue={fmtMoney(data.previous.netProfit)}
+              previousValue={fmtMoney(data?.previous?.netProfit ?? 0)}
               color={colors[0]}
             />
             <MetricTile
               label={t('dashboard.expenses')}
-              value={fmtMoney(data.kpis.expenses)}
-              pct={data.deltas.expenses}
+              value={fmtMoney(data?.kpis?.expenses ?? 0)}
+              pct={data?.deltas?.expenses}
               goodWhenUp={false}
-              current={data.kpis.expenses}
-              previous={data.previous.expenses}
+              current={data?.kpis?.expenses ?? 0}
+              previous={data?.previous?.expenses ?? 0}
               previousLabel={prevLabel}
-              previousValue={fmtMoney(data.previous.expenses)}
+              previousValue={fmtMoney(data?.previous?.expenses ?? 0)}
               color={colors[4]}
             />
             <MetricTile
               label={t('dashboard.totalOrders')}
-              value={data.kpis.invoiceCount.toLocaleString()}
-              pct={data.deltas.invoiceCount}
-              current={data.kpis.invoiceCount}
-              previous={data.previous.invoiceCount}
+              value={(data?.kpis?.invoiceCount ?? 0).toLocaleString()}
+              pct={data?.deltas?.invoiceCount}
+              current={data?.kpis?.invoiceCount ?? 0}
+              previous={data?.previous?.invoiceCount ?? 0}
               previousLabel={prevLabel}
-              previousValue={data.previous.invoiceCount.toLocaleString()}
+              previousValue={(data?.previous?.invoiceCount ?? 0).toLocaleString()}
               color={colors[3]}
             />
             <MetricTile
               label={t('dashboard.newCustomers')}
-              value={(data.kpis.newClientsCount ?? 0).toLocaleString()}
-              pct={data.deltas.newClients}
-              current={data.kpis.newClientsCount ?? 0}
-              previous={data.previous.newClients ?? 0}
+              value={(data?.kpis?.newClientsCount ?? 0).toLocaleString()}
+              pct={data?.deltas?.newClients}
+              current={data?.kpis?.newClientsCount ?? 0}
+              previous={data?.previous?.newClients ?? 0}
               previousLabel={prevLabel}
-              previousValue={(data.previous.newClients ?? 0).toLocaleString()}
+              previousValue={(data?.previous?.newClients ?? 0).toLocaleString()}
               color={colors[2]}
             />
           </div>
@@ -1394,34 +1394,34 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile
               label={t('dashboard.revenue')}
-              value={fmtMoney(data.kpis.revenue)}
-              sub={data.previous.revenue > 0 ? `${fmtMoney(data.previous.revenue)} ${t('dashboard.vsPrevious')}` : undefined}
-              pct={data.deltas.revenue}
+              value={fmtMoney(data?.kpis?.revenue ?? 0)}
+              sub={(data?.previous?.revenue ?? 0) > 0 ? `${fmtMoney(data?.previous?.revenue ?? 0)} ${t('dashboard.vsPrevious')}` : undefined}
+              pct={data?.deltas?.revenue}
               goodWhenUp={true}
               spark={sparkRevenue}
               color={colors[0]}
             />
             <StatTile
               label={t('dashboard.collected')}
-              value={fmtMoney(data.kpis.collected)}
-              sub={data.previous.collected > 0 ? `${fmtMoney(data.previous.collected)} ${t('dashboard.vsPrevious')}` : undefined}
-              pct={data.deltas.collected}
+              value={fmtMoney(data?.kpis?.collected ?? 0)}
+              sub={(data?.previous?.collected ?? 0) > 0 ? `${fmtMoney(data?.previous?.collected ?? 0)} ${t('dashboard.vsPrevious')}` : undefined}
+              pct={data?.deltas?.collected}
               goodWhenUp={true}
               spark={sparkCollected}
               color={statusPalette.good}
             />
             <StatTile
               label={t('dashboard.grossProfit')}
-              value={fmtMoney(data.kpis.grossProfit)}
-              sub={data.previous.grossProfit > 0 ? `${fmtMoney(data.previous.grossProfit)} ${t('dashboard.vsPrevious')}` : undefined}
-              pct={data.deltas.grossProfit}
+              value={fmtMoney(data?.kpis?.grossProfit ?? 0)}
+              sub={(data?.previous?.grossProfit ?? 0) > 0 ? `${fmtMoney(data?.previous?.grossProfit ?? 0)} ${t('dashboard.vsPrevious')}` : undefined}
+              pct={data?.deltas?.grossProfit}
               goodWhenUp={true}
             />
             <StatTile
               label={t('dashboard.netProfit')}
-              value={fmtMoney(data.kpis.netProfit)}
-              sub={data.previous.netProfit !== 0 ? `${fmtMoney(data.previous.netProfit)} ${t('dashboard.vsPrevious')}` : undefined}
-              pct={data.deltas.netProfit}
+              value={fmtMoney(data?.kpis?.netProfit ?? 0)}
+              sub={(data?.previous?.netProfit ?? 0) !== 0 ? `${fmtMoney(data?.previous?.netProfit ?? 0)} ${t('dashboard.vsPrevious')}` : undefined}
+              pct={data?.deltas?.netProfit}
               goodWhenUp={true}
             />
           </div>
@@ -1429,22 +1429,22 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile
               label={t('dashboard.receivables')}
-              value={fmtMoney(data.kpis.accountsReceivable)}
+              value={fmtMoney(data?.kpis?.accountsReceivable ?? 0)}
               goodWhenUp={false}
             />
             <StatTile
               label={t('dashboard.payables')}
-              value={fmtMoney(data.kpis.accountsPayable)}
+              value={fmtMoney(data?.kpis?.accountsPayable ?? 0)}
               goodWhenUp={false}
             />
             <StatTile
               label={t('dashboard.pendingOrders')}
-              value={String(data.kpis.pendingOrders)}
+              value={String(data?.kpis?.pendingOrders ?? 0)}
               goodWhenUp={false}
             />
             <StatTile
               label={t('dashboard.lowStock')}
-              value={String(data.kpis.lowStockCount)}
+              value={String(data?.kpis?.lowStockCount ?? 0)}
               goodWhenUp={false}
             />
           </div>

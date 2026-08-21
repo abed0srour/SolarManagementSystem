@@ -284,28 +284,29 @@ export default function ReceivePurchaseOrderPage() {
    * so it runs only after the local checks pass.
    */
   const addSerial = async (raw: string, opts: { silentDuplicate?: boolean } = {}) => {
+    console.log("[dbg] addSerial enter", raw);
     const line = activeRef.current;
     if (!line) return;
     const serial = raw.trim();
     if (!serial) return;
 
-    if (serial.length > MAX_SERIAL_LEN) {
+    if (serial.length > MAX_SERIAL_LEN) { console.log("[dbg] gate: too long");
       reject(t('receive.serialTooLong', { max: MAX_SERIAL_LEN }));
       return;
     }
-    if (line.serials.length >= line.outstanding) {
+    if (line.serials.length >= line.outstanding) { console.log("[dbg] gate: line full", line.serials.length, line.outstanding);
       reject(t('receive.lineFull', { count: line.outstanding }));
       return;
     }
     const clash = allSerials.get(serial.toUpperCase());
-    if (clash) {
+    if (clash) { console.log("[dbg] gate: clash", clash);
       // Auto-add re-reads the same label many times a second; that is expected,
       // not an error worth shouting about.
       if (!opts.silentDuplicate) reject(t('receive.duplicateInBatch', { product: clash }));
       return;
     }
 
-    setChecking(true);
+    console.log("[dbg] pre-lookup"); setChecking(true);
     try {
       await api.get(`/inventory/units/serial/${encodeURIComponent(serial)}`);
       // A hit means the serial is already registered to a unit in stock.
@@ -526,12 +527,18 @@ export default function ReceivePurchaseOrderPage() {
                 type="submit"
                 size="lg"
                 className="h-12 shrink-0 gap-1.5 px-5 text-base"
-                disabled={!manual.trim() || checking || remaining <= 0}
+                disabled={!manual.trim() || tooLong || checking || remaining <= 0}
               >
                 {checking ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
                 {t('common.add')}
               </Button>
             </form>
+          )}
+
+          {tooLong && (
+            <p className="mt-1.5 text-xs font-medium text-destructive">
+              {t('receive.serialTooLong', { max: MAX_SERIAL_LEN })}
+            </p>
           )}
 
           <label className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
