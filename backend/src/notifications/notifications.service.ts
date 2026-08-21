@@ -44,13 +44,41 @@ export class NotificationsService {
     return { success: true };
   }
 
-  /** Avoid duplicate open notifications for the same entity+type. */
-  private async notifyOnce(type: NotificationType, message: string, entity: string, entityId: string) {
-    const existing = await this.prisma.notification.findFirst({
-      where: { type, entity, entityId, isRead: false },
+  /**
+   * Make the stored notifications for one (type, entity) match the conditions
+   * that are true right now.
+   *
+   * Creates what is missing, deletes what no longer applies, and leaves
+   * everything else alone — including alerts the user has already read. That
+   * last part is the point: deduping on `isRead` meant a seen alert was
+   * recreated on the next run while its condition still held.
+   *
+   * Deleting on resolution is what keeps recurrence working. A product that
+   * goes low, is acknowledged, is restocked and later goes low again gets a
+   * fresh notification, because the row was cleared in between.
+   */
+  private async syncNotifications(
+    type: NotificationType,
+    entity: string,
+    active: { id: string; message: string }[],
+  ) {
+    const activeIds = active.map((a) => a.id);
+
+    await this.prisma.notification.deleteMany({
+      where: { type, entity, ...(activeIds.length ? { entityId: { notIn: activeIds } } : {}) },
     });
-    if (!existing) {
-      await this.prisma.notification.create({ data: { type, message, entity, entityId } });
+    if (!activeIds.length) return;
+
+    const existing = await this.prisma.notification.findMany({
+      where: { type, entity, entityId: { in: activeIds } },
+      select: { entityId: true },
+    });
+    const known = new Set(existing.map((e) => e.entityId));
+    const missing = active.filter((a) => !known.has(a.id));
+    if (missing.length) {
+      await this.prisma.notification.createMany({
+        data: missing.map((a) => ({ type, entity, entityId: a.id, message: a.message })),
+      });
     }
   }
 
@@ -72,12 +100,13 @@ export class NotificationsService {
       where: { isActive: true },
       select: { id: true, name: true, sku: true, lowStockThreshold: true, stockLevels: { select: { quantity: true } } },
     });
-    for (const p of products) {
+    const low = products.flatMap((p) => {
       const qty = p.stockLevels.reduce((s, l) => s + Number(l.quantity), 0);
-      if (qty <= p.lowStockThreshold) {
-        await this.notifyOnce('LOW_STOCK', `Low stock: ${p.name} [${p.sku}] — ${qty} left (threshold ${p.lowStockThreshold})`, 'Product', p.id);
-      }
-    }
+      return qty <= p.lowStockThreshold
+        ? [{ id: p.id, message: `Low stock: ${p.name} [${p.sku}] — ${qty} left (threshold ${p.lowStockThreshold})` }]
+        : [];
+    });
+    await this.syncNotifications('LOW_STOCK', 'Product', low);
   }
 
   async checkOverduePayments() {
@@ -89,27 +118,45 @@ export class NotificationsService {
     });
     for (const inv of overdue) {
       await this.prisma.invoice.update({ where: { id: inv.id }, data: { status: 'OVERDUE' } });
-      const party = inv.client?.name ?? inv.supplier?.name ?? '';
-      await this.notifyOnce('PAYMENT_OVERDUE', `Invoice ${inv.number} (${party}) is overdue — balance ${(Number(inv.total) - Number(inv.paidAmount)).toFixed(2)}`, 'Invoice', inv.id);
     }
+    await this.syncNotifications(
+      'PAYMENT_OVERDUE',
+      'Invoice',
+      overdue.map((inv) => ({
+        id: inv.id,
+        message: `Invoice ${inv.number} (${inv.client?.name ?? inv.supplier?.name ?? ''}) is overdue — balance ${(Number(inv.total) - Number(inv.paidAmount)).toFixed(2)}`,
+      })),
+    );
     // Overdue installments
     const schedules = await this.prisma.paymentSchedule.findMany({ relationLoadStrategy: 'join',
       where: { status: 'PENDING', dueDate: { lt: now } },
       include: { invoice: { include: { client: { select: { name: true } } } } },
     });
-    for (const s of schedules) {
-      await this.prisma.paymentSchedule.update({ where: { id: s.id }, data: { status: 'OVERDUE' } });
-      await this.notifyOnce('PAYMENT_OVERDUE', `Installment ${s.installmentNo} of invoice ${s.invoice.number} (${s.invoice.client?.name ?? ''}) is overdue — ${Number(s.amount).toFixed(2)}`, 'PaymentSchedule', s.id);
+    for (const sched of schedules) {
+      await this.prisma.paymentSchedule.update({ where: { id: sched.id }, data: { status: 'OVERDUE' } });
     }
+    await this.syncNotifications(
+      'PAYMENT_OVERDUE',
+      'PaymentSchedule',
+      schedules.map((sched) => ({
+        id: sched.id,
+        message: `Installment ${sched.installmentNo} of invoice ${sched.invoice.number} (${sched.invoice.client?.name ?? ''}) is overdue — ${Number(sched.amount).toFixed(2)}`,
+      })),
+    );
     // Due within 3 days
     const soon = new Date(now.getTime() + 3 * 24 * 3600 * 1000);
     const dueSoon = await this.prisma.paymentSchedule.findMany({ relationLoadStrategy: 'join',
       where: { status: 'PENDING', dueDate: { gte: now, lte: soon } },
       include: { invoice: { include: { client: { select: { name: true } } } } },
     });
-    for (const s of dueSoon) {
-      await this.notifyOnce('PAYMENT_DUE', `Installment ${s.installmentNo} of invoice ${s.invoice.number} (${s.invoice.client?.name ?? ''}) due ${s.dueDate.toISOString().slice(0, 10)}`, 'PaymentSchedule', s.id);
-    }
+    await this.syncNotifications(
+      'PAYMENT_DUE',
+      'PaymentSchedule',
+      dueSoon.map((sched) => ({
+        id: sched.id,
+        message: `Installment ${sched.installmentNo} of invoice ${sched.invoice.number} (${sched.invoice.client?.name ?? ''}) due ${sched.dueDate.toISOString().slice(0, 10)}`,
+      })),
+    );
   }
 
   async checkExpiringQuotations() {
@@ -119,9 +166,14 @@ export class NotificationsService {
       where: { status: 'SENT', validUntil: { gte: now, lte: soon } },
       include: { client: { select: { name: true } } },
     });
-    for (const q of expiring) {
-      await this.notifyOnce('QUOTATION_EXPIRING', `Quotation ${q.number} for ${q.client.name} expires ${q.validUntil!.toISOString().slice(0, 10)}`, 'Quotation', q.id);
-    }
+    await this.syncNotifications(
+      'QUOTATION_EXPIRING',
+      'Quotation',
+      expiring.map((q) => ({
+        id: q.id,
+        message: `Quotation ${q.number} for ${q.client.name} expires ${q.validUntil!.toISOString().slice(0, 10)}`,
+      })),
+    );
     // Auto-expire past quotations
     await this.prisma.quotation.updateMany({
       where: { status: { in: ['DRAFT', 'SENT'] }, validUntil: { lt: now } },
@@ -136,9 +188,14 @@ export class NotificationsService {
       where: { status: 'SOLD', warrantyEndDate: { gte: now, lte: soon } },
       include: { product: { select: { name: true } } },
     });
-    for (const u of units) {
-      await this.notifyOnce('WARRANTY_EXPIRING', `Warranty for ${u.product.name} (SN ${u.serialNumber}) expires ${u.warrantyEndDate!.toISOString().slice(0, 10)}`, 'ProductUnit', u.id);
-    }
+    await this.syncNotifications(
+      'WARRANTY_EXPIRING',
+      'ProductUnit',
+      units.map((u) => ({
+        id: u.id,
+        message: `Warranty for ${u.product.name} (SN ${u.serialNumber}) expires ${u.warrantyEndDate!.toISOString().slice(0, 10)}`,
+      })),
+    );
   }
 
   /** Lead-acid shelf-life: manufacture date + shelfLifeMonths approaching for units still in stock. */
@@ -149,12 +206,16 @@ export class NotificationsService {
     });
     const now = new Date();
     const soonMs = 30 * 24 * 3600 * 1000;
-    for (const u of units) {
+    const expiring = units.flatMap((u) => {
       const expiry = new Date(u.manufactureDate!);
       expiry.setMonth(expiry.getMonth() + (u.product.shelfLifeMonths ?? 0));
-      if (expiry.getTime() - now.getTime() <= soonMs) {
-        await this.notifyOnce('SHELF_LIFE_ALERT', `Shelf life alert: ${u.product.name} (SN ${u.serialNumber}) expires ${expiry.toISOString().slice(0, 10)} — sell or rotate stock`, 'ProductUnit', u.id);
-      }
-    }
+      return expiry.getTime() - now.getTime() <= soonMs
+        ? [{
+            id: u.id,
+            message: `Shelf life alert: ${u.product.name} (SN ${u.serialNumber}) expires ${expiry.toISOString().slice(0, 10)} — sell or rotate stock`,
+          }]
+        : [];
+    });
+    await this.syncNotifications('SHELF_LIFE_ALERT', 'ProductUnit', expiring);
   }
 }

@@ -295,6 +295,7 @@ export class StockService {
     productId?: string;
     salesOrderId?: string;
     purchaseOrderId?: string;
+    supplierId?: string;
     warehouseId?: string;
     status?: string;
     serial?: string;
@@ -306,6 +307,8 @@ export class StockService {
     if (query.productId) where.productId = query.productId;
     if (query.salesOrderId) where.salesOrderId = query.salesOrderId;
     if (query.purchaseOrderId) where.purchaseOrderId = query.purchaseOrderId;
+    // Which supplier a unit came from is a property of the PO that brought it in.
+    if (query.supplierId) where.purchaseOrder = { supplierId: query.supplierId };
     if (query.warehouseId) where.warehouseId = query.warehouseId;
     if (query.status) where.status = query.status as UnitStatus;
     if (query.serial) where.serialNumber = { contains: query.serial, mode: 'insensitive' };
@@ -326,7 +329,7 @@ export class StockService {
         include: {
           product: { select: { id: true, sku: true, name: true } },
           warehouse: { select: { id: true, name: true } },
-          purchaseOrder: { select: { id: true, number: true } },
+          purchaseOrder: { select: { id: true, number: true, supplier: { select: { id: true, name: true } } } },
           invoice: { select: { number: true, client: { select: { id: true, name: true, phone: true } } } },
           salesOrder: { select: { id: true, number: true, client: { select: { id: true, name: true, phone: true } } } },
         },
