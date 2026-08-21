@@ -35,6 +35,11 @@ interface Props {
   lockedClientId?: string;
   /** Where to go after saving or cancelling. */
   returnTo?: string;
+  /**
+   * Lines to start from, used by the scan-to-order flow. Create mode only — an
+   * existing order loads its own lines and must not be overwritten.
+   */
+  initialLines?: LineItem[];
 }
 
 /**
@@ -43,13 +48,22 @@ interface Props {
  * Replaces the old modal so the line-item table has room to breathe — each row
  * now carries its own unit price and discount, which is cramped in a dialog.
  */
-export default function SalesOrderForm({ orderId, lockedClientId, returnTo = '/sales-orders' }: Props) {
+export default function SalesOrderForm({
+  orderId,
+  lockedClientId,
+  returnTo = '/sales-orders',
+  initialLines,
+}: Props) {
   const t = useTranslations();
   const router = useRouter();
   const editing = Boolean(orderId);
 
   const [form, setForm] = useState<any>({ client: null, warehouse: null, discountType: '', discountValue: 0, shippingFee: 0, notes: '', showSubItemsOnInvoice: false });
-  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  // Seeded directly rather than in an effect: an effect would flash the empty
+  // row first, and would overwrite anything edited before it ran.
+  const [lines, setLines] = useState<LineItem[]>(
+    !orderId && initialLines?.length ? initialLines : [emptyLine()],
+  );
   const [existing, setExisting] = useState<any>(null);
   const [loading, setLoading] = useState(Boolean(orderId || lockedClientId));
   const [notFound, setNotFound] = useState(false);

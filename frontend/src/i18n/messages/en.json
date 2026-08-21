@@ -1036,7 +1036,8 @@
     "title": "Serial Numbers",
     "editUnit": "Edit unit",
     "source": "Received on",
-    "serialHint": "Correct a mistyped serial here. It must stay unique and 18 characters or less."
+    "serialHint": "Correct a mistyped serial here. It must stay unique and 18 characters or less.",
+    "scanToFill": "Scan to fill"
   },
   "purchaseReturns": {
     "title": "Supplier Returns",
@@ -1136,5 +1137,18 @@
     "torch": "Flashlight",
     "torchFailed": "This device would not turn the flashlight on",
     "fromLabel": "from {label}"
+  },
+  "scanOrder": {
+    "action": "Scan items",
+    "title": "Scan items to sell",
+    "subtitle": "Scan each unit going out, then pick the customer and warehouse",
+    "scanned": "Scanned",
+    "acrossProducts": "across {count} products",
+    "continue": "Continue",
+    "empty": "Scan a serial to start building the order",
+    "unknownSerial": "{serial} is not registered to any unit in stock",
+    "notSellable": "{serial} cannot be sold — it is {status}",
+    "mixedWarehouses": "These units are in different warehouses ({list}). An order draws stock from one warehouse.",
+    "handoffFailed": "Could not carry the scanned items over. Check that storage is not blocked."
   }
 }

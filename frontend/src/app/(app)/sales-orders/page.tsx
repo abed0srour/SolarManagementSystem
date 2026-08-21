@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, Trash2, RotateCcw } from 'lucide-react';
+import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, Trash2, RotateCcw, ScanLine } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
 import { openWhatsApp, waMoney } from '../../../lib/whatsapp';
 import DataTable from '../../../components/data-table';
@@ -141,9 +141,14 @@ export default function SalesOrdersPage() {
           </>
         }
         toolbar={
-          <Button onClick={() => router.push('/sales-orders/new')}>
-            <Plus /> {t('orders.newSalesOrder')}
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => router.push('/sales-orders/scan')}>
+              <ScanLine /> {t('scanOrder.action')}
+            </Button>
+            <Button onClick={() => router.push('/sales-orders/new')}>
+              <Plus /> {t('orders.newSalesOrder')}
+            </Button>
+          </>
         }
         columns={[
           { key: 'number', label: t('quotations.number'), mobile: 'primary', className: 'w-28', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },

@@ -114,7 +114,7 @@ export default function ReceivePurchaseOrderPage() {
   const [checking, setChecking] = useState(false);
   /** Why the last serial was refused. Shown beside the input, not as a toast. */
   const [scanError, setScanError] = useState<string | null>(null);
-  const [autoAdd, setAutoAdd] = useState(false);
+  const [autoAdd, setAutoAdd] = useState(true);
   const [torchOn, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
   /** ZXing scanner controls: stop() and, where supported, switchTorch(). */
@@ -125,6 +125,14 @@ export default function ReceivePurchaseOrderPage() {
   autoAddRef.current = autoAdd;
 
   const active = lines.find((l) => l.productId === activeId) ?? null;
+  /**
+   * The live addSerial. ZXing holds the callback given to start() for the
+   * lifetime of the scan, so calling through a ref is what keeps the duplicate
+   * gate looking at serials captured since.
+   */
+  const addSerialRef = useRef<(raw: string, opts?: { silentDuplicate?: boolean }) => Promise<void>>(async () => {});
+  /** Serials mid-flight, so a repeated decode cannot double-add one. */
+  const inFlightRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<Line | null>(active);
   activeRef.current = active;
 
@@ -237,7 +245,7 @@ export default function ReceivePurchaseOrderPage() {
           const value = result.getText().trim();
           if (!value) return;
           if (autoAddRef.current) {
-            void addSerial(value, { silentDuplicate: true });
+            void addSerialRef.current(value, { silentDuplicate: true });
           } else {
             // Hold it as a candidate; the operator commits it with Add.
             setPending((prev) => (prev === value ? prev : value));
@@ -326,13 +334,23 @@ export default function ReceivePurchaseOrderPage() {
       reject(t('receive.lineFull', { count: line.outstanding }));
       return;
     }
-    const clash = allSerials.get(serial.toUpperCase());
+    const key = serial.toUpperCase();
+    const clash = allSerials.get(key);
     if (clash) {
       // Auto-add re-reads the same label many times a second; that is expected,
       // not an error worth shouting about.
       if (!opts.silentDuplicate) reject(t('receive.duplicateInBatch', { product: clash }));
       return;
     }
+    /*
+     * Claim the serial before the first await. The gate above only sees what
+     * has already reached state, so with auto-add on, a second decode of the
+     * same label clears it while the first is still waiting on the lookup and
+     * the unit gets counted twice. This ref is read and written with nothing
+     * suspended in between, so only the first caller proceeds.
+     */
+    if (inFlightRef.current.has(key)) return;
+    inFlightRef.current.add(key);
 
     setChecking(true);
     try {
@@ -347,6 +365,7 @@ export default function ReceivePurchaseOrderPage() {
       }
       // 404 is the good case: nothing owns this serial yet.
     } finally {
+      inFlightRef.current.delete(key);
       setChecking(false);
     }
 
@@ -358,6 +377,8 @@ export default function ReceivePurchaseOrderPage() {
     setManual('');
     buzz(35);
   };
+
+  addSerialRef.current = addSerial;
 
   const removeSerial = (productId: string, index: number) => {
     setLines((prev) =>

@@ -1,5 +1,6 @@
 'use client';
-import { QrCode as PageIcon, Pencil } from 'lucide-react';
+import { QrCode as PageIcon, Pencil, ScanLine } from 'lucide-react';
+import BarcodeScanner from '../../../components/barcode-scanner';
 import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -27,6 +28,7 @@ export default function SerialsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [busy, setBusy] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
 
   useEffect(() => {
     api.get('/inventory/warehouses').then((r) => setWarehouses(r.data)).catch(() => setWarehouses([]));
@@ -129,11 +131,16 @@ export default function SerialsPage() {
           {
             key: 'source',
             label: t('serials.source'),
-            className: 'w-32',
+            className: 'w-40',
             render: (r) => (
-              <EntityLink href={r.purchaseOrder ? `/purchase-orders/${r.purchaseOrder.id}/edit` : null} mono>
-                {r.purchaseOrder?.number}
-              </EntityLink>
+              <div className="min-w-0">
+                <EntityLink href={r.purchaseOrder ? `/purchase-orders/${r.purchaseOrder.id}/edit` : null} mono>
+                  {r.purchaseOrder?.number}
+                </EntityLink>
+                {r.purchaseOrder?.supplier?.name && (
+                  <div className="truncate text-xs text-muted-foreground">{r.purchaseOrder.supplier.name}</div>
+                )}
+              </div>
             ),
           },
           {
@@ -188,14 +195,38 @@ export default function SerialsPage() {
                 <div className="font-mono text-xs text-muted-foreground">{editing.product?.sku}</div>
               </div>
               <Field label={t('inventory.serialNumber')} hint={t('serials.serialHint')}>
-                <Input
-                  dir="ltr"
-                  maxLength={18}
-                  className="font-mono"
-                  value={form.serialNumber ?? ''}
-                  onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    dir="ltr"
+                    maxLength={18}
+                    className="font-mono"
+                    value={form.serialNumber ?? ''}
+                    onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    title={t('serials.scanToFill')}
+                    onClick={() => setScanOpen((v) => !v)}
+                  >
+                    <ScanLine className="h-4 w-4" />
+                  </Button>
+                </div>
               </Field>
+              {scanOpen && (
+                <BarcodeScanner
+                  height="240px"
+                  onDecode={(value) => {
+                    // One decode is enough here: this replaces a single field
+                    // rather than building a list, so close the camera and let
+                    // the operator confirm what landed before saving.
+                    setForm((prev: any) => ({ ...prev, serialNumber: value }));
+                    setScanOpen(false);
+                  }}
+                />
+              )}
               <Field label={t('common.status')}>
                 <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                   {STATUSES.map((s) => (
