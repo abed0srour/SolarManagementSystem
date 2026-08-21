@@ -124,6 +124,7 @@
     "confirmBatchDelete": "Are you sure you want to delete {count} selected records?",
     "deletedCount": "{count} records deleted",
     "failedToDeleteCount": "Failed to delete {count} records",
+    "tooManyClicks": "Too many rapid clicks. Please wait a moment.",
     "confirmDelete": "This record will be archived: hidden from lists and no longer usable, but all financial history and reports stay intact.",
     "archive": "Archive",
     "confirmTitle": "Please confirm",
