@@ -451,7 +451,9 @@
     "number": "Number",
     "validUntil": "Valid until",
     "convert": "Convert to order",
-    "converted": "Converted to sales order"
+    "converted": "Converted to sales order",
+    "generalInfo": "Quotation Details",
+    "notesPlaceholder": "Optional notes or terms for the client..."
   },
   "orders": {
     "salesTitle": "Sales Orders",

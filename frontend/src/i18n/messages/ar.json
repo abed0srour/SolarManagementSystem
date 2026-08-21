@@ -451,7 +451,9 @@
     "number": "الرقم",
     "validUntil": "صالح حتى",
     "convert": "تحويل إلى طلب بيع",
-    "converted": "تم التحويل إلى طلب بيع"
+    "converted": "تم التحويل إلى طلب بيع",
+    "generalInfo": "تفاصيل عرض السعر",
+    "notesPlaceholder": "ملاحظات أو شروط إضافية للعميل..."
   },
   "orders": {
     "salesTitle": "طلبات البيع",

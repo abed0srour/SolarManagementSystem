@@ -127,17 +127,42 @@ export default function InvoicesPage() {
               <Input type="date" value={form.dueDate ?? ''} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
             </Field>
             <Field label={`${t('common.discount')} (${t('common.total')})`}>
-              <Select value={form.discountType ?? ''} onChange={(e) => setForm({ ...form, discountType: e.target.value })}>
+              <Select
+                value={form.discountType ?? ''}
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  setForm({
+                    ...form,
+                    discountType: nextType,
+                    discountValue: nextType ? (form.discountValue || 0) : 0,
+                  });
+                }}
+              >
                 <option value="">{t('common.none')}</option>
                 <option value="PERCENT">{t('common.percent')}</option>
                 <option value="FIXED">{t('common.fixed')}</option>
               </Select>
             </Field>
-            {form.discountType && (
-              <Field label={t('common.discount')}>
-                <Input type="number" min={0} value={form.discountValue ?? 0} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} />
-              </Field>
-            )}
+            <Field
+              label={
+                form.discountType === 'PERCENT'
+                  ? `${t('common.discount')} (%)`
+                  : form.discountType === 'FIXED'
+                  ? `${t('common.discount')} ($)`
+                  : t('common.discount')
+              }
+            >
+              <Input
+                type="number"
+                min={0}
+                max={form.discountType === 'PERCENT' ? 100 : undefined}
+                step={form.discountType === 'PERCENT' ? '0.1' : '0.01'}
+                disabled={!form.discountType}
+                placeholder={!form.discountType ? '—' : '0'}
+                value={form.discountType ? (form.discountValue ?? '') : ''}
+                onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+              />
+            </Field>
             <Field label={t('common.shipping')}>
               <Input type="number" min={0} value={form.shippingFee ?? 0} onChange={(e) => setForm({ ...form, shippingFee: e.target.value })} />
             </Field>

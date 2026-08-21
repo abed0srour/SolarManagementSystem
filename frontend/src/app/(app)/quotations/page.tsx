@@ -1,31 +1,28 @@
 'use client';
-import { FileText as PageIcon } from 'lucide-react';
-import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, ArrowRightCircle, Archive, RotateCcw } from 'lucide-react';
+import { Plus, ArrowRightCircle, Archive, RotateCcw, FileText as PageIcon } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
+import PageHeader from '../../../components/page-header';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
-import LineItemsEditor, { LineItem, emptyLine, hasInvalidLine, toItemsPayload } from '../../../components/line-items-editor';
 import EntityLink, { linkTo } from '../../../components/entity-link';
-import { ClientPicker, WarehousePicker } from '../../../components/entity-picker';
+import { WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
-import { Textarea } from '../../../components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
+import QuotationForm from '../../../components/quotation-form';
 
 export default function QuotationsPage() {
   const t = useTranslations();
+  const router = useRouter();
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState<any>({});
-  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [statusFilter, setStatusFilter] = useState('');
   const [convertFor, setConvertFor] = useState<any>(null);
   const [convertWh, setConvertWh] = useState<any>(null);
@@ -33,54 +30,11 @@ export default function QuotationsPage() {
   const [archived, setArchived] = useState(false);
 
   const openCreate = () => {
-    setEditing(null);
-    setForm({ client: null, status: 'DRAFT', validUntil: '', discountType: '', discountValue: 0, notes: '' });
-    setLines([emptyLine()]);
-    setOpen(true);
+    router.push('/quotations/new');
   };
 
   const openEdit = (row: any) => {
-    setEditing(row);
-    setForm({
-      client: row.client ? { id: row.clientId, name: row.client.name } : null,
-      status: row.status,
-      validUntil: row.validUntil ? row.validUntil.slice(0, 10) : '',
-      discountType: row.discountType ?? '',
-      discountValue: Number(row.discountValue),
-      notes: row.notes ?? '',
-    });
-    setLines(
-      (row.items ?? []).map((i: any) => ({
-        product: i.product ? { id: i.productId, name: i.product.name, sku: i.product.sku, salePrice: i.unitPrice } : { id: i.productId, name: i.description ?? 'item', sku: '', salePrice: i.unitPrice },
-        quantity: i.quantity,
-        unitPrice: Number(i.unitPrice),
-        // The product's current list price, so a saved markup still shows as one.
-        basePrice: Number(i.product?.salePrice ?? i.unitPrice),
-        costPrice: Number(i.product?.costPrice ?? 0),
-      })),
-    );
-    setOpen(true);
-  };
-
-  const save = async () => {
-    try {
-      const payload = {
-        clientId: form.client?.id,
-        status: form.status,
-        validUntil: form.validUntil || undefined,
-        discountType: form.discountType || undefined,
-        discountValue: form.discountType ? Number(form.discountValue) : undefined,
-        notes: form.notes || undefined,
-        items: toItemsPayload(lines),
-      };
-      if (editing) await api.patch(`/quotations/${editing.id}`, payload);
-      else await api.post('/quotations', payload);
-      toast.success(t('common.saved'));
-      setOpen(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
+    router.push(`/quotations/${row.id}/edit`);
   };
 
   /** Archiving is reversible: restoring is the exact inverse of the soft delete. */
@@ -171,41 +125,15 @@ export default function QuotationsPage() {
           <DialogHeader>
             <DialogTitle>{editing ? `${editing.number}` : t('quotations.newQuotation')}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Field label={t('common.client')} className="md:col-span-2">
-              <ClientPicker value={form.client} onChange={(c) => setForm({ ...form, client: c })} />
-            </Field>
-            <Field label={t('common.status')}>
-              <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                {['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED', 'CANCELLED'].map((s) => (
-                  <option key={s} value={s}>{t(`status.${s}`)}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field label={t('quotations.validUntil')}>
-              <Input type="date" value={form.validUntil ?? ''} onChange={(e) => setForm({ ...form, validUntil: e.target.value })} />
-            </Field>
-            <Field label={`${t('common.discount')} (${t('common.total')})`}>
-              <Select value={form.discountType ?? ''} onChange={(e) => setForm({ ...form, discountType: e.target.value })}>
-                <option value="">{t('common.none')}</option>
-                <option value="PERCENT">{t('common.percent')}</option>
-                <option value="FIXED">{t('common.fixed')}</option>
-              </Select>
-            </Field>
-            {form.discountType && (
-              <Field label={t('common.discount')}>
-                <Input type="number" min={0} value={form.discountValue ?? 0} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} />
-              </Field>
-            )}
-            <Field label={t('common.notes')} className="col-span-2">
-              <Textarea rows={1} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            </Field>
-          </div>
-          <LineItemsEditor lines={lines} onChange={setLines} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={save} disabled={!form.client || toItemsPayload(lines).length === 0 || hasInvalidLine(lines)}>{t('common.save')}</Button>
-          </DialogFooter>
+          <QuotationForm
+            quotationId={editing?.id}
+            isModal
+            onSaved={() => {
+              setOpen(false);
+              setRefreshKey((k) => k + 1);
+            }}
+            onCancel={() => setOpen(false)}
+          />
         </DialogContent>
       </Dialog>
 
