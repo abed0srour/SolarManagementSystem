@@ -24,6 +24,7 @@ import SerialSelector from '../../../../components/serial-selector';
 import Field from '../../../../components/form-field';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
+import { FormattedNumberInput } from '../../../../components/ui/formatted-number-input';
 import { Select } from '../../../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -352,7 +353,7 @@ export default function SalesOrderDetailPage() {
               <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(so.outstanding ?? 0)}</b></span>
             </div>
             <Field label={t('common.amount')}>
-              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
             </Field>
             <Field label={t('common.method')}>
               <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>

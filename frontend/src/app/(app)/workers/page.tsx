@@ -14,6 +14,7 @@ import { invalidateCache } from '../../../lib/cache';
 import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -228,8 +229,8 @@ export default function WorkersPage() {
                 <Field label={t('workers.lateHours')}><Input type="number" min={0} step="0.5" value={att.lateHours ?? 0} onChange={(e) => setAtt({ ...att, lateHours: e.target.value })} /></Field>
               </>
             )}
-            <Field label={t('workers.bonus')}><Input type="number" step="0.01" value={att.bonus ?? 0} onChange={(e) => setAtt({ ...att, bonus: e.target.value })} /></Field>
-            <Field label={t('workers.deduction')}><Input type="number" step="0.01" value={att.deduction ?? 0} onChange={(e) => setAtt({ ...att, deduction: e.target.value })} /></Field>
+            <Field label={t('workers.bonus')}><FormattedNumberInput placeholder="0.00" value={att.bonus ?? 0} onChange={(e) => setAtt({ ...att, bonus: e.target.value })} /></Field>
+            <Field label={t('workers.deduction')}><FormattedNumberInput placeholder="0.00" value={att.deduction ?? 0} onChange={(e) => setAtt({ ...att, deduction: e.target.value })} /></Field>
             <Field label={t('common.notes')} className="sm:col-span-2"><Input value={att.notes ?? ''} onChange={(e) => setAtt({ ...att, notes: e.target.value })} /></Field>
           </div>
           <p className="text-xs text-muted-foreground">{t('workers.attendanceHint')}</p>

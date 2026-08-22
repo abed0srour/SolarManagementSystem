@@ -6,6 +6,7 @@ import { fmtMoney } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Select } from './ui/select';
 import { ProductPicker } from './entity-picker';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -266,10 +267,7 @@ function BundleRow({
             {auto ? (
               <span className="tabular-nums">{plain(bundleComponentsTotal(line))}</span>
             ) : (
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
+              <FormattedNumberInput
                 placeholder="0.00"
                 className="w-28 text-end tabular-nums"
                 value={line.unitPrice}
@@ -320,10 +318,7 @@ function BundleRow({
                       <option key={u} value={u}>{u}</option>
                     ))}
                   </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
+                  <FormattedNumberInput
                     className="w-32 text-end tabular-nums"
                     placeholder="0.00"
                     value={s.unitPrice}
@@ -447,10 +442,7 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
               */}
               <TableCell className="min-w-36">
                 <div className="relative">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
+                  <FormattedNumberInput
                     placeholder="0.00"
                     className={cn('text-end tabular-nums', lineMarkup(l) !== 0 && 'border-amber-500/70')}
                     value={l.unitPrice}

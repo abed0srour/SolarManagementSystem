@@ -18,6 +18,7 @@ import { PasswordInput } from '../../../components/ui/password-input';
 import UsersManager from '../../../components/users-manager';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -338,7 +339,7 @@ export default function SettingsPage() {
                   <Input placeholder="LBP" value={finance.secondaryCurrency ?? ''} onChange={(e) => setFinance({ ...finance, secondaryCurrency: e.target.value })} />
                 </Field>
                 <Field label={t('settings.exchangeRate')}>
-                  <Input type="number" min={0} placeholder="89500" value={finance.exchangeRate ?? ''} onChange={(e) => setFinance({ ...finance, exchangeRate: e.target.value === '' ? '' : Number(e.target.value) })} />
+                  <FormattedNumberInput placeholder="89500" value={finance.exchangeRate ?? ''} onChange={(e) => setFinance({ ...finance, exchangeRate: e.target.value === '' ? '' : Number(e.target.value) })} />
                 </Field>
               </div>
               <div className="flex justify-end border-t pt-4">

@@ -14,6 +14,7 @@ import ClientStatementDialog from '../../../components/client-statement-dialog';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Textarea } from '../../../components/ui/textarea';
 import { Badge } from '../../../components/ui/badge';
@@ -193,7 +194,7 @@ export default function ClientsPage() {
               <Input type="email" dir="ltr" placeholder="e.g. client@example.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </Field>
             <Field label={t('clients.creditLimit')}>
-              <Input type="number" min={0} step="0.01" placeholder="0.00" value={form.creditLimit ?? ''} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={form.creditLimit ?? ''} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} />
             </Field>
             <Field label={t('clients.taxNumber')}>
               <Input placeholder="e.g. 123456-789" value={form.taxNumber ?? ''} onChange={(e) => setForm({ ...form, taxNumber: e.target.value })} />

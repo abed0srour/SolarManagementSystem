@@ -11,6 +11,7 @@ import Field from './form-field';
 import { SupplierPicker, WarehousePicker, ProductPicker } from './entity-picker';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
@@ -172,8 +173,8 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           {form.hasDeliveryCost && (
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label={t('orders.deliveryCost')}>
-                <Input
-                  type="number" min={0} step="0.01" disabled={!editable}
+                <FormattedNumberInput
+                  disabled={!editable}
                   placeholder="0.00"
                   value={form.deliveryCost ?? ''}
                   onChange={(e) => setForm({ ...form, deliveryCost: e.target.value })}
@@ -234,10 +235,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
                       />
                     </TableCell>
                     <TableCell className="min-w-36">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
+                      <FormattedNumberInput
                         className="text-end tabular-nums"
                         placeholder="0.00"
                         disabled={!editable}

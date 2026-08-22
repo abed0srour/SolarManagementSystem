@@ -11,6 +11,7 @@ import ConfirmDialog from '../../../../components/confirm-dialog';
 import Field from '../../../../components/form-field';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
+import { FormattedNumberInput } from '../../../../components/ui/formatted-number-input';
 import { Select } from '../../../../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -266,7 +267,7 @@ export default function InvoiceDetailPage() {
           <DialogHeader><DialogTitle>{t('invoices.recordPayment')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <Field label={t('common.amount')}>
-              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
             </Field>
             <Field label={t('common.method')}>
               <Select value={payForm.method ?? 'CASH'} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
@@ -299,7 +300,7 @@ export default function InvoiceDetailPage() {
               <div key={i} className="flex items-center gap-2">
                 <span className="w-6 text-sm text-muted-foreground">{i + 1}.</span>
                 <Input type="date" value={ins.dueDate} onChange={(e) => setInstallments(installments.map((x, j) => (j === i ? { ...x, dueDate: e.target.value } : x)))} />
-                <Input type="number" min={0.01} step="0.01" value={ins.amount} onChange={(e) => setInstallments(installments.map((x, j) => (j === i ? { ...x, amount: Number(e.target.value) } : x)))} />
+                <FormattedNumberInput placeholder="0.00" value={ins.amount} onChange={(e) => setInstallments(installments.map((x, j) => (j === i ? { ...x, amount: Number(e.target.value) || 0 } : x)))} />
                 <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => setInstallments(installments.filter((_, j) => j !== i))}>
                   <Trash2 />
                 </Button>

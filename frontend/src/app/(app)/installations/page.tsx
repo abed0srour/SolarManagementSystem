@@ -13,6 +13,7 @@ import Field from '../../../components/form-field';
 import { ClientPicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Textarea } from '../../../components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
@@ -125,7 +126,7 @@ export default function InstallationsPage() {
                 <Input type="number" step="0.1" placeholder="e.g. 10.2" value={form.batteryKwh ?? ''} onChange={(e) => setForm({ ...form, batteryKwh: e.target.value })} />
               </Field>
               <Field label={t('installations.tariff')}>
-                <Input type="number" step="0.01" placeholder="e.g. 0.25" value={form.tariffPerKwh ?? ''} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
+                <FormattedNumberInput placeholder="e.g. 0.25" value={form.tariffPerKwh ?? ''} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
               </Field>
               <Field label={t('installations.expectedMonthlyKwh')}>
                 <Input type="number" placeholder="e.g. 750" value={form.expectedMonthlyKwh ?? ''} onChange={(e) => setForm({ ...form, expectedMonthlyKwh: e.target.value })} />

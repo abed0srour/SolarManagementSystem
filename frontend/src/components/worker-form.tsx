@@ -12,6 +12,7 @@ import Field from './form-field';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
+import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Select } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
@@ -181,8 +182,7 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
         {form.payBasis === 'HOURLY' ? (
           <>
             <Field label={t('workers.hourlyRate')} hint={err('hourlyRate')}>
-              <Input
-                type="number" min={0} step="0.01"
+              <FormattedNumberInput
                 placeholder="0.00"
                 className={cn('text-end tabular-nums', err('hourlyRate') && 'border-destructive')}
                 value={form.hourlyRate ?? ''}
@@ -200,8 +200,7 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
           </>
         ) : (
           <Field label={t('workers.dailyRate')} hint={err('dailyRate')}>
-            <Input
-              type="number" min={0} step="0.01"
+            <FormattedNumberInput
               placeholder="0.00"
               className={cn('text-end tabular-nums', err('dailyRate') && 'border-destructive')}
               value={form.dailyRate ?? ''}
@@ -211,8 +210,8 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
         )}
 
         <Field label={t('workers.lateDeduction')}>
-          <Input
-            type="number" min={0} step="0.01" className="text-end tabular-nums"
+          <FormattedNumberInput
+            className="text-end tabular-nums"
             placeholder="0.00"
             value={form.lateDeductionPerHour ?? ''}
             onChange={(e) => setForm({ ...form, lateDeductionPerHour: e.target.value })}

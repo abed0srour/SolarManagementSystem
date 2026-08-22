@@ -12,6 +12,7 @@ import Field, { AlignedFieldGrid } from './form-field';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
+import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Select } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
@@ -328,10 +329,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
               label={t('products.costPrice')}
               hint={err('costPrice') ?? (form.isService ? undefined : t('products.costFromPurchase'))}
             >
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
+              <FormattedNumberInput
                 placeholder="0.00"
                 className={cn(err('costPrice') && 'border-destructive')}
                 value={form.costPrice ?? ''}
@@ -340,10 +338,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
             </Field>
           )}
           <Field label={t('products.salePrice')} hint={err('salePrice')}>
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
+            <FormattedNumberInput
               placeholder="0.00"
               className={cn(err('salePrice') && 'border-destructive')}
               value={form.salePrice ?? ''}

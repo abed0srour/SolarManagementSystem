@@ -14,6 +14,7 @@ import { ClientPicker, WarehousePicker } from './entity-picker';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
+import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Select } from './ui/select';
 import { Skeleton } from './ui/skeleton';
 
@@ -214,9 +215,7 @@ export default function SalesOrderForm({
           </Field>
           {form.discountType && (
             <Field label={t('common.discount')}>
-              <Input
-                type="number"
-                min={0}
+              <FormattedNumberInput
                 placeholder="0.00"
                 value={form.discountValue ?? ''}
                 onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
@@ -224,9 +223,7 @@ export default function SalesOrderForm({
             </Field>
           )}
           <Field label={t('common.shipping')}>
-            <Input
-              type="number"
-              min={0}
+            <FormattedNumberInput
               placeholder="0.00"
               value={form.shippingFee ?? ''}
               onChange={(e) => setForm({ ...form, shippingFee: e.target.value })}

@@ -20,6 +20,7 @@ import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 
@@ -441,7 +442,7 @@ export default function CalculatorPage() {
           <Step n={3} title={t('calculator.stepMoney')} hint={t('calculator.stepMoneyHint')} last>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Field label={t('calculator.tariff')}>
-                <Input type="number" step="0.01" placeholder="0.25" value={form.tariffPerKwh} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
+                <FormattedNumberInput placeholder="0.25" value={form.tariffPerKwh} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
               </Field>
             </div>
           </Step>

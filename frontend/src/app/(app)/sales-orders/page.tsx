@@ -16,6 +16,7 @@ import EntityLink, { linkTo } from '../../../components/entity-link';
 import SerialSelector from '../../../components/serial-selector';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Textarea } from '../../../components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
@@ -335,7 +336,7 @@ export default function SalesOrdersPage() {
               <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(payFor?.outstanding ?? 0)}</b></span>
             </div>
             <Field label={t('common.amount')}>
-              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
             </Field>
             <Field label={t('common.method')}>
               <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>

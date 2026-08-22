@@ -13,6 +13,7 @@ import Field from '../../../components/form-field';
 import { ClientPicker, SupplierPicker, InvoicePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -191,7 +192,7 @@ export default function PaymentsPage() {
               ))}
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('common.amount')}>
-                <Input type="number" min={0.01} step="0.01" placeholder="0.00" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                <FormattedNumberInput placeholder="0.00" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </Field>
               <Field label={t('common.method')}>
                 <Select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>

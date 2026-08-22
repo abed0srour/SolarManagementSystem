@@ -15,6 +15,7 @@ import ConfirmDialog from '../../../../components/confirm-dialog';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { Input } from '../../../../components/ui/input';
+import { FormattedNumberInput } from '../../../../components/ui/formatted-number-input';
 import { Select } from '../../../../components/ui/select';
 import { Textarea } from '../../../../components/ui/textarea';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -367,7 +368,7 @@ export default function InstallationDetailPage() {
               <Input type="number" step="0.1" value={editForm.batteryKwh ?? ''} onChange={(e) => setEditForm({ ...editForm, batteryKwh: e.target.value })} />
             </Field>
             <Field label={t('installations.tariff')}>
-              <Input type="number" step="0.01" value={editForm.tariffPerKwh ?? ''} onChange={(e) => setEditForm({ ...editForm, tariffPerKwh: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={editForm.tariffPerKwh ?? ''} onChange={(e) => setEditForm({ ...editForm, tariffPerKwh: e.target.value })} />
             </Field>
             <Field label={t('installations.expectedMonthlyKwh')}>
               <Input type="number" value={editForm.expectedMonthlyKwh ?? ''} onChange={(e) => setEditForm({ ...editForm, expectedMonthlyKwh: e.target.value })} />
@@ -432,7 +433,7 @@ export default function InstallationDetailPage() {
               <Input type="number" value={contractForm.visitsPerYear ?? ''} onChange={(e) => setContractForm({ ...contractForm, visitsPerYear: e.target.value })} />
             </Field>
             <Field label={t('maintenance.pricePerYear')}>
-              <Input type="number" step="0.01" value={contractForm.pricePerYear ?? ''} onChange={(e) => setContractForm({ ...contractForm, pricePerYear: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={contractForm.pricePerYear ?? ''} onChange={(e) => setContractForm({ ...contractForm, pricePerYear: e.target.value })} />
             </Field>
             <Field label={t('common.notes')} className="col-span-2">
               <Input value={contractForm.notes ?? ''} onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })} />

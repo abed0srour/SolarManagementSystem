@@ -13,6 +13,7 @@ import ConfirmDialog from '../../../components/confirm-dialog';
 import { ProductPicker, WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Badge } from '../../../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
@@ -226,8 +227,8 @@ export default function InventoryPage() {
             {/* Only offered when adding: removing units never moves the average cost. */}
             {Number(form.delta) > 0 && (
               <Field label={t('inventory.unitCost')} hint={t('inventory.unitCostHint')}>
-                <Input
-                  type="number" step="0.01" min="0" placeholder={t('inventory.unitCostPlaceholder') || '0.00'}
+                <FormattedNumberInput
+                  placeholder={t('inventory.unitCostPlaceholder') || '0.00'}
                   value={form.unitCost ?? ''}
                   onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                 />

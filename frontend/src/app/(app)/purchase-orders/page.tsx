@@ -13,6 +13,7 @@ import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
 import { Select } from '../../../components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 
@@ -163,7 +164,7 @@ export default function PurchaseOrdersPage() {
               <span>{t('orders.remaining')}: <b className="tabular-nums">{fmtMoney(Math.max(0, Number(payFor?.total ?? 0) - Number(payFor?.paidAmount ?? 0)), payFor?.currency)}</b></span>
             </div>
             <Field label={t('common.amount')}>
-              <Input type="number" min={0.01} step="0.01" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+              <FormattedNumberInput placeholder="0.00" value={payForm.amount ?? ''} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
             </Field>
             <Field label={t('common.method')}>
               <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
