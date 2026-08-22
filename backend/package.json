@@ -9,7 +9,6 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/src/main",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -17,7 +16,12 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "vercel-build": "prisma generate && DATABASE_URL=$POSTGRES_PRISMA_URL DIRECT_URL=$POSTGRES_URL_NON_POOLING prisma migrate deploy",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "superadmin:create": "node scripts/create-super-admin.mjs",
+    "db:push": "supabase db push",
+    "db:reset": "supabase db reset",
+    "prisma:diff": "prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-url $DIRECT_URL --script",
+    "users:migrate": "node scripts/migrate-users-to-supabase.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -32,6 +36,7 @@
     "@nestjs/swagger": "^11.0.0",
     "@nestjs/throttler": "^6.3.0",
     "@prisma/client": "^6.5.0",
+    "@supabase/supabase-js": "^2.112.3",
     "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.0",
     "class-transformer": "^0.5.1",
@@ -40,6 +45,7 @@
     "cron": "^4.4.0",
     "exceljs": "^4.4.0",
     "helmet": "^8.0.0",
+    "jose": "^6.2.10",
     "jszip": "^3.10.1",
     "nodemailer": "^9.0.3",
     "pdf-lib": "^1.17.1",

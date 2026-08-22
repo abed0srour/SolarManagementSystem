@@ -18,7 +18,7 @@ export class InvoicePdfService {
   ) {}
 
   private async company() {
-    const setting = await this.prisma.setting.findUnique({ where: { key: 'company' } });
+    const setting = await this.prisma.setting.findFirst({ where: { key: 'company' } });
     return (setting?.value as any) ?? { name: 'Solar Store' };
   }
 

@@ -1,6 +1,7 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { requireTenantId } from '../common/tenant-context';
 
 @Injectable()
 export class SettingsService {
@@ -15,8 +16,10 @@ export class SettingsService {
   }
 
   async set(userId: string, key: string, value: any) {
+    // Settings are per store — one tenant's branding and currency are not
+    // another's — so the key is only unique alongside the tenant.
     const setting = await this.prisma.setting.upsert({
-      where: { key },
+      where: { tenantId_key: { tenantId: requireTenantId(), key } },
       update: { value },
       create: { key, value },
     });

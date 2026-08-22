@@ -13,7 +13,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Line
 } from 'recharts';
 import { api, fmtMoney, fmtDate } from '../../../lib/api';
-import { getUser } from '../../../lib/auth';
+import { getClaims } from '../../../lib/auth';
 import { useLocalFirstData } from '../../../lib/use-local-storage-cache';
 import { cn } from '../../../lib/utils';
 import { seriesColors, statusColors, chartInk } from '../../../lib/charts';
@@ -649,7 +649,7 @@ export default function DashboardPage() {
   const [user, setUserState] = useState<any>(null);
 
   useEffect(() => {
-    setUserState(getUser());
+    getClaims().then(setUserState);
     const saved = localStorage.getItem('sms_dashboard_view');
     if (saved === 'classic' || saved === 'pro') setViewMode(saved);
   }, []);

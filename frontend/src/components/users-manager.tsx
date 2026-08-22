@@ -14,7 +14,11 @@ import { PasswordInput } from './ui/password-input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
-const ASSIGNABLE_ROLES = ['ADMIN', 'MANAGER', 'STAFF', 'VIEWER'];
+/**
+ * Roles a store admin may hand out. ADMIN is absent on purpose and the backend
+ * refuses it too: appointing another store admin is the platform owner's call.
+ */
+const ASSIGNABLE_ROLES = ['MANAGER', 'STAFF', 'VIEWER'];
 
 /**
  * Accounts and what they can reach. Visible only to the super admin — the API
@@ -156,18 +160,20 @@ export default function UsersManager() {
               </TableRow>
             ) : (
               users.map((u) => {
-                const superAdmin = u.role === 'SUPER_ADMIN';
+                // The store admin manages everyone else, not themselves, and
+                // not a peer — those changes go through the platform owner.
+                const protectedRole = u.role === 'ADMIN' || u.role === 'SUPER_ADMIN';
                 return (
                   <TableRow key={u.id}>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-1.5">
-                        {superAdmin && <ShieldCheck className="h-3.5 w-3.5 text-primary" />}
+                        {protectedRole && <ShieldCheck className="h-3.5 w-3.5 text-primary" />}
                         {u.name}
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{u.email}</TableCell>
                     <TableCell>
-                      <Badge variant={superAdmin ? 'default' : 'outline'}>{t(`users.roles.${u.role}`)}</Badge>
+                      <Badge variant={protectedRole ? 'default' : 'outline'}>{t(`users.roles.${u.role}`)}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.isActive ? 'success' : 'muted'}>
@@ -178,7 +184,7 @@ export default function UsersManager() {
                     <TableCell>
                       {/* The super admin is edited from its own profile page, so
                           the owner cannot demote or delete themselves here. */}
-                      {!superAdmin && (
+                      {!protectedRole && (
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={() => openEdit(u)}>
                             <Pencil />

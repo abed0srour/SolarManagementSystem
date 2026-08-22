@@ -1,33 +1,22 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { clearSession, getRefreshToken, getToken, setSession } from './auth';
+import { supabaseBrowser } from './supabase/client';
 
 export const api = axios.create({ baseURL: '/api' });
 
-api.interceptors.request.use((config) => {
-  const token = getToken();
+/**
+ * Attach the Supabase access token to every call.
+ *
+ * `getSession()` is awaited rather than read from a cached variable because
+ * Supabase refreshes the token on its own schedule; asking each time means a
+ * request never goes out with a token that was rotated a moment ago. It reads
+ * from memory in the common case, so this is not a network hop.
+ */
+api.interceptors.request.use(async (config) => {
+  const { data } = await supabaseBrowser().auth.getSession();
+  const token = data.session?.access_token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-
-let refreshing: Promise<string | null> | null = null;
-
-async function tryRefresh(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
-  try {
-    const { data } = await axios.post('/api/auth/refresh', { refreshToken });
-    const payload = data?.data ?? data;
-    // No `remember` argument: keep the tier the session already lives in.
-    setSession({
-      accessToken: payload.accessToken,
-      refreshToken: payload.refreshToken,
-      user: payload.user,
-    });
-    return payload.accessToken as string;
-  } catch {
-    return null;
-  }
-}
 
 api.interceptors.response.use(
   (res) => {
@@ -39,23 +28,24 @@ api.interceptors.response.use(
   },
   async (err: AxiosError) => {
     const original = err.config as InternalAxiosRequestConfig & { _retried?: boolean };
-    if (
-      typeof window !== 'undefined' &&
-      err.response?.status === 401 &&
-      original &&
-      !original._retried &&
-      !original.url?.includes('/auth/login') &&
-      !original.url?.includes('/auth/refresh')
-    ) {
+    if (typeof window !== 'undefined' && err.response?.status === 401 && original && !original._retried) {
       original._retried = true;
-      refreshing = refreshing ?? tryRefresh();
-      const newToken = await refreshing;
-      refreshing = null;
-      if (newToken) {
-        original.headers.Authorization = `Bearer ${newToken}`;
+      /*
+       * One retry against a freshly refreshed session.
+       *
+       * There is no hand-rolled refresh here any more — `refreshSession()` is
+       * Supabase's, and it de-duplicates concurrent callers itself, which is
+       * what the old `refreshing` promise existed to do. A 401 that survives
+       * this is a real one: expired beyond recovery, deactivated account, or a
+       * suspended store.
+       */
+      const { data } = await supabaseBrowser().auth.refreshSession();
+      const token = data.session?.access_token;
+      if (token) {
+        original.headers.Authorization = `Bearer ${token}`;
         return api(original);
       }
-      clearSession();
+      await supabaseBrowser().auth.signOut();
       window.location.href = '/login';
     }
     return Promise.reject(err);

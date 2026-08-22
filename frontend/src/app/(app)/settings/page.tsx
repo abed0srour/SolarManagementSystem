@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
-import { getUser, setUser } from '../../../lib/auth';
+import { getClaims } from '../../../lib/auth';
+import AccountSettings from '../../../components/account-settings';
 import { invalidateCache } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
@@ -31,7 +32,6 @@ export default function SettingsPage() {
   const [finance, setFinance] = useState<any>({});
   const [sequences, setSequences] = useState<any[]>([]);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
-  const [em, setEm] = useState({ currentPassword: '', newEmail: '', code: '', codeSent: false, busy: false });
   const [backup, setBackup] = useState<any>(null);
   const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: 0, hour: 3, minute: 0 });
   const [backupBusy, setBackupBusy] = useState(false);
@@ -40,9 +40,16 @@ export default function SettingsPage() {
   const [restoreLocalOpen, setRestoreLocalOpen] = useState(false);
   const [restoreUploadOpen, setRestoreUploadOpen] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  // Presentation only — /users is independently restricted server-side.
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  useEffect(() => setIsSuperAdmin(getUser()?.role === 'SUPER_ADMIN'), []);
+  /*
+   * Presentation only — /users is independently restricted server-side.
+   *
+   * Managing staff belongs to the Tenant Admin now, not the platform owner: a
+   * store hiring a cashier should not have to ask the platform for an account.
+   */
+  const [canManageUsers, setCanManageUsers] = useState(false);
+  useEffect(() => {
+    getClaims().then((claims) => setCanManageUsers(claims?.role === 'tenant_admin'));
+  }, []);
 
   const load = () => {
     api.get('/settings').then((r) => {
@@ -169,47 +176,8 @@ export default function SettingsPage() {
   // Changed directly against the current password — no emailed code, so this
   // works with no SMTP configured. Changing the email still uses a code, since
   // there the point is proving control of the mailbox.
-  const changePassword = async () => {
-    setPw((p) => ({ ...p, busy: true }));
-    try {
-      await api.post('/auth/change-password', {
-        currentPassword: pw.currentPassword,
-        newPassword: pw.newPassword,
-      });
-      toast.success(t('common.saved'));
-      setPw({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
-    } catch (e) {
-      toast.error(errMsg(e));
-    } finally {
-      setPw((p) => ({ ...p, busy: false }));
-    }
-  };
 
-  const requestEmailChange = async () => {
-    setEm((p) => ({ ...p, busy: true }));
-    try {
-      await api.post('/auth/request-email-change', { currentPassword: em.currentPassword, newEmail: em.newEmail });
-      setEm((p) => ({ ...p, codeSent: true, code: '' }));
-      toast.success(t('auth.codeSent'));
-    } catch (e) {
-      toast.error(errMsg(e));
-    } finally {
-      setEm((p) => ({ ...p, busy: false }));
-    }
-  };
 
-  const confirmEmailChange = async () => {
-    setEm((p) => ({ ...p, busy: true }));
-    try {
-      const { data } = await api.post('/auth/confirm-email-change', { code: em.code });
-      if (data.user) setUser(data.user);
-      toast.success(t('common.saved'));
-      setEm({ currentPassword: '', newEmail: '', code: '', codeSent: false, busy: false });
-    } catch (e) {
-      toast.error(errMsg(e));
-      setEm((p) => ({ ...p, busy: false }));
-    }
-  };
 
   const CodeBanner = () => (
     <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
@@ -229,7 +197,7 @@ export default function SettingsPage() {
           <TabsTrigger value="sequences"><Hash className="me-1.5 h-4 w-4" />{t('settings.sequences')}</TabsTrigger>
           <TabsTrigger value="security"><ShieldCheck className="me-1.5 h-4 w-4" />{t('settings.security')}</TabsTrigger>
           <TabsTrigger value="backup"><DatabaseBackup className="me-1.5 h-4 w-4" />{t('settings.backup')}</TabsTrigger>
-          {isSuperAdmin && (
+          {canManageUsers && (
             <TabsTrigger value="users"><UsersRound className="me-1.5 h-4 w-4" />{t('users.title')}</TabsTrigger>
           )}
         </TabsList>
@@ -394,93 +362,7 @@ export default function SettingsPage() {
         {/* ---- Security ---- */}
         <TabsContent value="security">
           <div className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Change password */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-primary" />{t('auth.changePassword')}</CardTitle>
-                  <CardDescription>{t('auth.changePasswordHint')}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Field label={t('auth.currentPassword')}>
-                    <PasswordInput
-                      autoComplete="current-password"
-                      value={pw.currentPassword}
-                      onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })}
-                    />
-                  </Field>
-                  <Field label={t('auth.newPassword')} hint={t('auth.passwordMinHint')}>
-                    <PasswordInput
-                      autoComplete="new-password"
-                      value={pw.newPassword}
-                      onChange={(e) => setPw({ ...pw, newPassword: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label={t('auth.confirmPassword')}
-                    hint={pwMismatch ? <span className="text-destructive">{t('auth.passwordsDoNotMatch')}</span> : undefined}
-                  >
-                    <PasswordInput
-                      autoComplete="new-password"
-                      className={pwMismatch ? 'border-destructive' : undefined}
-                      value={pw.confirmPassword}
-                      onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })}
-                    />
-                  </Field>
-                  <div className="border-t pt-3">
-                    <Button onClick={changePassword} disabled={pw.busy || !canChangePassword}>
-                      <KeyRound /> {t('auth.changePassword')}
-                    </Button>
-                    <p className="mt-2 text-xs text-muted-foreground">{t('auth.changePasswordSignsOut')}</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Change email */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><Mail className="h-4 w-4 text-primary" />{t('auth.changeEmail')}</CardTitle>
-                  <CardDescription>{t('auth.changeEmailHint')}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Field label={t('auth.currentPassword')}>
-                    <Input type="password" disabled={em.codeSent} value={em.currentPassword} onChange={(e) => setEm({ ...em, currentPassword: e.target.value })} />
-                  </Field>
-                  <Field label={t('auth.newEmail')}>
-                    <Input type="email" disabled={em.codeSent} value={em.newEmail} onChange={(e) => setEm({ ...em, newEmail: e.target.value })} />
-                  </Field>
-                  {em.codeSent ? (
-                    <>
-                      <CodeBanner />
-                      <Field label={t('auth.verificationCode')}>
-                        <Input
-                          inputMode="numeric"
-                          maxLength={6}
-                          className="text-center font-mono text-lg tracking-[0.5em]"
-                          dir="ltr"
-                          value={em.code}
-                          onChange={(e) => setEm({ ...em, code: e.target.value.replace(/\D/g, '') })}
-                        />
-                      </Field>
-                      <div className="flex gap-2 border-t pt-3">
-                        <Button onClick={confirmEmailChange} disabled={em.busy || em.code.length !== 6}>
-                          {t('common.confirm')}
-                        </Button>
-                        <Button variant="outline" onClick={requestEmailChange} disabled={em.busy}>
-                          {t('auth.resendCode')}
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="border-t pt-3">
-                      <Button onClick={requestEmailChange} disabled={em.busy || !em.currentPassword || !em.newEmail.includes('@')}>
-                        <Mail /> {t('auth.sendCode')}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+            <AccountSettings />
 
             {/* Login history */}
             <Card>
@@ -507,7 +389,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Backup & restore ---- */}
-        {isSuperAdmin && (
+        {canManageUsers && (
           <TabsContent value="users">
             <UsersManager />
           </TabsContent>

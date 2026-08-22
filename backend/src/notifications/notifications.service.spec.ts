@@ -43,13 +43,16 @@ function stubPrisma(rows: Row[]) {
   };
 }
 
+/** These tests drive the per-store checks directly, so the sweep is inert here. */
+const sweepStub = { forEachActiveTenant: async (_label: string, job: any) => job({ id: 't1', name: 'Test Store' }) };
+
 /** The helper is private; these tests exercise it as the checks do. */
 const sync = (svc: NotificationsService, ...args: any[]) => (svc as any).syncNotifications(...args);
 
 describe('notification syncing', () => {
   it('creates a notification for a condition that has no row yet', async () => {
     const prisma = stubPrisma([]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     await sync(svc, 'LOW_STOCK', 'Product', [{ id: 'p1', message: 'Low stock: Panel' }]);
 
@@ -63,7 +66,7 @@ describe('notification syncing', () => {
     const prisma = stubPrisma([
       { id: 'n1', type: 'LOW_STOCK', entity: 'Product', entityId: 'p1', message: 'Low stock: Panel', isRead: true },
     ]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     await sync(svc, 'LOW_STOCK', 'Product', [{ id: 'p1', message: 'Low stock: Panel' }]);
 
@@ -76,7 +79,7 @@ describe('notification syncing', () => {
     const prisma = stubPrisma([
       { id: 'n1', type: 'LOW_STOCK', entity: 'Product', entityId: 'p1', message: 'Low stock: Panel', isRead: true },
     ]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     await sync(svc, 'LOW_STOCK', 'Product', []); // restocked
 
@@ -87,7 +90,7 @@ describe('notification syncing', () => {
     // Deleting on resolution is what makes recurrence work. A blanket "never
     // notify twice" rule would leave the second dip silent.
     const prisma = stubPrisma([]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     await sync(svc, 'LOW_STOCK', 'Product', [{ id: 'p1', message: 'low' }]);
     prisma.rows[0].isRead = true;
@@ -104,7 +107,7 @@ describe('notification syncing', () => {
       { id: 'n1', type: 'PAYMENT_DUE', entity: 'PaymentSchedule', entityId: 's1', message: 'due', isRead: false },
       { id: 'n2', type: 'LOW_STOCK', entity: 'Product', entityId: 'p9', message: 'low', isRead: false },
     ]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     // Syncing one (type, entity) pair must not disturb a different pair, even
     // when it clears everything for its own.
@@ -118,7 +121,7 @@ describe('notification syncing', () => {
       { id: 'n1', type: 'LOW_STOCK', entity: 'Product', entityId: 'p1', message: 'low', isRead: true },
       { id: 'n2', type: 'LOW_STOCK', entity: 'Product', entityId: 'pGone', message: 'low', isRead: false },
     ]);
-    const svc = new NotificationsService(prisma as any);
+    const svc = new NotificationsService(prisma as any, sweepStub as any);
 
     await sync(svc, 'LOW_STOCK', 'Product', [
       { id: 'p1', message: 'low' },

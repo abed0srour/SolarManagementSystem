@@ -1,11 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SunMedium, Languages, Eye, EyeOff } from 'lucide-react';
+import { SunMedium, Languages, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, errMsg } from '../../lib/api';
-import { getRememberedEmail, purgeLegacyCredentials, setRememberedEmail, setSession } from '../../lib/auth';
+import { api } from '../../lib/api';
+import { supabaseBrowser } from '../../lib/supabase/client';
+import { claimsFromToken, homeRouteFor, isSuperAdmin } from '../../lib/claims';
+import { getRememberedEmail, purgeLegacySession, setRememberedEmail } from '../../lib/auth';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -25,50 +28,62 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
-  const [resetToken, setResetToken] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // Prefill the email when "Remember me" was used before. The password is
-  // never persisted — purgeLegacyCredentials() also deletes the old cleartext
-  // `rememberedLogin` blob left behind by previous versions.
   useEffect(() => {
-    const migrated = purgeLegacyCredentials();
+    // Clears anything the pre-Supabase session left in Web Storage, and
+    // recovers the email from the old remembered-login blob on the way past.
+    const migrated = purgeLegacySession();
     const saved = getRememberedEmail() ?? migrated;
     if (saved) {
       setEmail(saved);
       setRemember(true);
     }
-  }, []);
+
+    // The middleware sends a suspended store here with a reason attached.
+    const reason = new URLSearchParams(window.location.search).get('reason');
+    if (reason === 'suspended') setNotice(t('auth.storeSuspended'));
+    else if (reason === 'inactive') setNotice(t('auth.storeInactive'));
+  }, [t]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setNotice(null);
     try {
-      if (mode === 'login') {
-        const { data } = await api.post('/auth/login', { email, password });
-        setRememberedEmail(remember ? email : null);
-        setSession(
-          { accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user },
-          remember,
-        );
-        // Honour ?next= so middleware can bounce the admin back where they were.
-        const next = new URLSearchParams(window.location.search).get('next');
-        router.replace(next && next.startsWith('/') ? next : '/dashboard');
-      } else if (mode === 'forgot') {
-        const { data } = await api.post('/auth/forgot-password', { email });
-        if (data.resetToken) {
-          setResetToken(data.resetToken);
-          setMode('reset');
-          toast.info(t('auth.resetToken') + ': ' + data.resetToken.slice(0, 12) + '…');
-        }
-      } else {
-        await api.post('/auth/reset-password', { token: resetToken, newPassword });
-        toast.success(t('common.saved'));
-        setMode('login');
+      const { data, error } = await supabaseBrowser().auth.signInWithPassword({ email, password });
+      if (error) throw error;
+
+      const claims = claimsFromToken(data.session?.access_token);
+      if (!claims) throw new Error(t('auth.sessionFailed'));
+
+      if (!claims.isActive) {
+        await supabaseBrowser().auth.signOut();
+        throw new Error(t('auth.accountDeactivated'));
       }
-    } catch (err) {
-      toast.error(errMsg(err));
+      if (!isSuperAdmin(claims) && !['ACTIVE', 'UNKNOWN'].includes(claims.tenantStatus)) {
+        await supabaseBrowser().auth.signOut();
+        throw new Error(claims.tenantStatus === 'SUSPENDED' ? t('auth.storeSuspended') : t('auth.storeInactive'));
+      }
+
+      setRememberedEmail(remember ? email : null);
+      // Supabase has no notion of this app's own sign-in log, so it is recorded
+      // here. Failure is not worth blocking the login over.
+      api.post('/auth/session').catch(() => {});
+
+      /*
+       * Role decides the destination. The claim was signed by the token hook,
+       * so this needs no lookup — and `?next=` is honoured only for tenant
+       * users, since a deep link into a store page means nothing to the
+       * platform owner.
+       */
+      const home = homeRouteFor(claims);
+      const next = new URLSearchParams(window.location.search).get('next');
+      const target = !isSuperAdmin(claims) && next?.startsWith('/') && !next.startsWith('/superadmin') ? next : home;
+      router.replace(target);
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err?.message ?? t('auth.invalidCredentials'));
     } finally {
       setLoading(false);
     }
@@ -90,60 +105,66 @@ export default function LoginPage() {
           <CardDescription>{t('auth.welcome')}</CardDescription>
         </CardHeader>
         <CardContent>
+          {notice && (
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{notice}</span>
+            </div>
+          )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">{t('auth.email')}</Label>
-              <Input id="email" type="email" dir="ltr" placeholder="e.g. user@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+              <Input
+                id="email"
+                type="email"
+                dir="ltr"
+                placeholder="e.g. user@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
-            {mode === 'login' && (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">{t('auth.password')}</Label>
-                  <div className="relative">
-                    <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" className="pe-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      title={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
-                      onClick={() => setShowPassword((v) => !v)}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                  <input type="checkbox" className="h-4 w-4 accent-primary" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                  {t('auth.rememberMe')}
-                </label>
-              </>
-            )}
-            {mode === 'reset' && (
-              <>
-                <div className="space-y-1.5">
-                  <Label>{t('auth.resetToken')}</Label>
-                  <Input dir="ltr" placeholder="Paste reset token here" value={resetToken} onChange={(e) => setResetToken(e.target.value)} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{t('auth.newPassword')}</Label>
-                  <Input type="password" placeholder="••••••••" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
-                </div>
-              </>
-            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="password">{t('auth.password')}</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  className="pe-10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  title={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                {t('auth.rememberMe')}
+              </label>
+              <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+                {t('auth.forgotPassword')}
+              </Link>
+            </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? t('auth.signingIn') : mode === 'login' ? t('auth.signIn') : mode === 'forgot' ? t('auth.sendResetLink') : t('auth.resetPassword')}
+              {loading ? t('common.loading') : t('auth.signIn')}
             </Button>
-            <div className="text-center">
-              {mode === 'login' ? (
-                <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setMode('forgot')}>
-                  {t('auth.forgotPassword')}
-                </button>
-              ) : (
-                <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setMode('login')}>
-                  {t('auth.backToLogin')}
-                </button>
-              )}
-            </div>
           </form>
         </CardContent>
       </Card>

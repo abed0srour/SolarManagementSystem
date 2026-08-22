@@ -70,6 +70,26 @@ const ROUTE_MODULE: Record<string, PermissionModule> = {
  */
 const ALWAYS_ALLOWED = new Set(['auth', 'notifications', 'cron']);
 
+/**
+ * Platform routes. Not a permission module: they are gated on being the super
+ * admin, which is a different question from "which parts of a store may you
+ * touch". Kept as its own set so `requiredPermission` cannot accidentally
+ * classify them as tenant routes and let a store admin in.
+ */
+const PLATFORM_ROUTES = new Set(['superadmin']);
+
+export function isPlatformRoute(path: string): boolean {
+  const segments = path.replace(/^\/+/, '').split('/');
+  const resource = segments[0] === 'api' ? segments[1] : segments[0];
+  return !!resource && PLATFORM_ROUTES.has(resource);
+}
+
+export function isAlwaysAllowedRoute(path: string): boolean {
+  const segments = path.replace(/^\/+/, '').split('/');
+  const resource = segments[0] === 'api' ? segments[1] : segments[0];
+  return !resource || ALWAYS_ALLOWED.has(resource);
+}
+
 export interface RequiredPermission {
   module: PermissionModule;
   permission: Permission;
@@ -85,6 +105,8 @@ export function requiredPermission(method: string, path: string): RequiredPermis
   const resource = segments[0] === 'api' ? segments[1] : segments[0];
   if (!resource) return null;
   if (ALWAYS_ALLOWED.has(resource)) return null;
+  // Platform routes are decided by SuperAdminGuard, never by a permission.
+  if (PLATFORM_ROUTES.has(resource)) return null;
 
   const module = ROUTE_MODULE[resource];
   if (!module) return undefined;
@@ -100,11 +122,17 @@ const full = (modules: PermissionModule[]): Permission[] =>
 /**
  * What each role grants before per-user overrides.
  *
- * SUPER_ADMIN is deliberately absent: it bypasses the check entirely rather
- * than being handed a list that could drift out of step with new modules.
+ * SUPER_ADMIN is deliberately absent. It is not a store role at all: it manages
+ * tenants and never touches their business data, so giving it store permissions
+ * would be describing access it is not supposed to have.
+ *
+ * ADMIN — the Tenant Admin — now includes `users`. Under multi-tenancy a store
+ * has to be able to manage its own staff; the alternative is every new cashier
+ * account going through the platform owner, which does not scale past the first
+ * customer and hands the platform owner a job that is not theirs.
  */
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  ADMIN: full([...MODULES].filter((m) => m !== 'users') as PermissionModule[]),
+  ADMIN: full([...MODULES]),
   MANAGER: [
     ...full(['catalog', 'inventory', 'sales', 'purchasing', 'operations']),
     ...readOnly(['finance', 'reports', 'workers']),

@@ -67,7 +67,7 @@ export class WarrantyService {
     let underWarranty: boolean | undefined;
 
     if (dto.serialNumber) {
-      const unit = await this.prisma.productUnit.findUnique({ relationLoadStrategy: 'join',
+      const unit = await this.prisma.productUnit.findFirst({ relationLoadStrategy: 'join',
         where: { serialNumber: dto.serialNumber },
         include: { invoice: true },
       });

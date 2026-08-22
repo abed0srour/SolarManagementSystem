@@ -1,13 +1,26 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { effectivePermissions } from './permissions';
+import { SupabaseTokenService } from './supabase-token.service';
+import { isSuperAdmin } from './supabase-claims';
+import { setTenantContext } from '../common/tenant-context';
 
+/**
+ * Verifies the Supabase access token and, just as importantly, establishes
+ * which tenant the rest of the request belongs to.
+ *
+ * The tenant is set here rather than in middleware because middleware runs
+ * before the token has been checked -- and a tenant taken from an unverified
+ * token is worth nothing. `TenantContextMiddleware` opens an empty context at
+ * the start of the request; this guard is what fills it in, inside the same
+ * async execution context, so every query the handler goes on to make is
+ * scoped without a single service having to know about it.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
-    private jwtService: JwtService,
+    private tokens: SupabaseTokenService,
     private reflector: Reflector,
   ) {}
 
@@ -22,27 +35,37 @@ export class JwtAuthGuard implements CanActivate {
     const authHeader: string | undefined = request.headers['authorization'];
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
     if (!token) throw new UnauthorizedException('Missing access token');
-    try {
-      const payload = await this.jwtService.verifyAsync(token);
-      request.user = {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-        /*
-         * Must be carried through: PermissionsGuard reads this, and omitting it
-         * denies every non-super-admin request rather than failing open.
-         *
-         * A token issued before permissions existed has no such claim. Treating
-         * that as "no permissions" would 403 every already-signed-in user until
-         * their token expired, so it is resolved from the role instead — the
-         * same answer the token would carry if it were issued now.
-         */
-        permissions: payload.permissions ?? effectivePermissions(payload.role),
-      };
-      return true;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
+
+    const claims = await this.tokens.verify(token);
+    const superAdmin = isSuperAdmin(claims);
+
+    request.user = {
+      id: claims.sub,
+      email: claims.email ?? '',
+      name: (claims.user_metadata?.full_name as string) ?? claims.email ?? '',
+      /*
+       * The fine-grained role the permission system already speaks. A token
+       * issued before the hook was enabled carries no app_role, so it is
+       * resolved from the coarse role instead -- the same answer the token
+       * would carry if it were issued now.
+       */
+      role: superAdmin ? 'SUPER_ADMIN' : (claims.app_role ?? 'STAFF'),
+      profileRole: claims.role,
+      tenantId: claims.tenant_id ?? null,
+      tenantName: claims.tenant_name ?? null,
+      permissions: claims.permissions?.length
+        ? claims.permissions
+        : effectivePermissions(superAdmin ? 'SUPER_ADMIN' : (claims.app_role ?? 'STAFF')),
+    };
+
+    setTenantContext({
+      mode: claims.tenant_id ? 'TENANT' : 'NONE',
+      tenantId: claims.tenant_id ?? null,
+      userId: claims.sub,
+      role: claims.role ?? null,
+      appRole: request.user.role,
+    });
+
+    return true;
   }
 }

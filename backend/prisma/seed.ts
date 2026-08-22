@@ -1,99 +1,46 @@
-﻿import { PrismaClient, AttributeType } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
-import { randomInt } from 'crypto';
-
-const prisma = new PrismaClient();
-
-const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'abd.srour313@gmail.com';
-const LEGACY_ADMIN_EMAIL = 'admin@solarstore.local';
+import { AttributeType, PrismaClient } from '@prisma/client';
 
 /**
- * The admin password comes from the environment.
+ * Reference and demo data for ONE store.
  *
- * It used to be hardcoded, which meant every deployment of this system shipped
- * with the same known password — and re-running the seed silently reset a
- * changed password back to it. Generating a random one instead makes the
- * insecure case impossible: either the operator chose the password, or nobody
- * knows it but them, and it is printed once here.
+ * Accounts are no longer created here — identity moved to Supabase Auth, and a
+ * seed script has no business writing password hashes. Use `supabase db reset`
+ * (which runs supabase/seed.sql) for local accounts, or
+ * `npm run superadmin:create` for a real environment.
+ *
+ * What is left is catalogue scaffolding: the categories, attribute definitions,
+ * numbering and demo stock a store needs before it is usable. All of it is
+ * per-tenant now, so the target store is named explicitly rather than assumed:
+ *
+ *     SEED_TENANT_SLUG=acme npm run prisma:seed
+ *
+ * Uses a plain PrismaClient with no tenant extension, so every write states its
+ * `tenantId` outright. That is the right trade for a script: there is no request
+ * to infer a tenant from, and being forced to name it means the seed cannot
+ * quietly write into the wrong store.
  */
-function resolveAdminPassword(): { password: string; generated: boolean } {
-  const fromEnv = process.env.SEED_ADMIN_PASSWORD;
-  if (fromEnv) {
-    if (fromEnv.length < 8) throw new Error('SEED_ADMIN_PASSWORD must be at least 8 characters');
-    return { password: fromEnv, generated: false };
-  }
-  // Ambiguity-free alphabet: this gets read off a terminal and typed by hand.
-  const alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const password = Array.from({ length: 20 }, () => alphabet[randomInt(alphabet.length)]).join('');
-  return { password, generated: true };
-}
+const prisma = new PrismaClient();
+
+const TENANT_SLUG = process.env.SEED_TENANT_SLUG ?? 'default';
 
 async function main() {
-  // Admin user — the legacy admin (if present) is renamed in place so all of
-  // its history (orders, audit logs, …) stays attached to the same user row.
-  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
-  const legacy = await prisma.user.findUnique({ where: { email: LEGACY_ADMIN_EMAIL } });
-  const existing = admin ?? legacy;
-
-  // The seed is re-run to add reference data, not to reset credentials. An
-  // existing admin keeps the password they chose unless SEED_ADMIN_PASSWORD
-  // explicitly asks otherwise — silently reverting it would lock the owner out
-  // of an account they had already secured.
-  const resetPassword = !existing || !!process.env.SEED_ADMIN_PASSWORD;
-  const { password: adminPassword, generated } = resetPassword
-    ? resolveAdminPassword()
-    : { password: '', generated: false };
-  const credentials = resetPassword
-    ? { passwordHash: await bcrypt.hash(adminPassword, 10) }
-    : {};
-
-  if (admin) {
-    await prisma.user.update({
-      where: { id: admin.id },
-      data: { ...credentials, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
-    });
-    if (legacy) {
-      // Both exist: keep the new one, remove the legacy account (fall back to
-      // deactivating it when foreign keys still reference it).
-      try {
-        await prisma.user.delete({ where: { id: legacy.id } });
-      } catch {
-        await prisma.user.update({ where: { id: legacy.id }, data: { isActive: false, deletedAt: new Date() } });
-      }
-    }
-  } else if (legacy) {
-    await prisma.user.update({
-      where: { id: legacy.id },
-      data: { ...credentials, email: ADMIN_EMAIL, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
-    });
-  } else {
-    await prisma.user.create({
-      data: { email: ADMIN_EMAIL, passwordHash: credentials.passwordHash!, name: 'Admin', role: 'ADMIN' },
-    });
+  const tenant = await prisma.tenant.findUnique({ where: { slug: TENANT_SLUG } });
+  if (!tenant) {
+    throw new Error(
+      `No store with slug "${TENANT_SLUG}". Create one from the super admin dashboard, or run \`supabase db reset\` to get the default store.`,
+    );
   }
-
-  if (resetPassword && generated) {
-    // Printed once, never stored anywhere else. Change it after first login.
-    console.log('\n' + '='.repeat(64));
-    console.log(`  Admin account: ${ADMIN_EMAIL}`);
-    console.log(`  Generated password: ${adminPassword}`);
-    console.log('  Save it now — it is not recoverable, and this is the only');
-    console.log('  time it is shown. Set SEED_ADMIN_PASSWORD to choose your own.');
-    console.log('='.repeat(64) + '\n');
-  } else if (resetPassword) {
-    console.log(`Admin account ${ADMIN_EMAIL} set to the password in SEED_ADMIN_PASSWORD.`);
-  } else {
-    console.log(`Admin account ${ADMIN_EMAIL} already exists — password left unchanged.`);
-  }
+  const tenantId = tenant.id;
+  console.log(`Seeding store: ${tenant.name} (${tenant.slug})`);
 
   // Default warehouse
-  await prisma.warehouse.upsert({
-    where: { name: 'Main Warehouse' },
+  const warehouse = await prisma.warehouse.upsert({
+    where: { tenantId_name: { tenantId, name: 'Main Warehouse' } },
     update: {},
-    create: { name: 'Main Warehouse', isDefault: true },
+    create: { tenantId, name: 'Main Warehouse', isDefault: true },
   });
 
-  // Number sequences
+  // Number sequences — each store counts its own documents from 1.
   const sequences: [string, string][] = [
     ['INVOICE', 'INV-'],
     ['QUOTATION', 'QT-'],
@@ -110,25 +57,27 @@ async function main() {
   ];
   for (const [entity, prefix] of sequences) {
     await prisma.numberSequence.upsert({
-      where: { entity },
+      where: { tenantId_entity: { tenantId, entity } },
       update: {},
-      create: { entity, prefix, nextNumber: 1, padding: 5 },
+      create: { tenantId, entity, prefix, nextNumber: 1, padding: 5 },
     });
   }
 
   // Settings
   await prisma.setting.upsert({
-    where: { key: 'company' },
+    where: { tenantId_key: { tenantId, key: 'company' } },
     update: {},
     create: {
+      tenantId,
       key: 'company',
-      value: { name: 'Solar Store', address: '', phone: '', email: '', taxNumber: '', logoUrl: '' },
+      value: { name: tenant.name, address: '', phone: '', email: '', taxNumber: '', logoUrl: '' },
     },
   });
   await prisma.setting.upsert({
-    where: { key: 'finance' },
+    where: { tenantId_key: { tenantId, key: 'finance' } },
     update: {},
     create: {
+      tenantId,
       key: 'finance',
       value: { defaultTaxRatePct: 11, baseCurrency: 'USD', secondaryCurrency: 'LBP', exchangeRate: 89500 },
     },
@@ -136,19 +85,19 @@ async function main() {
 
   // Categories with attribute definitions
   const solar = await prisma.category.upsert({
-    where: { name: 'Solar Panels' },
+    where: { tenantId_name: { tenantId, name: 'Solar Panels' } },
     update: {},
-    create: { name: 'Solar Panels', description: 'Photovoltaic solar panels' },
+    create: { tenantId, name: 'Solar Panels', description: 'Photovoltaic solar panels' },
   });
   const inverters = await prisma.category.upsert({
-    where: { name: 'Inverters' },
+    where: { tenantId_name: { tenantId, name: 'Inverters' } },
     update: {},
-    create: { name: 'Inverters', description: 'Solar inverters' },
+    create: { tenantId, name: 'Inverters', description: 'Solar inverters' },
   });
   const batteries = await prisma.category.upsert({
-    where: { name: 'Batteries' },
+    where: { tenantId_name: { tenantId, name: 'Batteries' } },
     update: {},
-    create: { name: 'Batteries', description: 'Energy storage batteries' },
+    create: { tenantId, name: 'Batteries', description: 'Energy storage batteries' },
   });
 
   type AttrDef = { name: string; label: string; type: AttributeType; unit?: string; options?: string[]; required?: boolean };
@@ -157,7 +106,7 @@ async function main() {
     const sub = await prisma.subCategory.upsert({
       where: { categoryId_name: { categoryId, name } },
       update: {},
-      create: { categoryId, name },
+      create: { tenantId, categoryId, name },
     });
     let order = 0;
     for (const a of attrs) {
@@ -165,6 +114,7 @@ async function main() {
         where: { subCategoryId_name: { subCategoryId: sub.id, name: a.name } },
         update: {},
         create: {
+          tenantId,
           subCategoryId: sub.id,
           name: a.name,
           label: a.label,
@@ -217,7 +167,6 @@ async function main() {
   await subCatWithAttrs(batteries.id, 'Lead-acid (Gel)', batteryAttrs);
 
   // Demo products so the solar sizing calculator has stock to recommend
-  const warehouse = await prisma.warehouse.findUniqueOrThrow({ where: { name: 'Main Warehouse' } });
   const demoProducts = [
     { sku: 'PAN-JINKO-580', name: 'Jinko Tiger Neo 580W', brand: 'Jinko', model: 'JKM580N-72HL4', subCategoryId: monoSub.id, attributes: { wattage: 580, efficiency: 22.3 }, costPrice: 95, salePrice: 135, warrantyMonths: 144, performanceWarrantyMonths: 300, qty: 60 },
     { sku: 'PAN-LONGI-555', name: 'LONGi Hi-MO 6 555W', brand: 'LONGi', model: 'LR5-72HTH-555M', subCategoryId: monoSub.id, attributes: { wattage: 555, efficiency: 21.5 }, costPrice: 88, salePrice: 125, warrantyMonths: 144, performanceWarrantyMonths: 300, qty: 40 },
@@ -229,18 +178,18 @@ async function main() {
   for (const p of demoProducts) {
     const { qty, ...data } = p;
     const product = await prisma.product.upsert({
-      where: { sku: p.sku },
+      where: { tenantId_sku: { tenantId, sku: p.sku } },
       update: {},
-      create: { ...data, trackSerials: false },
+      create: { ...data, tenantId, trackSerials: false },
     });
     await prisma.stockLevel.upsert({
       where: { productId_warehouseId: { productId: product.id, warehouseId: warehouse.id } },
       update: {},
-      create: { productId: product.id, warehouseId: warehouse.id, quantity: qty },
+      create: { tenantId, productId: product.id, warehouseId: warehouse.id, quantity: qty },
     });
   }
 
-  console.log('Seed completed: admin user, warehouse, categories, sequences, settings, demo products.');
+  console.log(`Seed completed for ${tenant.name}: warehouse, categories, sequences, settings, demo products.`);
 }
 
 main()

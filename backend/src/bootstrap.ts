@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { ResponseInterceptor } from './common/response.interceptor';
 import { isServerless } from './common/runtime';
+import { tenantContextMiddleware } from './common/tenant-context.middleware';
 
 /**
  * Builds the configured Nest application without starting a listener.
@@ -26,6 +27,12 @@ export async function createApp(): Promise<NestExpressApplication> {
     // are noise, but warnings and errors still matter.
     logger: isServerless() ? ['error', 'warn', 'log'] : undefined,
   });
+  /*
+   * First in the chain, deliberately. Everything downstream -- guards, the
+   * controller, every service it calls -- runs inside this context, and the
+   * Prisma extension refuses any tenant-scoped query issued outside one.
+   */
+  app.use(tenantContextMiddleware);
   app.setGlobalPrefix('api');
   app.enableCors({ origin: corsOrigins(), credentials: true });
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

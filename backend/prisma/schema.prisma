@@ -11,11 +11,156 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ============ Tenancy ============
+
+enum TenantStatus {
+  /// Fully operational.
+  ACTIVE
+  /// Blocked at login. Data is untouched; reactivating restores access exactly.
+  SUSPENDED
+  /// Retired by the super admin. Behaves like SUSPENDED and is hidden by default.
+  ARCHIVED
+}
+
+/// A store / organization. This is the hard boundary of the system: no query
+/// issued on behalf of a tenant user can read or write a row owned by another
+/// tenant. Enforcement is central rather than per-query — see
+/// `src/prisma/tenant-scope.ts`, which rewrites every Prisma operation before
+/// it reaches the database.
+///
+/// Note on `tenantId String @default("")` throughout this schema: the empty
+/// default is a TypeScript affordance, not a real value. Without it the
+/// generated types would demand `tenantId` on every one of the ~100 `create()`
+/// calls in this codebase, which is exactly the per-call-site discipline the
+/// scoping extension exists to remove — and one forgotten call site is a
+/// cross-tenant bug. The default is never written: the extension stamps the
+/// real tenant on every create, and if anything ever slipped past it, `""`
+/// matches no Tenant and the foreign key rejects the row. Fail-closed either
+/// way.
+model Tenant {
+  id           String       @id @default(uuid())
+  /// Store name, shown throughout that tenant's own UI.
+  name         String
+  /// URL-safe handle, unique across the platform.
+  slug         String       @unique
+  status       TenantStatus @default(ACTIVE)
+  contactEmail String?
+  contactPhone String?
+  notes        String?
+
+  /// Access limits, enforced when the tenant creates records. Null = unlimited.
+  maxUsers    Int?
+  maxProducts Int?
+  maxClients  Int?
+  /// Hard cut-off for access, e.g. the end of a paid period. Null never expires.
+  expiresAt   DateTime?
+
+  suspendedAt     DateTime?
+  suspendedReason String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  categories           Category[]
+  subCategories        SubCategory[]
+  attributeDefinitions AttributeDefinition[]
+  products             Product[]
+  priceHistory         PriceHistory[]
+  compatibilityLinks   CompatibilityLink[]
+  warehouses           Warehouse[]
+  stockLevels          StockLevel[]
+  productUnits         ProductUnit[]
+  stockMovements       StockMovement[]
+  clients              Client[]
+  clientAddresses      ClientAddress[]
+  suppliers            Supplier[]
+  supplierProducts     SupplierProduct[]
+  quotations           Quotation[]
+  quotationItems       QuotationItem[]
+  salesOrders          SalesOrder[]
+  salesOrderItems      SalesOrderItem[]
+  purchaseOrders       PurchaseOrder[]
+  purchaseOrderItems   PurchaseOrderItem[]
+  goodsReceipts        GoodsReceipt[]
+  invoices             Invoice[]
+  invoiceItems         InvoiceItem[]
+  payments             Payment[]
+  paymentSchedules     PaymentSchedule[]
+  refunds              Refund[]
+  returnItems          ReturnItem[]
+  supplierReturns      SupplierReturn[]
+  warrantyClaims       WarrantyClaim[]
+  serviceJobs          ServiceJob[]
+  installations        Installation[]
+  energyReadings       EnergyReading[]
+  maintenanceContracts MaintenanceContract[]
+  expenses             Expense[]
+  notifications        Notification[]
+  settings             Setting[]
+  numberSequences      NumberSequence[]
+  workers              Worker[]
+  attendanceEntries    AttendanceEntry[]
+  attachments          Attachment[]
+  users                User[]
+  auditLogs            AuditLog[]
+  loginHistory         LoginHistory[]
+  backupLogs           BackupLog[]
+  profiles             Profile[]
+
+  @@index([status])
+}
+
+/// The Supabase Auth projection of an account: which store it belongs to and
+/// what it may do there. Created by the `on_auth_user_created` trigger and read
+/// by the Custom Access Token Hook, which signs `role` and `tenant_id` into
+/// every access token.
+///
+/// Defined in SQL rather than by Prisma, because it holds a foreign key into
+/// `auth.users` — a schema Prisma does not manage. This model exists so the API
+/// can read and write it with the same client as everything else; the source of
+/// truth for its shape is
+/// `supabase/migrations/20260822091000_profiles_and_signup_trigger.sql`.
+model Profile {
+  id String @id @db.Uuid
+
+  /// Owning tenant. Null on platform-level rows that belong to no store (the super admin).
+  tenantId String? @map("tenant_id")
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email       String
+  /// Coarse tier: super_admin | tenant_admin | staff.
+  role        String   @default("staff")
+  /// Fine-grained application role: ADMIN | MANAGER | STAFF | VIEWER.
+  appRole     String   @default("STAFF") @map("app_role")
+  permissions String[] @default([])
+  fullName    String?  @map("full_name")
+  phone       String?
+  avatarUrl   String?  @map("avatar_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([tenantId])
+  @@map("profiles")
+}
+
 // ============ Users, Auth & Audit ============
 
+/// Two tiers live in one enum, separated by `User.tenantId`:
+///
+///   - SUPER_ADMIN is a *platform* role. It always has `tenantId = null`, owns no
+///     store data of its own, and is the only role that can create or suspend
+///     tenants. It is deliberately barred from tenant business endpoints — see
+///     `PermissionsGuard` — so "manages every store" never quietly becomes
+///     "reads every store's ledger".
+///   - Everything below it is a *tenant* role and always carries a `tenantId`.
+///     ADMIN is the Tenant Admin: full access inside its own store, including
+///     managing that store's own staff accounts.
 enum Role {
-  /// Owns the system: full access plus the only role that can manage accounts.
+  /// Platform owner. Not a member of any tenant.
   SUPER_ADMIN
+  /// Tenant Admin: owns one store and everything in it.
   ADMIN
   MANAGER
   STAFF
@@ -23,9 +168,15 @@ enum Role {
 }
 
 model User {
-  id                  String    @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Null on platform-level rows that belong to no store (the super admin).
+  tenantId            String?
+  tenant              Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   email               String    @unique
-  passwordHash        String
+  /// Legacy: credentials moved to `auth.users` when Supabase Auth took over.
+  /// Kept (and nullable) so no historic row was rewritten by that migration.
+  passwordHash        String?
   name                String
   role                Role      @default(STAFF)
   /// Per-account override of the role's default permissions. Empty means "use
@@ -38,38 +189,40 @@ model User {
   createdAt           DateTime  @default(now())
   deletedAt           DateTime?
 
-  refreshTokens     RefreshToken[]
-  resetTokens       PasswordResetToken[]
-  verificationCodes VerificationCode[]
-  loginHistory     LoginHistory[]
-  auditLogs        AuditLog[]
-  priceChanges     PriceHistory[]
-  stockMovements   StockMovement[]
-  quotations       Quotation[]
-  salesOrders      SalesOrder[]
-  salesOrdersClaimed SalesOrder[]       @relation("SalesOrderClaimedBy")
-  purchaseOrders   PurchaseOrder[]
-  invoices         Invoice[]
-  payments         Payment[]
-  refundsCreated   Refund[]             @relation("RefundCreatedBy")
-  refundsApproved  Refund[]             @relation("RefundApprovedBy")
-  warrantyClaims   WarrantyClaim[]
-  serviceJobs      ServiceJob[]
-  goodsReceipts    GoodsReceipt[]
-  attachments      Attachment[]
-  installations    Installation[]
-  expenses         Expense[]
-  supplierReturns  SupplierReturn[]
+  refreshTokens      RefreshToken[]
+  resetTokens        PasswordResetToken[]
+  verificationCodes  VerificationCode[]
+  loginHistory       LoginHistory[]
+  auditLogs          AuditLog[]
+  priceChanges       PriceHistory[]
+  stockMovements     StockMovement[]
+  quotations         Quotation[]
+  salesOrders        SalesOrder[]
+  salesOrdersClaimed SalesOrder[]         @relation("SalesOrderClaimedBy")
+  purchaseOrders     PurchaseOrder[]
+  invoices           Invoice[]
+  payments           Payment[]
+  refundsCreated     Refund[]             @relation("RefundCreatedBy")
+  refundsApproved    Refund[]             @relation("RefundApprovedBy")
+  warrantyClaims     WarrantyClaim[]
+  serviceJobs        ServiceJob[]
+  goodsReceipts      GoodsReceipt[]
+  attachments        Attachment[]
+  installations      Installation[]
+  expenses           Expense[]
+  supplierReturns    SupplierReturn[]
+
+  @@index([tenantId])
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -102,7 +255,11 @@ model VerificationCode {
 }
 
 model LoginHistory {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Null on platform-level rows that belong to no store (the super admin).
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
   email     String
@@ -112,10 +269,15 @@ model LoginHistory {
   createdAt DateTime @default(now())
 
   @@index([email, createdAt])
+  @@index([tenantId])
 }
 
 model AuditLog {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Null on platform-level rows that belong to no store (the super admin).
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
   action    String
@@ -126,10 +288,15 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([tenantId])
 }
 
 model Attachment {
-  id           String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId     String   @default("")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   entity       String // e.g. "Product", "Client", "WarrantyClaim", "ServiceJob", "Supplier", "Company"
   entityId     String
   filename     String
@@ -142,21 +309,33 @@ model Attachment {
   createdAt    DateTime @default(now())
 
   @@index([entity, entityId])
+  @@index([tenantId])
 }
 
 // ============ Catalog ============
 
 model Category {
-  id            String        @id @default(uuid())
-  name          String        @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
   description   String?
   createdAt     DateTime      @default(now())
   deletedAt     DateTime?
   subCategories SubCategory[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model SubCategory {
-  id            String                @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String                @default("")
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   categoryId    String
   category      Category              @relation(fields: [categoryId], references: [id])
   name          String
@@ -166,6 +345,7 @@ model SubCategory {
   products      Product[]
 
   @@unique([categoryId, name])
+  @@index([tenantId])
 }
 
 enum AttributeType {
@@ -177,7 +357,11 @@ enum AttributeType {
 }
 
 model AttributeDefinition {
-  id            String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   subCategoryId String
   subCategory   SubCategory   @relation(fields: [subCategoryId], references: [id], onDelete: Cascade)
   name          String // machine key, e.g. "wattage"
@@ -189,24 +373,29 @@ model AttributeDefinition {
   sortOrder     Int           @default(0)
 
   @@unique([subCategoryId, name])
+  @@index([tenantId])
 }
 
 model Product {
-  id                        String    @id @default(uuid())
-  sku                       String    @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId                  String      @default("")
+  tenant                    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sku                       String
   name                      String
   brand                     String?
   model                     String?
   subCategoryId             String
   subCategory               SubCategory @relation(fields: [subCategoryId], references: [id])
-  attributes                Json      @default("{}") // flexible technical specs per sub-category
-  costPrice                 Decimal   @db.Decimal(12, 2)
-  salePrice                 Decimal   @db.Decimal(12, 2)
-  priceUpdatedAt            DateTime  @default(now())
+  attributes                Json        @default("{}") // flexible technical specs per sub-category
+  costPrice                 Decimal     @db.Decimal(12, 2)
+  salePrice                 Decimal     @db.Decimal(12, 2)
+  priceUpdatedAt            DateTime    @default(now())
   // Services (installation, delivery…) are sellable but carry no stock
-  isService                 Boolean   @default(false)
+  isService                 Boolean     @default(false)
   /// Capture a serial per unit when goods are received.
-  trackSerials              Boolean   @default(true)
+  trackSerials              Boolean     @default(true)
   /// Ask which specific units are leaving when an order is confirmed.
   ///
   /// Separate from `trackSerials` because the two directions have different
@@ -214,16 +403,16 @@ model Product {
   /// customer, so they are worth recording against a supplier on the way in
   /// but not worth matching one by one on the way out. An inverter is worth
   /// both, because a warranty claim needs to know which unit went where.
-  requireSerialOnSale       Boolean   @default(true)
-  lowStockThreshold         Int       @default(5)
+  requireSerialOnSale       Boolean     @default(true)
+  lowStockThreshold         Int         @default(5)
   warrantyMonths            Int? // product warranty
   performanceWarrantyMonths Int? // panels: output/performance warranty
   shelfLifeMonths           Int? // lead-acid batteries
   barcode                   String?
   imageUrl                  String?
   notes                     String?
-  isActive                  Boolean   @default(true)
-  createdAt                 DateTime  @default(now())
+  isActive                  Boolean     @default(true)
+  createdAt                 DateTime    @default(now())
   deletedAt                 DateTime?
 
   priceHistory       PriceHistory[]
@@ -240,13 +429,19 @@ model Product {
   compatibleFrom     CompatibilityLink[] @relation("CompatFrom")
   compatibleTo       CompatibilityLink[] @relation("CompatTo")
 
+  @@unique([tenantId, sku])
   @@index([name])
   @@index([brand])
   @@index([subCategoryId])
+  @@index([tenantId])
 }
 
 model PriceHistory {
-  id           String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId     String   @default("")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId    String
   product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   oldCostPrice Decimal? @db.Decimal(12, 2)
@@ -259,10 +454,15 @@ model PriceHistory {
   createdAt    DateTime @default(now())
 
   @@index([productId, createdAt])
+  @@index([tenantId])
 }
 
 model CompatibilityLink {
-  id               String  @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId         String  @default("")
+  tenant           Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId        String
   product          Product @relation("CompatFrom", fields: [productId], references: [id], onDelete: Cascade)
   compatibleWithId String
@@ -270,29 +470,41 @@ model CompatibilityLink {
   note             String?
 
   @@unique([productId, compatibleWithId])
+  @@index([tenantId])
 }
 
 // ============ Inventory ============
 
 model Warehouse {
-  id        String    @id @default(uuid())
-  name      String    @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId  String    @default("")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
   address   String?
   isDefault Boolean   @default(false)
   isActive  Boolean   @default(true)
   deletedAt DateTime?
 
-  stockLevels    StockLevel[]
-  units          ProductUnit[]
-  movementsFrom  StockMovement[] @relation("MoveFrom")
-  movementsTo    StockMovement[] @relation("MoveTo")
-  salesOrders    SalesOrder[]
-  purchaseOrders PurchaseOrder[]
+  stockLevels     StockLevel[]
+  units           ProductUnit[]
+  movementsFrom   StockMovement[]  @relation("MoveFrom")
+  movementsTo     StockMovement[]  @relation("MoveTo")
+  salesOrders     SalesOrder[]
+  purchaseOrders  PurchaseOrder[]
   supplierReturns SupplierReturn[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model StockLevel {
-  id          String    @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId    String    @default("")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId   String
   product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouseId String
@@ -301,6 +513,7 @@ model StockLevel {
   reserved    Int       @default(0)
 
   @@unique([productId, warehouseId])
+  @@index([tenantId])
 }
 
 enum UnitStatus {
@@ -313,29 +526,35 @@ enum UnitStatus {
 }
 
 model ProductUnit {
-  id                         String     @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId                   String         @default("")
+  tenant                     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId                  String
-  product                    Product    @relation(fields: [productId], references: [id])
-  serialNumber               String     @unique
-  status                     UnitStatus @default(IN_STOCK)
+  product                    Product        @relation(fields: [productId], references: [id])
+  serialNumber               String
+  status                     UnitStatus     @default(IN_STOCK)
   warehouseId                String?
-  warehouse                  Warehouse? @relation(fields: [warehouseId], references: [id])
+  warehouse                  Warehouse?     @relation(fields: [warehouseId], references: [id])
   manufactureDate            DateTime?
   purchaseOrderId            String?
   purchaseOrder              PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   salesOrderId               String?
-  salesOrder                 SalesOrder? @relation(fields: [salesOrderId], references: [id])
+  salesOrder                 SalesOrder?    @relation(fields: [salesOrderId], references: [id])
   invoiceId                  String?
-  invoice                    Invoice?   @relation(fields: [invoiceId], references: [id])
+  invoice                    Invoice?       @relation(fields: [invoiceId], references: [id])
   warrantyStartDate          DateTime?
   warrantyEndDate            DateTime?
   performanceWarrantyEndDate DateTime?
-  createdAt                  DateTime   @default(now())
+  createdAt                  DateTime       @default(now())
 
   warrantyClaims WarrantyClaim[]
 
+  @@unique([tenantId, serialNumber])
   @@index([productId, status])
   @@index([warrantyEndDate])
+  @@index([tenantId])
 }
 
 enum MovementType {
@@ -348,7 +567,11 @@ enum MovementType {
 }
 
 model StockMovement {
-  id            String       @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String       @default("")
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId     String
   product       Product      @relation(fields: [productId], references: [id])
   warehouseId   String
@@ -356,7 +579,7 @@ model StockMovement {
   toWarehouseId String?
   toWarehouse   Warehouse?   @relation("MoveTo", fields: [toWarehouseId], references: [id])
   type          MovementType
-  quantity      Decimal  @db.Decimal(12, 3)
+  quantity      Decimal      @db.Decimal(12, 3)
   reason        String?
   refType       String? // e.g. "SalesOrder", "PurchaseOrder", "Refund"
   refId         String?
@@ -365,6 +588,7 @@ model StockMovement {
   createdAt     DateTime     @default(now())
 
   @@index([productId, createdAt])
+  @@index([tenantId])
 }
 
 // ============ Parties ============
@@ -381,7 +605,11 @@ enum ClientTier {
 }
 
 model Client {
-  id          String     @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId    String     @default("")
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String
   type        ClientType @default(INDIVIDUAL)
   tier        ClientTier @default(RETAIL)
@@ -406,10 +634,15 @@ model Client {
   installations  Installation[]
 
   @@index([name])
+  @@index([tenantId])
 }
 
 model ClientAddress {
-  id             String  @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId       String  @default("")
+  tenant         Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   clientId       String
   client         Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   label          String  @default("Main")
@@ -417,10 +650,16 @@ model ClientAddress {
   city           String?
   isBilling      Boolean @default(true)
   isInstallation Boolean @default(false)
+
+  @@index([tenantId])
 }
 
 model Supplier {
-  id           String    @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId     String    @default("")
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   contactName  String?
   email        String?
@@ -440,10 +679,15 @@ model Supplier {
   supplierReturns SupplierReturn[]
 
   @@index([name])
+  @@index([tenantId])
 }
 
 model SupplierProduct {
-  id            String   @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String   @default("")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   supplierId    String
   supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   productId     String
@@ -453,6 +697,7 @@ model SupplierProduct {
   updatedAt     DateTime @updatedAt
 
   @@unique([supplierId, productId])
+  @@index([tenantId])
 }
 
 // ============ Sales Cycle ============
@@ -471,8 +716,12 @@ enum QuotationStatus {
 }
 
 model Quotation {
-  id            String          @id @default(uuid())
-  number        String          @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String          @default("")
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number        String
   clientId      String
   client        Client          @relation(fields: [clientId], references: [id])
   status        QuotationStatus @default(DRAFT)
@@ -490,11 +739,17 @@ model Quotation {
   items       QuotationItem[]
   salesOrders SalesOrder[]
 
+  @@unique([tenantId, number])
   @@index([status])
+  @@index([tenantId])
 }
 
 model QuotationItem {
-  id            String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   quotationId   String
   quotation     Quotation     @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   productId     String?
@@ -507,13 +762,14 @@ model QuotationItem {
   discountValue Decimal       @default(0) @db.Decimal(12, 2)
   lineTotal     Decimal       @db.Decimal(12, 2)
 
-  isComposite   Boolean       @default(false)
-  autoPrice     Boolean       @default(true)
-  parentItemId  String?
-  parentItem    QuotationItem?  @relation("QuotationItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
-  subItems      QuotationItem[] @relation("QuotationItemTree")
+  isComposite  Boolean         @default(false)
+  autoPrice    Boolean         @default(true)
+  parentItemId String?
+  parentItem   QuotationItem?  @relation("QuotationItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
+  subItems     QuotationItem[] @relation("QuotationItemTree")
 
   @@index([parentItemId])
+  @@index([tenantId])
 }
 
 enum SalesOrderStatus {
@@ -525,40 +781,44 @@ enum SalesOrderStatus {
 }
 
 model SalesOrder {
-  id            String           @id @default(uuid())
-  number        String           @unique
-  clientId      String
-  client        Client           @relation(fields: [clientId], references: [id])
-  quotationId   String?
-  quotation     Quotation?       @relation(fields: [quotationId], references: [id])
-  warehouseId   String
-  warehouse     Warehouse        @relation(fields: [warehouseId], references: [id])
-  status        SalesOrderStatus @default(PENDING)
-  orderDate     DateTime         @default(now())
-  discountType  DiscountType?
-  discountValue Decimal          @default(0) @db.Decimal(12, 2)
-  subtotal      Decimal          @default(0) @db.Decimal(12, 2)
-  shippingFee   Decimal          @default(0) @db.Decimal(12, 2)
-  total         Decimal          @default(0) @db.Decimal(12, 2)
-  notes         String?
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId              String           @default("")
+  tenant                Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number                String
+  clientId              String
+  client                Client           @relation(fields: [clientId], references: [id])
+  quotationId           String?
+  quotation             Quotation?       @relation(fields: [quotationId], references: [id])
+  warehouseId           String
+  warehouse             Warehouse        @relation(fields: [warehouseId], references: [id])
+  status                SalesOrderStatus @default(PENDING)
+  orderDate             DateTime         @default(now())
+  discountType          DiscountType?
+  discountValue         Decimal          @default(0) @db.Decimal(12, 2)
+  subtotal              Decimal          @default(0) @db.Decimal(12, 2)
+  shippingFee           Decimal          @default(0) @db.Decimal(12, 2)
+  total                 Decimal          @default(0) @db.Decimal(12, 2)
+  notes                 String?
   /// Print bundle contents on the customer's invoice. Off by default: the
   /// customer sees one package line, the warehouse still sees every component.
-  showSubItemsOnInvoice Boolean   @default(false)
+  showSubItemsOnInvoice Boolean          @default(false)
 
   /// Short code printed on the POS receipt. The customer brings it to the
   /// warehouse, where it is the only thing needed to find and release the goods.
-  pickupCode    String?          @unique
+  pickupCode  String?
   /// Set the moment the warehouse hands the goods over. Also the guard that
   /// stops one receipt being claimed twice.
-  claimedAt     DateTime?
-  claimedById   String?
-  claimedBy     User?            @relation("SalesOrderClaimedBy", fields: [claimedById], references: [id])
-  claimNotes    String?
+  claimedAt   DateTime?
+  claimedById String?
+  claimedBy   User?     @relation("SalesOrderClaimedBy", fields: [claimedById], references: [id])
+  claimNotes  String?
 
-  createdById   String
-  createdBy     User             @relation(fields: [createdById], references: [id])
-  createdAt     DateTime         @default(now())
-  deletedAt     DateTime?
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 
   items         SalesOrderItem[]
   invoices      Invoice[]
@@ -566,12 +826,19 @@ model SalesOrder {
   units         ProductUnit[]
   installations Installation[]
 
+  @@unique([tenantId, number])
+  @@unique([tenantId, pickupCode])
   @@index([status])
   @@index([clientId])
+  @@index([tenantId])
 }
 
 model SalesOrderItem {
-  id            String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   salesOrderId  String
   salesOrder    SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
   // Null on composite bundle headers and on descriptive sub-items, which are
@@ -591,14 +858,15 @@ model SalesOrderItem {
   deliveredQty  Int           @default(0)
 
   /// True on a bundle header. Its own price is the sum of its sub-items unless overridden.
-  isComposite   Boolean       @default(false)
+  isComposite  Boolean          @default(false)
   /// When true the bundle price is recomputed from its sub-items on every save.
-  autoPrice     Boolean       @default(true)
-  parentItemId  String?
-  parentItem    SalesOrderItem?  @relation("SalesOrderItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
-  subItems      SalesOrderItem[] @relation("SalesOrderItemTree")
+  autoPrice    Boolean          @default(true)
+  parentItemId String?
+  parentItem   SalesOrderItem?  @relation("SalesOrderItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
+  subItems     SalesOrderItem[] @relation("SalesOrderItemTree")
 
   @@index([parentItemId])
+  @@index([tenantId])
 }
 
 enum PurchaseOrderStatus {
@@ -611,8 +879,12 @@ enum PurchaseOrderStatus {
 }
 
 model PurchaseOrder {
-  id               String              @id @default(uuid())
-  number           String              @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId         String              @default("")
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number           String
   supplierId       String
   supplier         Supplier            @relation(fields: [supplierId], references: [id])
   warehouseId      String
@@ -642,12 +914,18 @@ model PurchaseOrder {
   payments      Payment[]
   returns       SupplierReturn[]
 
+  @@unique([tenantId, number])
   @@index([status])
   @@index([supplierId])
+  @@index([tenantId])
 }
 
 model PurchaseOrderItem {
-  id              String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId        String        @default("")
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   productId       String
@@ -657,10 +935,16 @@ model PurchaseOrderItem {
   receivedQty     Int           @default(0)
   returnedQty     Int           @default(0)
   lineTotal       Decimal       @db.Decimal(12, 2)
+
+  @@index([tenantId])
 }
 
 model GoodsReceipt {
-  id              String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId        String        @default("")
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   receivedAt      DateTime      @default(now())
@@ -669,6 +953,8 @@ model GoodsReceipt {
   items           Json // [{ productId, quantity, serialNumbers: [] }]
   createdById     String
   createdBy       User          @relation(fields: [createdById], references: [id])
+
+  @@index([tenantId])
 }
 
 // ============ Invoicing & Payments ============
@@ -687,35 +973,39 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id              String         @id @default(uuid())
-  number          String         @unique
-  type            InvoiceType    @default(SALE)
-  clientId        String?
-  client          Client?        @relation(fields: [clientId], references: [id])
-  supplierId      String?
-  supplier        Supplier?      @relation(fields: [supplierId], references: [id])
-  salesOrderId    String?
-  salesOrder      SalesOrder?    @relation(fields: [salesOrderId], references: [id])
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  status          InvoiceStatus  @default(UNPAID)
-  issueDate       DateTime       @default(now())
-  dueDate         DateTime?
-  currency        String         @default("USD")
-  exchangeRate    Decimal        @default(1) @db.Decimal(12, 6)
-  discountType    DiscountType?
-  discountValue   Decimal        @default(0) @db.Decimal(12, 2)
-  subtotal        Decimal        @default(0) @db.Decimal(12, 2)
-  shippingFee     Decimal        @default(0) @db.Decimal(12, 2)
-  total           Decimal        @default(0) @db.Decimal(12, 2)
-  paidAmount      Decimal        @default(0) @db.Decimal(12, 2)
-  notes           String?
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId              String         @default("")
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number                String
+  type                  InvoiceType    @default(SALE)
+  clientId              String?
+  client                Client?        @relation(fields: [clientId], references: [id])
+  supplierId            String?
+  supplier              Supplier?      @relation(fields: [supplierId], references: [id])
+  salesOrderId          String?
+  salesOrder            SalesOrder?    @relation(fields: [salesOrderId], references: [id])
+  purchaseOrderId       String?
+  purchaseOrder         PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  status                InvoiceStatus  @default(UNPAID)
+  issueDate             DateTime       @default(now())
+  dueDate               DateTime?
+  currency              String         @default("USD")
+  exchangeRate          Decimal        @default(1) @db.Decimal(12, 6)
+  discountType          DiscountType?
+  discountValue         Decimal        @default(0) @db.Decimal(12, 2)
+  subtotal              Decimal        @default(0) @db.Decimal(12, 2)
+  shippingFee           Decimal        @default(0) @db.Decimal(12, 2)
+  total                 Decimal        @default(0) @db.Decimal(12, 2)
+  paidAmount            Decimal        @default(0) @db.Decimal(12, 2)
+  notes                 String?
   /// Copied from the sales order. Controls whether the PDF itemises bundles.
-  showSubItemsOnInvoice Boolean  @default(false)
-  createdById     String
-  createdBy       User           @relation(fields: [createdById], references: [id])
-  createdAt       DateTime       @default(now())
-  deletedAt       DateTime?
+  showSubItemsOnInvoice Boolean        @default(false)
+  createdById           String
+  createdBy             User           @relation(fields: [createdById], references: [id])
+  createdAt             DateTime       @default(now())
+  deletedAt             DateTime?
 
   items          InvoiceItem[]
   payments       Payment[]
@@ -724,14 +1014,20 @@ model Invoice {
   units          ProductUnit[]
   warrantyClaims WarrantyClaim[]
 
+  @@unique([tenantId, number])
   @@index([status])
   @@index([type, issueDate])
   @@index([clientId])
   @@index([supplierId])
+  @@index([tenantId])
 }
 
 model InvoiceItem {
-  id            String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoiceId     String
   invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId     String?
@@ -744,12 +1040,13 @@ model InvoiceItem {
   discountValue Decimal       @default(0) @db.Decimal(12, 2)
   lineTotal     Decimal       @db.Decimal(12, 2)
 
-  isComposite   Boolean       @default(false)
-  parentItemId  String?
-  parentItem    InvoiceItem?  @relation("InvoiceItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
-  subItems      InvoiceItem[] @relation("InvoiceItemTree")
+  isComposite  Boolean       @default(false)
+  parentItemId String?
+  parentItem   InvoiceItem?  @relation("InvoiceItemTree", fields: [parentItemId], references: [id], onDelete: Cascade)
+  subItems     InvoiceItem[] @relation("InvoiceItemTree")
 
   @@index([parentItemId])
+  @@index([tenantId])
 }
 
 enum PaymentDirection {
@@ -765,33 +1062,39 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id           String           @id @default(uuid())
-  number       String           @unique
-  direction    PaymentDirection
-  invoiceId    String?
-  invoice      Invoice?         @relation(fields: [invoiceId], references: [id])
-  clientId     String?
-  client       Client?          @relation(fields: [clientId], references: [id])
-  supplierId   String?
-  supplier     Supplier?        @relation(fields: [supplierId], references: [id])
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  scheduleId   String?
-  schedule     PaymentSchedule? @relation(fields: [scheduleId], references: [id])
-  method       PaymentMethod
-  amount       Decimal          @db.Decimal(12, 2)
-  currency     String           @default("USD")
-  exchangeRate Decimal          @default(1) @db.Decimal(12, 6)
-  paymentDate  DateTime         @default(now())
-  reference    String?
-  notes        String?
-  createdById  String
-  createdBy    User             @relation(fields: [createdById], references: [id])
-  createdAt    DateTime         @default(now())
-  deletedAt    DateTime?
+  id String @id @default(uuid())
 
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId        String           @default("")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number          String
+  direction       PaymentDirection
+  invoiceId       String?
+  invoice         Invoice?         @relation(fields: [invoiceId], references: [id])
+  clientId        String?
+  client          Client?          @relation(fields: [clientId], references: [id])
+  supplierId      String?
+  supplier        Supplier?        @relation(fields: [supplierId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
+  scheduleId      String?
+  schedule        PaymentSchedule? @relation(fields: [scheduleId], references: [id])
+  method          PaymentMethod
+  amount          Decimal          @db.Decimal(12, 2)
+  currency        String           @default("USD")
+  exchangeRate    Decimal          @default(1) @db.Decimal(12, 6)
+  paymentDate     DateTime         @default(now())
+  reference       String?
+  notes           String?
+  createdById     String
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  createdAt       DateTime         @default(now())
+  deletedAt       DateTime?
+
+  @@unique([tenantId, number])
   @@index([paymentDate])
   @@index([direction])
+  @@index([tenantId])
 }
 
 enum ScheduleStatus {
@@ -801,7 +1104,11 @@ enum ScheduleStatus {
 }
 
 model PaymentSchedule {
-  id            String         @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String         @default("")
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoiceId     String
   invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   installmentNo Int
@@ -814,6 +1121,7 @@ model PaymentSchedule {
 
   @@unique([invoiceId, installmentNo])
   @@index([status, dueDate])
+  @@index([tenantId])
 }
 
 // ============ Refunds & Returns ============
@@ -839,8 +1147,12 @@ enum RefundMethod {
 }
 
 model Refund {
-  id           String       @id @default(uuid())
-  number       String       @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId     String       @default("")
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number       String
   invoiceId    String
   invoice      Invoice      @relation(fields: [invoiceId], references: [id])
   clientId     String
@@ -859,7 +1171,9 @@ model Refund {
 
   items ReturnItem[]
 
+  @@unique([tenantId, number])
   @@index([status])
+  @@index([tenantId])
 }
 
 enum ItemCondition {
@@ -868,7 +1182,11 @@ enum ItemCondition {
 }
 
 model ReturnItem {
-  id            String        @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String        @default("")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refundId      String
   refund        Refund        @relation(fields: [refundId], references: [id], onDelete: Cascade)
   productId     String
@@ -877,6 +1195,8 @@ model ReturnItem {
   unitPrice     Decimal       @db.Decimal(12, 2)
   condition     ItemCondition @default(RESELLABLE)
   serialNumbers Json?
+
+  @@index([tenantId])
 }
 
 enum SupplierReturnStatus {
@@ -898,8 +1218,12 @@ enum SupplierRefundMethod {
 }
 
 model SupplierReturn {
-  id              String               @id @default(uuid())
-  number          String               @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId        String               @default("")
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number          String
   supplierId      String
   supplier        Supplier             @relation(fields: [supplierId], references: [id])
   /// Set when the return came from a specific purchase order. Standalone
@@ -920,8 +1244,10 @@ model SupplierReturn {
   createdAt       DateTime             @default(now())
   deletedAt       DateTime?
 
+  @@unique([tenantId, number])
   @@index([purchaseOrderId])
   @@index([supplierId])
+  @@index([tenantId])
 }
 
 // ============ Warranty & Service ============
@@ -935,8 +1261,12 @@ enum ClaimStatus {
 }
 
 model WarrantyClaim {
-  id            String       @id @default(uuid())
-  number        String       @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String       @default("")
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number        String
   clientId      String
   client        Client       @relation(fields: [clientId], references: [id])
   productId     String
@@ -955,7 +1285,9 @@ model WarrantyClaim {
   createdBy     User         @relation(fields: [createdById], references: [id])
   deletedAt     DateTime?
 
+  @@unique([tenantId, number])
   @@index([status])
+  @@index([tenantId])
 }
 
 enum ServiceJobType {
@@ -973,8 +1305,12 @@ enum ServiceJobStatus {
 }
 
 model ServiceJob {
-  id             String           @id @default(uuid())
-  number         String           @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId       String           @default("")
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number         String
   clientId       String
   client         Client           @relation(fields: [clientId], references: [id])
   salesOrderId   String?
@@ -990,7 +1326,9 @@ model ServiceJob {
   createdAt      DateTime         @default(now())
   deletedAt      DateTime?
 
+  @@unique([tenantId, number])
   @@index([status, scheduledDate])
+  @@index([tenantId])
 }
 
 // ============ Solar Operations ============
@@ -1013,8 +1351,12 @@ enum InstallationStatus {
 }
 
 model Installation {
-  id                 String             @id @default(uuid())
-  number             String             @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId           String             @default("")
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number             String
   clientId           String
   client             Client             @relation(fields: [clientId], references: [id])
   salesOrderId       String?
@@ -1041,12 +1383,18 @@ model Installation {
   readings  EnergyReading[]
   contracts MaintenanceContract[]
 
+  @@unique([tenantId, number])
   @@index([status])
   @@index([clientId])
+  @@index([tenantId])
 }
 
 model EnergyReading {
-  id             String       @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId       String       @default("")
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   installationId String
   installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
   readingDate    DateTime     @db.Date
@@ -1058,6 +1406,7 @@ model EnergyReading {
 
   @@unique([installationId, readingDate])
   @@index([readingDate])
+  @@index([tenantId])
 }
 
 enum ContractStatus {
@@ -1067,8 +1416,12 @@ enum ContractStatus {
 }
 
 model MaintenanceContract {
-  id             String         @id @default(uuid())
-  number         String         @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId       String         @default("")
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number         String
   installationId String
   installation   Installation   @relation(fields: [installationId], references: [id])
   status         ContractStatus @default(ACTIVE)
@@ -1082,7 +1435,9 @@ model MaintenanceContract {
   createdAt      DateTime       @default(now())
   deletedAt      DateTime?
 
+  @@unique([tenantId, number])
   @@index([status, nextVisitDate])
+  @@index([tenantId])
 }
 
 // ============ Expenses ============
@@ -1099,8 +1454,12 @@ enum ExpenseCategory {
 }
 
 model Expense {
-  id            String          @id @default(uuid())
-  number        String          @unique
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId      String          @default("")
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number        String
   category      ExpenseCategory @default(OTHER)
   description   String
   amount        Decimal         @db.Decimal(12, 2)
@@ -1115,8 +1474,10 @@ model Expense {
   createdAt     DateTime        @default(now())
   deletedAt     DateTime?
 
+  @@unique([tenantId, number])
   @@index([category, expenseDate])
   @@index([expenseDate])
+  @@index([tenantId])
 }
 
 // ============ Notifications & Settings ============
@@ -1135,7 +1496,11 @@ enum NotificationType {
 }
 
 model Notification {
-  id        String           @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId  String           @default("")
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type      NotificationType
   message   String
   entity    String?
@@ -1144,19 +1509,35 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([isRead, createdAt])
+  @@index([tenantId])
 }
 
 model Setting {
-  key   String @id
-  value Json
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId String @default("")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key      String
+  value    Json
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
 model NumberSequence {
-  id         String @id @default(uuid())
-  entity     String @unique // INVOICE, QUOTATION, SALES_ORDER, PURCHASE_ORDER, PAYMENT, REFUND, CLAIM, JOB, SUPPLIER_RETURN
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId   String @default("")
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entity     String // INVOICE, QUOTATION, SALES_ORDER, PURCHASE_ORDER, PAYMENT, REFUND, CLAIM, JOB, SUPPLIER_RETURN
   prefix     String
   nextNumber Int    @default(1)
   padding    Int    @default(5)
+
+  @@unique([tenantId, entity])
+  @@index([tenantId])
 }
 
 enum BackupStatus {
@@ -1169,7 +1550,11 @@ enum BackupStatus {
 // though only the latest snapshot is stored on disk. Excluded from the
 // backup/restore payload itself so its own history survives a restore.
 model BackupLog {
-  id          String       @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Null on platform-level rows that belong to no store (the super admin).
+  tenantId    String?
+  tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   type        String // BACKUP | RESTORE
   status      BackupStatus
   filename    String?
@@ -1182,6 +1567,7 @@ model BackupLog {
   createdAt   DateTime     @default(now())
 
   @@index([createdAt])
+  @@index([tenantId])
 }
 
 // ============ Workers, Attendance & Payroll ============
@@ -1207,36 +1593,46 @@ enum AttendanceStatus {
 }
 
 model Worker {
-  id                String            @id @default(uuid())
-  code              String            @unique
-  name              String
-  phone             String?
-  email             String?
-  jobTitle          String?
-  payBasis          PayBasis          @default(DAILY)
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId             String    @default("")
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code                 String
+  name                 String
+  phone                String?
+  email                String?
+  jobTitle             String?
+  payBasis             PayBasis  @default(DAILY)
   /// Earned per full attended day when payBasis is DAILY.
-  dailyRate         Decimal           @default(0) @db.Decimal(12, 2)
+  dailyRate            Decimal   @default(0) @db.Decimal(12, 2)
   /// Earned per hour when payBasis is HOURLY.
-  hourlyRate        Decimal           @default(0) @db.Decimal(12, 2)
-  expectedHoursPerDay Decimal         @default(8) @db.Decimal(5, 2)
+  hourlyRate           Decimal   @default(0) @db.Decimal(12, 2)
+  expectedHoursPerDay  Decimal   @default(8) @db.Decimal(5, 2)
   /// Deducted per hour of lateness. Zero means lateness is recorded but unpaid-for.
-  lateDeductionPerHour Decimal        @default(0) @db.Decimal(12, 2)
-  payPeriod         PayPeriod         @default(MONTHLY)
-  hiredOn           DateTime?
-  isActive          Boolean           @default(true)
-  notes             String?
-  createdAt         DateTime          @default(now())
-  deletedAt         DateTime?
+  lateDeductionPerHour Decimal   @default(0) @db.Decimal(12, 2)
+  payPeriod            PayPeriod @default(MONTHLY)
+  hiredOn              DateTime?
+  isActive             Boolean   @default(true)
+  notes                String?
+  createdAt            DateTime  @default(now())
+  deletedAt            DateTime?
 
-  attendance        AttendanceEntry[]
+  attendance AttendanceEntry[]
 
+  @@unique([tenantId, code])
   @@index([name])
+  @@index([tenantId])
 }
 
 /// One worker, one calendar day. The unique pair makes a day idempotent to
 /// record — logging the same date twice corrects it rather than duplicating it.
 model AttendanceEntry {
-  id          String           @id @default(uuid())
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId    String           @default("")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workerId    String
   worker      Worker           @relation(fields: [workerId], references: [id], onDelete: Cascade)
   date        DateTime         @db.Date
@@ -1253,4 +1649,5 @@ model AttendanceEntry {
 
   @@unique([workerId, date])
   @@index([date])
+  @@index([tenantId])
 }

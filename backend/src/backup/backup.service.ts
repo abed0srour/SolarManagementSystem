@@ -8,14 +8,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { StorageService } from '../common/storage';
 import { isServerless } from '../common/runtime';
+import { requireTenantId, runAsTenant, runUnscoped } from '../common/tenant-context';
 
 /**
  * Storage keys rather than paths: StorageService puts these on disk in
  * development and in Vercel Blob in production, so the backup feature works the
  * same on a laptop and on a platform with no writable filesystem.
  */
-const LATEST_KEY = 'backups/backup.json.gz';
-const PREVIOUS_KEY = 'backups/backup.previous.json.gz';
+// One snapshot per store. These used to be two fixed paths, which under
+// multi-tenancy would mean every store overwriting the previous one's backup —
+// silent, and only discovered when someone needed to restore.
+const LATEST_NAME = 'backup.json.gz';
+const PREVIOUS_NAME = 'backup.previous.json.gz';
 
 // Rows are streamed to disk in pages rather than loaded all at once, so a
 // table that has grown huge after years of use never blows up process
@@ -62,15 +66,42 @@ interface BackupSchedule {
 
 const DEFAULT_SCHEDULE: BackupSchedule = { enabled: true, dayOfWeek: 0, hour: 3, minute: 0 };
 
-// The backup system's own bookkeeping — never wiped or overwritten by a
-// restore, so restoring an old snapshot can't undo how backups are
-// configured or erase the run history on THIS install.
-const EXCLUDED_MODELS = new Set(['BackupLog']);
+/**
+ * Never exported, and — far more importantly — never deleted by a restore.
+ *
+ * `BackupLog` is the backup system's own bookkeeping: restoring an old snapshot
+ * must not undo how backups are configured or erase the run history on this
+ * install.
+ *
+ * The rest are here because a restore begins by clearing the tables it is about
+ * to refill, and these are not tenant-scoped. `Tenant` in particular has no
+ * tenantId to filter on, so a single store restoring its own snapshot would
+ * have issued an unfiltered `DELETE FROM "Tenant"` and cascaded away every
+ * other customer on the platform. Identity tables are excluded for the same
+ * class of reason: accounts live in `auth.users` now, and a snapshot cannot
+ * meaningfully restore them.
+ */
+const EXCLUDED_MODELS = new Set([
+  'BackupLog',
+  'Tenant',
+  'Profile',
+  'User',
+  'RefreshToken',
+  'PasswordResetToken',
+  'VerificationCode',
+]);
 
 @Injectable()
 export class BackupService implements OnModuleInit {
   private readonly logger = new Logger(BackupService.name);
-  private running = false;
+  /**
+   * Which stores currently have a backup or restore in flight.
+   *
+   * A single boolean would have made one store's backup refuse every other
+   * store's, which is a self-inflicted outage as soon as the platform has more
+   * than a handful of customers.
+   */
+  private readonly running = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -79,9 +110,64 @@ export class BackupService implements OnModuleInit {
     private storage: StorageService,
   ) {}
 
+  /** Storage key for the calling tenant. Keeps one store out of another's files. */
+  private key(name: string): string {
+    return `backups/${requireTenantId()}/${name}`;
+  }
+
   async onModuleInit() {
-    const schedule = await this.getSchedule();
-    this.applySchedule(schedule);
+    /*
+     * One sweep for the whole platform, rather than one cron job per store.
+     *
+     * The schedule is a per-tenant setting, so the old approach — read "the"
+     * schedule at boot and register a job for it — has no meaning once there is
+     * more than one store, and it cannot pick up a store created afterwards.
+     * An hourly sweep asks every active store whether it is due instead, which
+     * is correct as stores come and go and costs one query an hour.
+     */
+    this.applySweep();
+  }
+
+  private applySweep() {
+    // Serverless has no live process to run a timer; /api/cron/backup drives it.
+    if (isServerless()) return;
+    if (this.scheduler.doesExist('cron', CRON_JOB_NAME)) this.scheduler.deleteCronJob(CRON_JOB_NAME);
+    const job = new CronJob('0 * * * *', () => {
+      this.runDueBackups().catch((err) => this.logger.error(`Scheduled backup sweep failed: ${err.message}`));
+    });
+    this.scheduler.addCronJob(CRON_JOB_NAME, job);
+    job.start();
+  }
+
+  /**
+   * Back up every store that is due.
+   *
+   * Each one runs inside `runAsTenant`, so the export reads exactly the rows
+   * that store owns — the same scoping its own users get. That is what makes a
+   * per-tenant backup fall out of the design rather than needing a separate
+   * implementation with its own filters to get wrong.
+   */
+  async runDueBackups(): Promise<{ checked: number; backedUp: string[] }> {
+    const tenants = await runUnscoped(() =>
+      this.prisma.tenant.findMany({
+        where: { deletedAt: null, status: 'ACTIVE' },
+        select: { id: true, name: true },
+      }),
+    );
+
+    const backedUp: string[] = [];
+    for (const tenant of tenants) {
+      try {
+        const due = await runAsTenant(tenant.id, () => this.isScheduledForNow());
+        if (!due) continue;
+        await runAsTenant(tenant.id, () => this.run('SCHEDULER'));
+        backedUp.push(tenant.name);
+      } catch (err: any) {
+        // One store failing must not stop the rest of the platform being backed up.
+        this.logger.error(`Backup failed for ${tenant.name}: ${err.message}`);
+      }
+    }
+    return { checked: tenants.length, backedUp };
   }
 
   // ---- Schema-driven table order (parents before children) ----
@@ -89,7 +175,7 @@ export class BackupService implements OnModuleInit {
   /** All current models in FK-dependency order, derived live from the Prisma
    *  schema (DMMF) — never needs hand-maintaining as models are added over
    *  the system's lifetime. Each entry carries its actual primary-key field
-   *  name (usually "id", but e.g. Setting uses "key"). */
+   *  name — always "id" now that Setting has a surrogate key. */
   private modelOrder(): { name: string; idField: string }[] {
     const models = Prisma.dmmf.datamodel.models.filter((m) => !EXCLUDED_MODELS.has(m.name));
     const deps = new Map<string, Set<string>>();
@@ -168,8 +254,9 @@ export class BackupService implements OnModuleInit {
   // ---- Backup ----
 
   async run(triggeredBy: string) {
-    if (this.running) throw new BadRequestException('A backup is already running');
-    this.running = true;
+    const tenantId = requireTenantId();
+    if (this.running.has(tenantId)) throw new BadRequestException('A backup is already running');
+    this.running.add(tenantId);
     const start = Date.now();
     const order = this.modelOrder();
     let rowCount = 0;
@@ -220,8 +307,8 @@ export class BackupService implements OnModuleInit {
       // The rotation happens only after the new archive is fully built: if the
       // export throws, the existing backup is still the one in storage.
       const body = Buffer.concat(chunks);
-      await this.storage.copy(LATEST_KEY, PREVIOUS_KEY);
-      const stored = await this.storage.put(LATEST_KEY, body, 'application/gzip');
+      await this.storage.copy(this.key(LATEST_NAME), this.key(PREVIOUS_NAME));
+      const stored = await this.storage.put(this.key(LATEST_NAME), body, 'application/gzip');
 
       const sizeBytes = stored.size;
       await this.prisma.backupLog.create({
@@ -247,7 +334,7 @@ export class BackupService implements OnModuleInit {
       this.logger.error(`Backup failed: ${err.message}`);
       throw err;
     } finally {
-      this.running = false;
+      this.running.delete(tenantId);
     }
   }
 
@@ -268,7 +355,7 @@ export class BackupService implements OnModuleInit {
       this.prisma.backupLog.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
       this.getSchedule(),
     ]);
-    const hasLocalFile = !!(await this.storage.stat(LATEST_KEY));
+    const hasLocalFile = !!(await this.storage.stat(this.key(LATEST_NAME)));
     return { lastBackup, lastRestore, history, schedule, hasLocalFile };
   }
 
@@ -296,7 +383,7 @@ export class BackupService implements OnModuleInit {
   }
 
   async getSchedule(): Promise<BackupSchedule> {
-    const row = await this.prisma.setting.findUnique({ where: { key: SCHEDULE_KEY } });
+    const row = await this.prisma.setting.findFirst({ where: { key: SCHEDULE_KEY } });
     return { ...DEFAULT_SCHEDULE, ...((row?.value as any) ?? {}) };
   }
 
@@ -312,23 +399,14 @@ export class BackupService implements OnModuleInit {
     if (next.hour < 0 || next.hour > 23) throw new BadRequestException('hour must be 0-23');
     if (next.minute < 0 || next.minute > 59) throw new BadRequestException('minute must be 0-59');
 
-    await this.prisma.setting.upsert({ where: { key: SCHEDULE_KEY }, update: { value: next as any }, create: { key: SCHEDULE_KEY, value: next as any } });
-    await this.audit.log(userId, 'UPDATE', 'BackupSchedule', undefined, next);
-    this.applySchedule(next);
-    return next;
-  }
-
-  private applySchedule(schedule: BackupSchedule) {
-    // Serverless has no live process to run a timer; /api/cron/backup drives it.
-    if (isServerless()) return;
-    if (this.scheduler.doesExist('cron', CRON_JOB_NAME)) this.scheduler.deleteCronJob(CRON_JOB_NAME);
-    if (!schedule.enabled) return;
-    const cronExpression = `${schedule.minute} ${schedule.hour} * * ${schedule.dayOfWeek}`;
-    const job = new CronJob(cronExpression, () => {
-      this.run('SCHEDULER').catch((err) => this.logger.error(`Scheduled backup failed: ${err.message}`));
+    await this.prisma.setting.upsert({
+      where: { tenantId_key: { tenantId: requireTenantId(), key: SCHEDULE_KEY } },
+      update: { value: next as any },
+      create: { key: SCHEDULE_KEY, value: next as any },
     });
-    this.scheduler.addCronJob(CRON_JOB_NAME, job);
-    job.start();
+    await this.audit.log(userId, 'UPDATE', 'BackupSchedule', undefined, next);
+    // No cron job to re-register: the hourly sweep re-reads this on its next pass.
+    return next;
   }
 
   // ---- Download ----
@@ -340,7 +418,7 @@ export class BackupService implements OnModuleInit {
    * blob storage and has no path on this machine.
    */
   async downloadBody(): Promise<Buffer> {
-    const buffer = await this.storage.get(LATEST_KEY);
+    const buffer = await this.storage.get(this.key(LATEST_NAME));
     if (!buffer) throw new BadRequestException('No backup has been taken yet');
     return buffer;
   }
@@ -348,29 +426,30 @@ export class BackupService implements OnModuleInit {
   // ---- Restore ----
 
   async restoreFromLocal(userId: string) {
-    const buffer = await this.storage.get(LATEST_KEY);
+    const buffer = await this.storage.get(this.key(LATEST_NAME));
     if (!buffer) throw new BadRequestException('No stored backup to restore from');
     return this.restoreFromBuffer(userId, buffer);
   }
 
   async restoreFromBuffer(userId: string, buffer: Buffer) {
-    if (this.running) throw new BadRequestException('A backup or restore is already running');
-    this.running = true;
+    const tenantId = requireTenantId();
+    if (this.running.has(tenantId)) throw new BadRequestException('A backup or restore is already running');
+    this.running.add(tenantId);
     const start = Date.now();
     let parsed: any;
     try {
       const json = gunzipSync(buffer).toString('utf8');
       parsed = JSON.parse(json);
     } catch {
-      this.running = false;
+      this.running.delete(tenantId);
       throw new BadRequestException('Not a valid backup file (expected a .json.gz export from this system)');
     }
     if (!parsed?.data || typeof parsed.meta?.version !== 'number') {
-      this.running = false;
+      this.running.delete(tenantId);
       throw new BadRequestException('Not a valid backup file');
     }
     if (parsed.meta.version > BACKUP_FORMAT_VERSION) {
-      this.running = false;
+      this.running.delete(tenantId);
       throw new BadRequestException('This backup was made by a newer version of the system and cannot be restored here — update the app first');
     }
 
@@ -401,7 +480,11 @@ export class BackupService implements OnModuleInit {
             }
           }
           for (const s of preservedSettings) {
-            await tx.setting.upsert({ where: { key: s.key }, update: { value: s.value as any }, create: { key: s.key, value: s.value as any } });
+            await tx.setting.upsert({
+              where: { tenantId_key: { tenantId: requireTenantId(), key: s.key } },
+              update: { value: s.value as any },
+              create: { key: s.key, value: s.value as any },
+            });
           }
         },
         { timeout: RESTORE_TIMEOUT_MS, maxWait: RESTORE_MAX_WAIT_MS },
@@ -420,7 +503,7 @@ export class BackupService implements OnModuleInit {
       this.logger.error(`Restore failed: ${err.message}`);
       throw err;
     } finally {
-      this.running = false;
+      this.running.delete(tenantId);
     }
   }
 }

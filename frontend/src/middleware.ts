@@ -1,63 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE } from './lib/auth';
+import { updateSession } from './lib/supabase/middleware';
+import { claimsFromToken, homeRouteFor, isSuperAdmin } from './lib/claims';
 
 /**
- * Redirects unauthenticated visitors to /login before any dashboard route
- * renders, and bounces already-authenticated ones away from /login.
+ * Route guarding and role-based redirection.
  *
- * This is a UX gate, not the security boundary. The cookie it reads is set by
- * client-side JS and is therefore forgeable; forging it buys nothing but an
- * empty shell, because every `/api/*` request is independently verified by the
- * NestJS JwtAuthGuard. Never rely on this to protect data.
+ * Two jobs, in this order:
  *
- * Note on expiry: a present-but-expired token is deliberately allowed through.
- * The 30-day "remember me" cookie routinely outlives the 12-hour access token,
- * so redirecting on `exp` would break exactly the persistence the checkbox
- * promises. The axios interceptor silently refreshes on the first 401, and
- * sends the admin to /login only if that refresh fails.
+ *  1. Refresh the Supabase session so a long-lived tab never lands on a page
+ *     with an expired token.
+ *  2. Decide, from the claims already in that token, whether this account
+ *     belongs on this route — no database query, so it costs nothing per
+ *     navigation.
+ *
+ * This is a UX gate, not the security boundary. The claims are decoded without
+ * verifying the signature, so a forged cookie can get past it — and gets an
+ * empty shell, because every `/api/*` call is independently verified by the
+ * NestJS guard and every direct Supabase query by RLS. Authorization is
+ * enforced where the data is, never here.
  */
 
-const PUBLIC_PATHS = ['/login'];
+/** Reachable without a session. */
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/auth/callback'];
 
-type JwtClaims = { exp?: number; sub?: string };
+const isPublic = (pathname: string) =>
+  PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-/** Decode a JWT payload without verifying it — signature checks happen server-side. */
-function decodeClaims(token: string): JwtClaims | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  try {
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    return JSON.parse(atob(padded)) as JwtClaims;
-  } catch {
-    return null;
+export async function middleware(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+  const { response, accessToken } = await updateSession(request);
+  const claims = claimsFromToken(accessToken);
+
+  const redirect = (to: string, keepNext = false) => {
+    const url = request.nextUrl.clone();
+    url.pathname = to;
+    url.search = '';
+    if (keepNext) url.searchParams.set('next', `${pathname}${search}`);
+    // Carry the refreshed cookies onto the redirect, or the very next request
+    // arrives with the stale token this middleware just replaced.
+    const res = NextResponse.redirect(url);
+    for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
+    return res;
+  };
+
+  /*
+   * /reset-password is deliberately reachable while signed in. Clicking a
+   * recovery link signs the user in with a temporary session first, so treating
+   * it as "already authenticated, go to the dashboard" would bounce them off
+   * the page before they could set a new password.
+   */
+  if (isPublic(pathname)) {
+    if (claims && pathname === '/login') return redirect(homeRouteFor(claims));
+    return response;
   }
-}
 
-export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
-  const raw = req.cookies.get(SESSION_COOKIE)?.value;
-  // A structurally valid JWT is the signal; expiry is handled client-side.
-  const hasSession = Boolean(raw && decodeClaims(decodeURIComponent(raw))?.sub);
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (!claims) return redirect('/login', true);
 
-  if (!hasSession && !isPublic) {
-    const url = req.nextUrl.clone();
+  const wantsPlatform = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
+
+  if (wantsPlatform && !isSuperAdmin(claims)) {
+    // A store user has no business on the platform portal. Sent to their own
+    // dashboard rather than /login: they are signed in, just not for this.
+    return redirect('/dashboard');
+  }
+
+  if (!wantsPlatform && isSuperAdmin(claims)) {
+    /*
+     * And the reverse. The platform owner has no tenant, so a store page would
+     * have nothing to render and the API would refuse every request behind it.
+     * Redirecting is clearer than showing a dashboard full of errors.
+     */
+    return redirect('/superadmin/dashboard');
+  }
+
+  // A tenant user whose store has been suspended keeps a valid token until it
+  // expires. Stop them at the door rather than letting every panel fail.
+  if (!isSuperAdmin(claims) && !['ACTIVE', 'UNKNOWN'].includes(claims.tenantStatus)) {
+    const url = request.nextUrl.clone();
     url.pathname = '/login';
-    url.search = '';
-    // Preserve the destination so login can return the admin to it.
-    url.searchParams.set('next', `${pathname}${search}`);
-    return NextResponse.redirect(url);
+    url.search = `?reason=${claims.tenantStatus === 'SUSPENDED' ? 'suspended' : 'inactive'}`;
+    const res = NextResponse.redirect(url);
+    for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
+    return res;
   }
 
-  if (hasSession && isPublic) {
-    const url = req.nextUrl.clone();
-    url.pathname = '/dashboard';
-    url.search = '';
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
@@ -67,5 +94,7 @@ export const config = {
    *  - _next/*     build output and HMR
    *  - static assets and metadata files
    */
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+  ],
 };

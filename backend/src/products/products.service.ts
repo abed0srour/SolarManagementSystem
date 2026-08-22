@@ -4,6 +4,7 @@ import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
+import { requireTenantId } from '../common/tenant-context';
 
 @Injectable()
 export class ProductsService {
@@ -92,8 +93,11 @@ export class ProductsService {
    * apply to soft-deleted rows too.
    */
   private async serviceSubCategoryId(tx: Prisma.TransactionClient): Promise<string> {
+    // Category names are unique per store now, so the upsert has to name the
+    // store as well. The scoping extension adds `tenantId` to the filter too,
+    // but an upsert needs a genuine unique key to decide insert-vs-update.
     const category = await tx.category.upsert({
-      where: { name: 'Services' },
+      where: { tenantId_name: { tenantId: requireTenantId(), name: 'Services' } },
       update: { deletedAt: null },
       create: { name: 'Services', description: 'Labour and services — installation, maintenance, delivery' },
     });
@@ -274,7 +278,7 @@ export class ProductsService {
   async bulkPriceUpdate(userId: string, rows: { sku: string; costPrice?: number; salePrice?: number }[], reason?: string) {
     const results: { sku: string; status: string }[] = [];
     for (const row of rows) {
-      const product = await this.prisma.product.findUnique({ where: { sku: row.sku } });
+      const product = await this.prisma.product.findFirst({ where: { sku: row.sku } });
       if (!product) {
         results.push({ sku: row.sku, status: 'not found' });
         continue;
@@ -352,7 +356,7 @@ export class ProductsService {
           continue;
         }
 
-        if (await this.prisma.product.findUnique({ where: { sku }, select: { id: true } })) {
+        if (await this.prisma.product.findFirst({ where: { sku }, select: { id: true } })) {
           results.push({ row: line, sku, status: 'skipped', message: 'SKU already exists' });
           continue;
         }
@@ -422,13 +426,14 @@ export class ProductsService {
    * Generated server-side rather than in the browser so it can be checked
    * against the unique index before being handed out; a client-side guess
    * would only surface a collision as a failed save. Soft-deleted products
-   * still occupy their SKU, so `findUnique` covers them too.
+   * still occupy their SKU, so the lookup covers them too. SKUs are unique per
+   * store, so two tenants may independently land on the same code.
    */
   async generateSku(length = 6): Promise<{ sku: string }> {
     const alphabet = ProductsService.SKU_ALPHABET;
     for (let attempt = 0; attempt < 10; attempt++) {
       const sku = Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');
-      const taken = await this.prisma.product.findUnique({ where: { sku }, select: { id: true } });
+      const taken = await this.prisma.product.findFirst({ where: { sku }, select: { id: true } });
       if (!taken) return { sku };
     }
     // 31^6 ≈ 887M combinations, so ten collisions in a row means something is

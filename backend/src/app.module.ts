@@ -33,6 +33,7 @@ import { WorkersModule } from './workers/workers.module';
 import { SolarCalculatorModule } from './solar-calculator/solar-calculator.module';
 import { BackupModule } from './backup/backup.module';
 import { CronModule } from './cron/cron.module';
+import { SuperadminModule } from './superadmin/superadmin.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { CronModule } from './cron/cron.module';
     UploadsModule,
     CommonModule,
     AuthModule,
+    SuperadminModule,
     UsersModule,
     CategoriesModule,
     ProductsModule,

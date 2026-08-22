@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantSweepService } from '../common/tenant-sweep.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sweep: TenantSweepService,
+  ) {}
 
   findAll(query: { unreadOnly?: string; page?: number; pageSize?: number }) {
     const where = query.unreadOnly === 'true' ? { isRead: false } : {};
@@ -82,17 +86,22 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Hourly checks, once per store.
+   *
+   * "Low stock" and "overdue payment" are questions about one store, not about
+   * the platform — so the sweep runs each pass inside that store's own scope
+   * rather than querying across all of them and mislabelling the results.
+   */
   @Cron(CronExpression.EVERY_HOUR)
   async runChecks() {
-    try {
+    return this.sweep.forEachActiveTenant('Notification checks', async () => {
       await this.checkLowStock();
       await this.checkOverduePayments();
       await this.checkExpiringQuotations();
       await this.checkExpiringWarranties();
       await this.checkShelfLife();
-    } catch (e) {
-      this.logger.error('Notification checks failed', e as any);
-    }
+    });
   }
 
   async checkLowStock() {

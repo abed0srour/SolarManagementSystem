@@ -2,9 +2,15 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { UsersService } from './users.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
-import { SuperAdminOnly } from '../auth/super-admin.decorator';
 
-const ASSIGNABLE_ROLES = ['ADMIN', 'MANAGER', 'STAFF', 'VIEWER'];
+/**
+ * What a Tenant Admin may hand out inside their own store.
+ *
+ * ADMIN is absent deliberately: appointing another store admin is the platform
+ * owner's call, so that one compromised admin account cannot entrench itself by
+ * minting peers. SUPER_ADMIN is a platform role and was never assignable here.
+ */
+const ASSIGNABLE_ROLES = ['MANAGER', 'STAFF', 'VIEWER'];
 
 class CreateUserDto {
   @IsEmail()
@@ -46,14 +52,21 @@ class UpdateUserDto {
   @IsBoolean()
   isActive?: boolean;
 
-  /** Set by the super admin to reset a forgotten password. */
+  /** Set by a store admin to reset a forgotten password. */
   @IsOptional()
   @IsString()
   @MinLength(8)
   password?: string;
 }
 
-@SuperAdminOnly()
+/**
+ * Staff accounts for one store.
+ *
+ * Guarded by the `users` permission rather than a super-admin check: under
+ * multi-tenancy a store has to be able to manage its own people, and every
+ * query in the service is tenant-scoped, so this controller cannot see another
+ * store even if it tried.
+ */
 @Controller('users')
 export class UsersController {
   constructor(private service: UsersService) {}

@@ -106,7 +106,7 @@ export class SalesOrdersService {
   }
 
   async findOne(id: string) {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
       include: {
         client: { include: { addresses: true } },
@@ -182,7 +182,7 @@ export class SalesOrdersService {
     const alphabet = SalesOrdersService.CODE_ALPHABET;
     for (let attempt = 0; attempt < 10; attempt++) {
       const code = Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');
-      const taken = await tx.salesOrder.findUnique({ where: { pickupCode: code }, select: { id: true } });
+      const taken = await tx.salesOrder.findFirst({ where: { pickupCode: code }, select: { id: true } });
       if (!taken) return code;
     }
     throw new BadRequestException('Could not generate a pickup code, please try again');
@@ -282,7 +282,7 @@ export class SalesOrdersService {
    * verdict rather than throwing, so the counter screen can explain why.
    */
   async findByPickupCode(code: string) {
-    const order = await this.prisma.salesOrder.findUnique({
+    const order = await this.prisma.salesOrder.findFirst({
       relationLoadStrategy: 'join',
       where: { pickupCode: code.trim().toUpperCase() },
       include: {
@@ -322,7 +322,7 @@ export class SalesOrdersService {
   async claim(userId: string, code: string, notes?: string) {
     const normalised = code.trim().toUpperCase();
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.salesOrder.findUnique({ where: { pickupCode: normalised } });
+      const order = await tx.salesOrder.findFirst({ where: { pickupCode: normalised } });
       if (!order) throw new NotFoundException('No order matches this code');
       if (order.claimedAt) throw new BadRequestException('This receipt was already collected');
       if (order.status === 'CANCELLED') throw new BadRequestException('Order was cancelled');
@@ -380,7 +380,7 @@ export class SalesOrdersService {
   }
 
   async update(userId: string, id: string, dto: any) {
-    const existing = await this.prisma.salesOrder.findUnique({ where: { id } });
+    const existing = await this.prisma.salesOrder.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Sales order not found');
     if (existing.status !== 'PENDING')
       throw new BadRequestException('Only pending orders can be edited (cancel and recreate otherwise)');
@@ -428,7 +428,7 @@ export class SalesOrdersService {
    * serialAssignments: [{ productId, serialNumbers: string[] }]
    */
   async confirm(userId: string, id: string, serialAssignments?: { productId: string; serialNumbers: string[] }[]) {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
       include: { items: { include: { product: { select: { isService: true } } } }, client: true },
     });
@@ -488,7 +488,7 @@ export class SalesOrdersService {
   }
 
   async deliver(userId: string, id: string, deliveries: { itemId: string; quantity: number }[]) {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join', where: { id }, include: { items: true } });
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join', where: { id }, include: { items: true } });
     if (!so) throw new NotFoundException('Sales order not found');
     if (so.status !== 'CONFIRMED' && so.status !== 'PARTIALLY_DELIVERED')
       throw new BadRequestException('Order must be confirmed before delivery');
@@ -529,7 +529,7 @@ export class SalesOrdersService {
     id: string,
     dto: { amount: number; method: string; reference?: string; notes?: string; paymentDate?: string },
   ) {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
       include: { invoices: { where: { deletedAt: null } } },
     });
@@ -580,7 +580,7 @@ export class SalesOrdersService {
 
   /** Returns the order's active invoice id, generating the full invoice when none exists. */
   async ensureInvoice(userId: string, id: string): Promise<string> {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
       include: { invoices: { where: { deletedAt: null, status: { not: 'CANCELLED' } }, orderBy: { createdAt: 'asc' } } },
     });
@@ -592,7 +592,7 @@ export class SalesOrdersService {
   }
 
   async cancel(userId: string, id: string) {
-    const so = await this.prisma.salesOrder.findUnique({ relationLoadStrategy: 'join',
+    const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
       include: { items: { include: { product: { select: { isService: true } } } }, invoices: true },
     });
@@ -675,7 +675,7 @@ export class SalesOrdersService {
 
   /** Can this order be deleted outright? `remove()` re-checks server-side. */
   async usage(id: string): Promise<UsageReport> {
-    const so = await this.prisma.salesOrder.findUnique({ where: { id }, select: { status: true } });
+    const so = await this.prisma.salesOrder.findFirst({ where: { id }, select: { status: true } });
     if (!so) throw new NotFoundException('Sales order not found');
     const counts = await this.orderUsage(id);
     return {
@@ -698,7 +698,7 @@ export class SalesOrdersService {
    * is history: it drops out of the list but the documents still resolve.
    */
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
-    const so = await this.prisma.salesOrder.findUnique({ where: { id } });
+    const so = await this.prisma.salesOrder.findFirst({ where: { id } });
     if (!so) throw new NotFoundException('Sales order not found');
     if (so.deletedAt) throw new BadRequestException('Order is already deleted');
     if (so.status !== 'CANCELLED')
@@ -721,7 +721,7 @@ export class SalesOrdersService {
 
   /** Bring an archived order back into the active list. */
   async restore(userId: string, id: string) {
-    const so = await this.prisma.salesOrder.findUnique({ where: { id } });
+    const so = await this.prisma.salesOrder.findFirst({ where: { id } });
     if (!so) throw new NotFoundException('Sales order not found');
     if (!so.deletedAt) return { success: true, alreadyActive: true };
     await this.prisma.salesOrder.update({ where: { id }, data: { deletedAt: null } });

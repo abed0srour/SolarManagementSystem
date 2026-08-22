@@ -341,7 +341,7 @@ export class StockService {
   }
 
   async lookupSerial(serial: string) {
-    const unit = await this.prisma.productUnit.findUnique({ relationLoadStrategy: 'join',
+    const unit = await this.prisma.productUnit.findFirst({ relationLoadStrategy: 'join',
       where: { serialNumber: serial },
       include: {
         product: true,
@@ -387,7 +387,7 @@ export class StockService {
     id: string,
     data: { serialNumber?: string; status?: UnitStatus; manufactureDate?: string; warehouseId?: string },
   ) {
-    const existing = await this.prisma.productUnit.findUnique({ where: { id } });
+    const existing = await this.prisma.productUnit.findFirst({ where: { id } });
     if (!existing) throw new NotFoundException('Unit not found');
 
     // Serials are printed on the physical hardware, so correcting a typo has to
@@ -399,7 +399,7 @@ export class StockService {
       if (!serialNumber) throw new BadRequestException('Serial number cannot be empty');
       if (serialNumber.length > 18) throw new BadRequestException('Serial numbers must be 18 characters or less');
       if (serialNumber !== existing.serialNumber) {
-        const clash = await this.prisma.productUnit.findUnique({ where: { serialNumber } });
+        const clash = await this.prisma.productUnit.findFirst({ where: { serialNumber } });
         if (clash) throw new BadRequestException(`Serial number "${serialNumber}" is already used by another unit`);
       }
     }

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { NumberingService } from '../common/numbering.service';
+import { TenantSweepService } from '../common/tenant-sweep.service';
 
 @Injectable()
 export class MaintenanceService {
@@ -11,6 +12,7 @@ export class MaintenanceService {
     private prisma: PrismaService,
     private audit: AuditService,
     private numbering: NumberingService,
+    private sweep: TenantSweepService,
   ) {}
 
   private intervalDays(visitsPerYear: number) {
@@ -129,6 +131,11 @@ export class MaintenanceService {
   /** Daily housekeeping: expire ended contracts, notify visits due within 7 days and contracts expiring within 30. */
   @Cron('0 6 * * *')
   async dailyChecks() {
+    return this.sweep.forEachActiveTenant('Maintenance checks', () => this.dailyChecksForTenant());
+  }
+
+  /** The same housekeeping for exactly one store — the unit the sweep repeats. */
+  private async dailyChecksForTenant() {
     const now = new Date();
     await this.prisma.maintenanceContract.updateMany({
       where: { status: 'ACTIVE', endDate: { lt: now }, deletedAt: null },

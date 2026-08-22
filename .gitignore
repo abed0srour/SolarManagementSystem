@@ -18,6 +18,9 @@ backend/uploads/
 
 # Local backup snapshots
 backend/backups/
+solar_store_backup.sql
+*.sql.bak
+supabase/.temp/
 
 # Logs
 *.log

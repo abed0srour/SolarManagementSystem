@@ -58,15 +58,13 @@ export class CronController {
       case 'maintenance':
         await this.maintenance.dailyChecks();
         break;
-      case 'backup':
-        // Honours the admin's configured cadence: the platform scheduler can
-        // only fire on a fixed timetable, so the job itself decides whether
-        // today is a day this install wants a backup.
-        if (!(await this.backup.isScheduledForNow())) {
-          return { job, skipped: true, reason: 'Not scheduled for now' };
-        }
-        await this.backup.run('SCHEDULER');
-        break;
+      case 'backup': {
+        // Honours each store's configured cadence: the platform scheduler can
+        // only fire on a fixed timetable, so the job itself decides which
+        // stores want a backup right now.
+        const result = await this.backup.runDueBackups();
+        return { job, ok: true, ...result, durationMs: Date.now() - started };
+      }
 
       /*
        * Maintenance and backup in one call.
@@ -76,10 +74,9 @@ export class CronController {
        * On a plan with room, schedule the individual jobs instead.
        */
       case 'daily': {
-        await this.maintenance.dailyChecks();
-        const backedUp = await this.backup.isScheduledForNow();
-        if (backedUp) await this.backup.run('SCHEDULER');
-        return { job, ok: true, maintenance: true, backup: backedUp, durationMs: Date.now() - started };
+        const maintenance = await this.maintenance.dailyChecks();
+        const backup = await this.backup.runDueBackups();
+        return { job, ok: true, maintenance, backup, durationMs: Date.now() - started };
       }
       default:
         throw new ForbiddenException(`Unknown job: ${job}`);

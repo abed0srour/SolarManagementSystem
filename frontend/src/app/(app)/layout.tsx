@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import { clearSession, getRefreshToken, getToken, getUser } from '../../lib/auth';
+import { getClaims, signOut } from '../../lib/auth';
 import { clearCache, readCache, refreshAllCaches, writeCache } from '../../lib/cache';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
@@ -130,12 +130,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Middleware already turned anonymous visitors away; this is the in-tab
     // fallback for a session cleared after the page was served.
-    if (!getToken()) {
-      router.replace('/login');
-      return;
-    }
-    setUserName(getUser()?.name ?? '');
-    setReady(true);
+    getClaims().then((claims) => {
+      if (!claims) {
+        router.replace('/login');
+        return;
+      }
+      // The platform owner has no store, so none of this shell applies to them.
+      if (claims.role === 'super_admin') {
+        router.replace('/superadmin/dashboard');
+        return;
+      }
+      setUserName(claims.email ?? '');
+      setReady(true);
+    });
     // Branding (store name, tagline, logo) comes from the admin settings.
     // Painted from cache first so the header never flashes empty, then
     // revalidated in the background.
@@ -211,9 +218,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
 
   const logout = async () => {
-    api.post('/auth/logout', { refreshToken: getRefreshToken() }).catch(() => {});
-    clearSession();
-    // Cached business data outlives the session otherwise.
+    await signOut();
+    /*
+     * Cached business data outlives the session otherwise — and under
+     * multi-tenancy that is no longer merely stale. On a shared machine the
+     * next person to sign in would briefly see the previous store's numbers
+     * painted from cache before the first fetch returned.
+     */
     clearCache();
     router.replace('/login');
   };

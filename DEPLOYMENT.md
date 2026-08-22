@@ -13,6 +13,55 @@ Do the backend first — the frontend needs its URL.
 
 ---
 
+## Supabase Auth
+
+Identity is Supabase Auth, not the API. The browser signs in directly; NestJS
+only verifies the tokens it is handed.
+
+1. **Authentication → Hooks → Customize Access Token**: enable it and point it
+   at `public.custom_access_token_hook`. Without this, `role` and `tenant_id`
+   never reach the JWT, and every request falls back to the `app_metadata`
+   mirror — workable, but the hook is the intended source.
+2. **Authentication → URL Configuration**: set the Site URL to the frontend
+   origin and add `<origin>/reset-password` as a redirect URL, or password
+   recovery links will bounce.
+3. **Authentication → Providers → Email**: leave signups disabled. Stores are
+   provisioned by the super admin; nobody self-registers.
+
+### Environment variables
+
+| Where | Variable | Notes |
+| --- | --- | --- |
+| backend | `SUPABASE_URL` | project URL |
+| backend | `SUPABASE_JWT_SECRET` | legacy HS256 secret; omit if the project signs with keys |
+| backend | `SUPABASE_SERVICE_ROLE_KEY` | **server only** — creates and deletes accounts, bypasses RLS |
+| backend | `APP_URL` | where invite and recovery links land |
+| frontend | `NEXT_PUBLIC_SUPABASE_URL` | public |
+| frontend | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public by design; RLS is what constrains it |
+
+The service role key must never be given a `NEXT_PUBLIC_` name. Anything with
+that prefix is compiled into the JavaScript every visitor downloads, and this
+key can read and rewrite every store on the platform.
+
+---
+
+## Multi-tenancy
+
+Each store is a `Tenant` row, and every business table carries `tenantId`.
+
+Isolation is enforced in `backend/src/prisma/tenant-scope.ts`, a Prisma client
+extension that rewrites every query: reads gain `WHERE tenantId = …`, writes are
+stamped with it, and anything running with no tenant established is refused
+outright rather than quietly spanning all of them.
+
+RLS policies exist too (`supabase/migrations/…_rls_policies.sql`) but are
+**defense-in-depth, not the primary boundary** — Prisma connects as the table
+owner, and a table owner bypasses RLS in Postgres. They protect anything that
+reaches the database with a user JWT instead: supabase-js from the browser,
+Realtime, Edge Functions.
+
+---
+
 ## 1. Supabase (database)
 
 1. Create a project. Save the database password.
@@ -62,17 +111,30 @@ and `backups/` exactly as before.
 
 ### First deploy
 
-`vercel-build` runs `prisma generate && prisma migrate deploy`, so the schema is
-applied on every deploy.
+`vercel-build` runs `prisma generate && prisma migrate deploy`, which applies
+the historical Prisma migrations only.
 
-Seed the admin account once, from your machine, pointed at Supabase:
+**Schema changes now live in `supabase/migrations/` and are NOT applied by a
+deploy.** They are pushed deliberately, from a machine linked to the project:
+
+```bash
+npx supabase link --project-ref <ref>
+npm --prefix backend run db:push
+```
+
+That separation is on purpose. These migrations rewrite unique indexes and
+backfill every table; running them automatically on each push means a routine
+frontend deploy could reshape a production database at an unattended moment.
+
+Then create the platform owner:
 
 ```bash
 cd backend
-DATABASE_URL="<pooled url>" DIRECT_URL="<direct url>" npx prisma db seed
+SUPABASE_URL="https://<ref>.supabase.co" SUPABASE_SERVICE_ROLE_KEY="<service role key>" SUPER_ADMIN_EMAIL="you@example.com" npm run superadmin:create
 ```
 
-It prints a generated password once. Save it.
+It prints a generated password once. Save it. Signing in with it lands on
+`/superadmin/dashboard`, where the first store is created.
 
 ### Check it
 

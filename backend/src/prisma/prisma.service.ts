@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { tenantScopeExtension } from './tenant-scope';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -10,6 +11,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // interactive transaction pays network latency. The default 5s transaction
     // timeout is easily exceeded by multi-line receipts/confirmations (P2028).
     super({ transactionOptions: { maxWait: 15_000, timeout: 60_000 } });
+
+    /*
+     * Every consumer of this service gets the tenant-scoped client, not the raw
+     * one. Returning the extended client from the constructor is what makes
+     * that unavoidable: there is no second, unscoped `prisma` handle for a
+     * service to reach for by mistake, because none is ever exposed.
+     *
+     * `$extends` returns a proxy that forwards anything it does not define
+     * itself to this instance, so `onModuleInit`, `onModuleDestroy` and the
+     * logger below all still work through it.
+     */
+    return this.$extends(tenantScopeExtension) as unknown as PrismaService;
   }
 
   async onModuleInit() {
