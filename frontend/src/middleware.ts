@@ -27,64 +27,69 @@ const isPublic = (pathname: string) =>
   PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 export async function middleware(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
-  const { response, accessToken } = await updateSession(request);
-  const claims = claimsFromToken(accessToken);
+  try {
+    const { pathname, search } = request.nextUrl;
+    const { response, accessToken } = await updateSession(request);
+    const claims = claimsFromToken(accessToken);
 
-  const redirect = (to: string, keepNext = false) => {
-    const url = request.nextUrl.clone();
-    url.pathname = to;
-    url.search = '';
-    if (keepNext) url.searchParams.set('next', `${pathname}${search}`);
-    // Carry the refreshed cookies onto the redirect, or the very next request
-    // arrives with the stale token this middleware just replaced.
-    const res = NextResponse.redirect(url);
-    for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
-    return res;
-  };
+    const redirect = (to: string, keepNext = false) => {
+      const url = request.nextUrl.clone();
+      url.pathname = to;
+      url.search = '';
+      if (keepNext) url.searchParams.set('next', `${pathname}${search}`);
+      // Carry the refreshed cookies onto the redirect, or the very next request
+      // arrives with the stale token this middleware just replaced.
+      const res = NextResponse.redirect(url);
+      for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
+      return res;
+    };
 
-  /*
-   * /reset-password is deliberately reachable while signed in. Clicking a
-   * recovery link signs the user in with a temporary session first, so treating
-   * it as "already authenticated, go to the dashboard" would bounce them off
-   * the page before they could set a new password.
-   */
-  if (isPublic(pathname)) {
-    if (claims && pathname === '/login') return redirect(homeRouteFor(claims));
-    return response;
-  }
-
-  if (!claims) return redirect('/login', true);
-
-  const wantsPlatform = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
-
-  if (wantsPlatform && !isSuperAdmin(claims)) {
-    // A store user has no business on the platform portal. Sent to their own
-    // dashboard rather than /login: they are signed in, just not for this.
-    return redirect('/dashboard');
-  }
-
-  if (!wantsPlatform && isSuperAdmin(claims)) {
     /*
-     * And the reverse. The platform owner has no tenant, so a store page would
-     * have nothing to render and the API would refuse every request behind it.
-     * Redirecting is clearer than showing a dashboard full of errors.
+     * /reset-password is deliberately reachable while signed in. Clicking a
+     * recovery link signs the user in with a temporary session first, so treating
+     * it as "already authenticated, go to the dashboard" would bounce them off
+     * the page before they could set a new password.
      */
-    return redirect('/superadmin/dashboard');
-  }
+    if (isPublic(pathname)) {
+      if (claims && pathname === '/login') return redirect(homeRouteFor(claims));
+      return response;
+    }
 
-  // A tenant user whose store has been suspended keeps a valid token until it
-  // expires. Stop them at the door rather than letting every panel fail.
-  if (!isSuperAdmin(claims) && !['ACTIVE', 'UNKNOWN'].includes(claims.tenantStatus)) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    url.search = `?reason=${claims.tenantStatus === 'SUSPENDED' ? 'suspended' : 'inactive'}`;
-    const res = NextResponse.redirect(url);
-    for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
-    return res;
-  }
+    if (!claims) return redirect('/login', true);
 
-  return response;
+    const wantsPlatform = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
+
+    if (wantsPlatform && !isSuperAdmin(claims)) {
+      // A store user has no business on the platform portal. Sent to their own
+      // dashboard rather than /login: they are signed in, just not for this.
+      return redirect('/dashboard');
+    }
+
+    if (!wantsPlatform && isSuperAdmin(claims)) {
+      /*
+       * And the reverse. The platform owner has no tenant, so a store page would
+       * have nothing to render and the API would refuse every request behind it.
+       * Redirecting is clearer than showing a dashboard full of errors.
+       */
+      return redirect('/superadmin/dashboard');
+    }
+
+    // A tenant user whose store has been suspended keeps a valid token until it
+    // expires. Stop them at the door rather than letting every panel fail.
+    if (!isSuperAdmin(claims) && !['ACTIVE', 'UNKNOWN'].includes(claims.tenantStatus)) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.search = `?reason=${claims.tenantStatus === 'SUSPENDED' ? 'suspended' : 'inactive'}`;
+      const res = NextResponse.redirect(url);
+      for (const cookie of response.cookies.getAll()) res.cookies.set(cookie);
+      return res;
+    }
+
+    return response;
+  } catch (err) {
+    console.error('Middleware error caught:', err);
+    return NextResponse.next({ request });
+  }
 }
 
 export const config = {

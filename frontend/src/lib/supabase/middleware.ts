@@ -17,10 +17,15 @@ export async function updateSession(request: NextRequest): Promise<{
 }> {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { response, accessToken: null };
+  }
+
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (list) => {
@@ -29,11 +34,13 @@ export async function updateSession(request: NextRequest): Promise<{
           for (const { name, value, options } of list) response.cookies.set(name, value, options);
         },
       },
-    },
-  );
+    });
 
-  await supabase.auth.getUser();
-  const { data } = await supabase.auth.getSession();
+    await supabase.auth.getUser();
+    const { data } = await supabase.auth.getSession();
 
-  return { response, accessToken: data.session?.access_token ?? null };
+    return { response, accessToken: data.session?.access_token ?? null };
+  } catch {
+    return { response, accessToken: null };
+  }
 }
