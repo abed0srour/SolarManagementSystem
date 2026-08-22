@@ -847,57 +847,52 @@ export class InvoicePdfService {
     // Draw Table
     if (isFull) {
       const fullData = data as any;
-      const colDate = 40;
-      const colRef = 110;
-      const colDesc = 185;
-      const colDebit = 380;
-      const colCredit = 465;
-      const colBal = width - 40;
+      const colDate = 45;
+      const colRef = 125;
+      const colDebit = 370;
+      const colCredit = 455;
+      const colBal = width - 45;
 
       const drawTableHeader = (p: PDFPage, curY: number) => {
         p.drawLine({ start: { x: 35, y: curY + 6 }, end: { x: width - 35, y: curY + 6 }, thickness: 1, color: LIGHT });
-        curY -= 16;
-        p.drawText('Date', { x: colDate, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Ref #', { x: colRef, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Description / Details', { x: colDesc, y: curY, size: 9.5, font: bold, color: DARK });
-        rightAt('Charges (+)', colDebit, curY, 9.5, bold);
-        rightAt('Payments (-)', colCredit, curY, 9.5, bold);
-        rightAt('Balance', colBal, curY, 9.5, bold);
+        curY -= 15;
+        p.drawText('Date', { x: colDate, y: curY, size: 9, font: bold, color: DARK });
+        p.drawText('Transaction / Ref #', { x: colRef, y: curY, size: 9, font: bold, color: DARK });
+        rightAt('Invoiced (+)', colDebit, curY, 9, bold);
+        rightAt('Paid (-)', colCredit, curY, 9, bold);
+        rightAt('Balance', colBal, curY, 9, bold);
         curY -= 8;
         p.drawLine({ start: { x: 35, y: curY }, end: { x: width - 35, y: curY }, thickness: 1, color: LIGHT });
-        return curY - 16;
+        return curY - 14;
       };
 
       y = drawTableHeader(page, y);
 
       // Opening balance row if start date is given
       if (options.startDate) {
-        page.drawText(this.fmtDate(options.startDate), { x: colDate, y, size: 9, font, color: GRAY });
-        page.drawText('—', { x: colRef, y, size: 9, font, color: GRAY });
-        page.drawText('Opening Forward Balance', { x: colDesc, y, size: 9, font: bold, color: GRAY });
-        rightAt('—', colDebit, y, 9, font, GRAY);
-        rightAt('—', colCredit, y, 9, font, GRAY);
-        rightAt(money(fullData.openingBalance), colBal, y, 9.5, bold, DARK);
-        y -= 8;
+        page.drawText(this.fmtDate(options.startDate), { x: colDate, y, size: 8.5, font, color: GRAY });
+        page.drawText('Opening Forward Balance', { x: colRef, y, size: 8.5, font: bold, color: GRAY });
+        rightAt('—', colDebit, y, 8.5, font, GRAY);
+        rightAt('—', colCredit, y, 8.5, font, GRAY);
+        rightAt(money(fullData.openingBalance), colBal, y, 9, bold, DARK);
+        y -= 6;
         page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
-        y -= 14;
+        y -= 12;
       }
 
       if (fullData.entries.length === 0) {
         page.drawText('No transactions recorded within this period.', {
           x: 45,
           y,
-          size: 10,
+          size: 9.5,
           font,
           color: GRAY,
         });
-        y -= 24;
+        y -= 20;
       }
 
       for (const e of fullData.entries) {
-        const hasItems = e.itemsSummary && e.itemsSummary.length > 0;
-        const requiredSpace = 24 + (hasItems ? Math.min(e.itemsSummary.length, 3) * 12 : 0);
-        if (y < 120 + requiredSpace) {
+        if (y < 100) {
           page = pdf.addPage([595, 842]);
           y = 790;
           y = drawTableHeader(page, y);
@@ -905,11 +900,10 @@ export class InvoicePdfService {
 
         const dateStr = this.fmtDate(new Date(e.date));
         page.drawText(dateStr, { x: colDate, y, size: 8.5, font, color: DARK });
-        page.drawText(e.ref, { x: colRef, y, size: 8.5, font: bold, color: DARK });
 
-        const descText = e.description.length > 32 ? e.description.slice(0, 32) + '…' : e.description;
-        page.drawText(descText, {
-          x: colDesc,
+        const label = e.type === 'INVOICE' ? `Invoice #${e.ref}` : `Payment #${e.ref}`;
+        page.drawText(label, {
+          x: colRef,
           y,
           size: 8.5,
           font: e.type === 'INVOICE' ? font : bold,
@@ -920,46 +914,19 @@ export class InvoicePdfService {
         rightAt(e.credit > 0 ? money(e.credit) : '—', colCredit, y, 8.5, font, e.credit > 0 ? rgb(0.1, 0.55, 0.25) : GRAY);
         rightAt(money(e.runningBalance), colBal, y, 9, bold, DARK);
 
-        y -= 12;
-
-        if (hasItems) {
-          const displayedItems = e.itemsSummary.slice(0, 3);
-          for (const it of displayedItems) {
-            const itLabel = `• ${it.name} (x${it.quantity}) — ${money(it.lineTotal)}`;
-            page.drawText(itLabel.length > 45 ? itLabel.slice(0, 45) + '…' : itLabel, {
-              x: colDesc + 8,
-              y,
-              size: 7.5,
-              font,
-              color: GRAY,
-            });
-            y -= 10;
-          }
-          if (e.itemsSummary.length > 3) {
-            page.drawText(`+ ${e.itemsSummary.length - 3} more items…`, {
-              x: colDesc + 8,
-              y,
-              size: 7.5,
-              font,
-              color: GRAY,
-            });
-            y -= 10;
-          }
-        }
-
-        y -= 2;
+        y -= 6;
         page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
         y -= 12;
       }
 
       // Closing Total Box
-      if (y < 150) {
+      if (y < 130) {
         page = pdf.addPage([595, 842]);
         y = 780;
       }
-      y -= 8;
-      const sumBoxW = 240;
-      const sumBoxH = 65;
+      y -= 6;
+      const sumBoxW = 230;
+      const sumBoxH = 62;
       const bx = width - 35 - sumBoxW;
       page.drawRectangle({
         x: bx,
@@ -971,30 +938,30 @@ export class InvoicePdfService {
         borderWidth: 0.5,
       });
 
-      page.drawText('Total Charges (Period):', { x: bx + 12, y: y - 18, size: 9, font, color: GRAY });
-      rightAt(money(fullData.totalBilled), bx + sumBoxW - 12, y - 18, 9, bold, DARK);
+      page.drawText('Total Invoiced (Period):', { x: bx + 12, y: y - 16, size: 8.5, font, color: GRAY });
+      rightAt(money(fullData.totalBilled), bx + sumBoxW - 12, y - 16, 8.5, bold, DARK);
 
-      page.drawText('Total Payments (Period):', { x: bx + 12, y: y - 34, size: 9, font, color: GRAY });
-      rightAt(money(fullData.totalPaid), bx + sumBoxW - 12, y - 34, 9, bold, rgb(0.1, 0.55, 0.25));
+      page.drawText('Total Paid (Period):', { x: bx + 12, y: y - 32, size: 8.5, font, color: GRAY });
+      rightAt(money(fullData.totalPaid), bx + sumBoxW - 12, y - 32, 8.5, bold, rgb(0.1, 0.55, 0.25));
 
       page.drawLine({
-        start: { x: bx + 12, y: y - 42 },
-        end: { x: bx + sumBoxW - 12, y: y - 42 },
+        start: { x: bx + 12, y: y - 40 },
+        end: { x: bx + sumBoxW - 12, y: y - 40 },
         thickness: 0.5,
         color: LIGHT,
       });
 
-      page.drawText('Net Balance Outstanding:', { x: bx + 12, y: y - 56, size: 10, font: bold, color: DARK });
+      page.drawText('Net Outstanding:', { x: bx + 12, y: y - 53, size: 9.5, font: bold, color: DARK });
       rightAt(
         money(fullData.closingBalance),
         bx + sumBoxW - 12,
-        y - 56,
-        11,
+        y - 53,
+        10.5,
         bold,
         Number(fullData.closingBalance) > 0 ? rgb(0.85, 0.25, 0.1) : DARK,
       );
 
-      y -= sumBoxH + 24;
+      y -= sumBoxH + 20;
     } else {
       // MODE B: PAYMENTS ONLY
       const payData = data as any;

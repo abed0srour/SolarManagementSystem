@@ -417,7 +417,10 @@
     "statementPeriod": "الفترة الزمنية",
     "allTransactions": "يتضمن جميع المعاملات المسجلة",
     "printStatement": "طباعة / معاينة",
-    "statementDownloaded": "تم تحميل كشف الحساب بنجاح"
+    "statementDownloaded": "تم تحميل كشف الحساب بنجاح",
+    "tillToday": "حتى اليوم",
+    "fromDate": "من تاريخ",
+    "toDate": "إلى تاريخ"
   },
   "suppliers": {
     "title": "الموردون",

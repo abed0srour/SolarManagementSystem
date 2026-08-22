@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Calendar, Download, FileSpreadsheet, FileText, Loader2, Printer, Receipt } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, FileText, Loader2, Printer, Receipt, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -22,25 +22,31 @@ interface Props {
   };
 }
 
+function getTodayString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getPresetDates(preset: DatePreset): { startDate: string; endDate: string } {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
+  const today = getTodayString();
 
   if (preset === 'THIS_MONTH') {
-    const start = new Date(y, m, 1).toISOString().slice(0, 10);
-    const end = now.toISOString().slice(0, 10);
-    return { startDate: start, endDate: end };
+    const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+    return { startDate: start, endDate: today };
   }
   if (preset === 'LAST_MONTH') {
-    const start = new Date(y, m - 1, 1).toISOString().slice(0, 10);
-    const end = new Date(y, m, 0).toISOString().slice(0, 10);
+    const lastMonthStart = new Date(y, m - 1, 1);
+    const lastMonthEnd = new Date(y, m, 0);
+    const start = `${lastMonthStart.getFullYear()}-${String(lastMonthStart.getMonth() + 1).padStart(2, '0')}-01`;
+    const end = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
     return { startDate: start, endDate: end };
   }
   if (preset === 'THIS_YEAR') {
-    const start = new Date(y, 0, 1).toISOString().slice(0, 10);
-    const end = now.toISOString().slice(0, 10);
-    return { startDate: start, endDate: end };
+    const start = `${y}-01-01`;
+    return { startDate: start, endDate: today };
   }
   return { startDate: '', endDate: '' };
 }
@@ -64,6 +70,11 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
     }
   };
 
+  const handleSetTillToday = () => {
+    setEndDate(getTodayString());
+    setPreset('CUSTOM');
+  };
+
   const buildUrl = () => {
     const params = new URLSearchParams();
     params.set('mode', mode);
@@ -73,7 +84,7 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
   };
 
   const getFilename = () => {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = getTodayString();
     const cleanName = client.name.replace(/[^a-zA-Z0-9_\u0600-\u06FF-]/g, '_');
     return `statement-${cleanName}-${mode.toLowerCase()}-${dateStr}.pdf`;
   };
@@ -113,7 +124,7 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
             </div>
             <div>
               <DialogTitle className="text-lg">
-                {t('clients.generateStatement') || 'Generate Statement of Account'}
+                {t('clients.generateStatement') || 'Statement of Account'}
               </DialogTitle>
               <DialogDescription className="text-xs">
                 {client.name}
@@ -144,7 +155,7 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
                   <span>{t('clients.modeFull') || 'Full Account Statement'}</span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('clients.modeFullDesc') || 'Complete ledger of all invoices, line items, payments & running balance.'}
+                  {t('clients.modeFullDesc') || 'All invoices, payments and running balance.'}
                 </p>
               </button>
 
@@ -163,17 +174,29 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
                   <span>{t('clients.modePayments') || 'Payment History Only'}</span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('clients.modePaymentsDesc') || 'List of payments received, methods, references & invoice IDs.'}
+                  {t('clients.modePaymentsDesc') || 'List of received payments and invoice references.'}
                 </p>
               </button>
             </div>
           </div>
 
           {/* Date Range Selection */}
-          <div className="space-y-2.5">
-            <Label className="text-xs font-semibold uppercase text-muted-foreground">
-              {t('clients.statementPeriod') || 'Date Range'}
-            </Label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold uppercase text-muted-foreground">
+                {t('clients.statementPeriod') || 'Date Range'}
+              </Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-6 text-xs gap-1 px-2 font-medium text-primary bg-primary/10 hover:bg-primary/20"
+                onClick={handleSetTillToday}
+              >
+                <Sparkles className="h-3 w-3" />
+                {t('clients.tillToday') || 'Till Today'}
+              </Button>
+            </div>
 
             {/* Presets */}
             <div className="flex flex-wrap gap-1.5">
@@ -199,31 +222,46 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
               ))}
             </div>
 
-            {/* Date Inputs */}
-            {preset === 'CUSTOM' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <Label className="text-xs">{t('common.startDate') || 'Start Date'}</Label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">{t('common.endDate') || 'End Date'}</Label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
+            {/* From - To Date Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('clients.fromDate') || 'From Date'}</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setPreset('CUSTOM');
+                  }}
+                />
               </div>
-            ) : startDate && endDate ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">{t('clients.toDate') || 'To Date'}</Label>
+                  <button
+                    type="button"
+                    onClick={handleSetTillToday}
+                    className="text-[11px] text-primary hover:underline"
+                  >
+                    {t('clients.tillToday') || 'Today'}
+                  </button>
+                </div>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setPreset('CUSTOM');
+                  }}
+                />
+              </div>
+            </div>
+
+            {startDate || endDate ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">
                 <Calendar className="h-3.5 w-3.5" />
                 <span>
-                  {startDate} &nbsp;→&nbsp; {endDate}
+                  {startDate || 'Start'} &nbsp;→&nbsp; {endDate || 'Today'}
                 </span>
               </div>
             ) : (

@@ -417,7 +417,10 @@
     "statementPeriod": "Date Range",
     "allTransactions": "All recorded transactions included",
     "printStatement": "Print / Preview",
-    "statementDownloaded": "Statement downloaded successfully"
+    "statementDownloaded": "Statement downloaded successfully",
+    "tillToday": "Till Today",
+    "fromDate": "From Date",
+    "toDate": "To Date"
   },
   "suppliers": {
     "title": "Suppliers",
