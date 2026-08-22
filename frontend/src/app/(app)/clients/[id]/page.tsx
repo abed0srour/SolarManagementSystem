@@ -4,12 +4,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
-  BadgeDollarSign, CreditCard, Mail, MapPin, Phone, Pencil, Plus, ShoppingCart, StickyNote, Wallet,
+  BadgeDollarSign, CreditCard, FileSpreadsheet, Mail, MapPin, Phone, Pencil, Plus, ShoppingCart, StickyNote, Wallet,
 } from 'lucide-react';
 import { api, errMsg, fmtDate, fmtMoney } from '../../../../lib/api';
 import PageHeader from '../../../../components/page-header';
 import StatusChip from '../../../../components/status-chip';
 import EntityLink, { linkTo } from '../../../../components/entity-link';
+import ClientStatementDialog from '../../../../components/client-statement-dialog';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
@@ -31,6 +32,7 @@ export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const [client, setClient] = useState<any>(null);
   const [missing, setMissing] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -88,6 +90,9 @@ export default function ClientDetailPage() {
           subtitle={[client.phone, client.email].filter(Boolean).join(' · ') || undefined}
         />
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setStatementOpen(true)}>
+            <FileSpreadsheet /> {t('clients.generateStatement')}
+          </Button>
           <Button variant="outline" onClick={() => router.push(`/clients/${client.id}/orders`)}>
             <ShoppingCart /> {t('nav.salesOrders')}
           </Button>
@@ -219,6 +224,12 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ClientStatementDialog
+        open={statementOpen}
+        onOpenChange={setStatementOpen}
+        client={client}
+      />
     </div>
   );
 }

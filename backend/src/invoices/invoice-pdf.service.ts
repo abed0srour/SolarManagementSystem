@@ -539,4 +539,549 @@ export class InvoicePdfService {
     );
     return pdf.save();
   }
+
+  /** Aggregates ledger data for client statement (used for PDF and JSON API). */
+  async getClientStatementData(
+    clientId: string,
+    options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {},
+  ) {
+    const { mode = 'FULL', startDate, endDate } = options;
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: { addresses: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    if (mode === 'PAYMENTS') {
+      const payments = await this.prisma.payment.findMany({
+        where: {
+          clientId,
+          direction: 'INCOMING',
+          deletedAt: null,
+          ...(startDate && { paymentDate: { gte: startDate } }),
+          ...(endDate && { paymentDate: { lte: endDate } }),
+        },
+        include: {
+          invoice: { select: { id: true, number: true, total: true } },
+        },
+        orderBy: { paymentDate: 'asc' },
+      });
+
+      const entries = payments.map((p) => ({
+        id: p.id,
+        date: p.paymentDate,
+        number: p.number,
+        method: p.method,
+        reference: p.reference || null,
+        invoiceNumber: p.invoice?.number || null,
+        invoiceId: p.invoice?.id || null,
+        notes: p.notes || null,
+        amount: Number(p.amount),
+        currency: p.currency,
+      }));
+
+      const totalPaid = entries.reduce((s, e) => s + e.amount, 0);
+
+      return {
+        client,
+        mode: 'PAYMENTS' as const,
+        startDate: startDate ? startDate.toISOString() : null,
+        endDate: endDate ? endDate.toISOString() : null,
+        entries,
+        totalPaymentsCount: entries.length,
+        totalAmountPaid: totalPaid,
+      };
+    }
+
+    // MODE A: FULL STATEMENT
+    let openingBalance = 0;
+    if (startDate) {
+      const [prevInvoices, prevPayments] = await Promise.all([
+        this.prisma.invoice.aggregate({
+          where: {
+            clientId,
+            type: 'SALE',
+            status: { not: 'CANCELLED' },
+            deletedAt: null,
+            issueDate: { lt: startDate },
+          },
+          _sum: { total: true },
+        }),
+        this.prisma.payment.aggregate({
+          where: {
+            clientId,
+            direction: 'INCOMING',
+            deletedAt: null,
+            paymentDate: { lt: startDate },
+          },
+          _sum: { amount: true },
+        }),
+      ]);
+      openingBalance = Number(prevInvoices._sum.total ?? 0) - Number(prevPayments._sum.amount ?? 0);
+    }
+
+    const [invoices, payments] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: {
+          clientId,
+          type: 'SALE',
+          status: { not: 'CANCELLED' },
+          deletedAt: null,
+          ...(startDate && { issueDate: { gte: startDate } }),
+          ...(endDate && { issueDate: { lte: endDate } }),
+        },
+        include: {
+          items: {
+            where: { parentItemId: null },
+            include: {
+              product: { select: { sku: true, name: true } },
+              subItems: { include: { product: { select: { name: true } } } },
+            },
+          },
+        },
+        orderBy: { issueDate: 'asc' },
+      }),
+      this.prisma.payment.findMany({
+        where: {
+          clientId,
+          direction: 'INCOMING',
+          deletedAt: null,
+          ...(startDate && { paymentDate: { gte: startDate } }),
+          ...(endDate && { paymentDate: { lte: endDate } }),
+        },
+        include: {
+          invoice: { select: { id: true, number: true } },
+        },
+        orderBy: { paymentDate: 'asc' },
+      }),
+    ]);
+
+    type LedgerRaw = {
+      id: string;
+      date: Date;
+      type: 'INVOICE' | 'PAYMENT';
+      ref: string;
+      description: string;
+      debit: number;
+      credit: number;
+      itemsSummary?: { name: string; quantity: number; unitPrice: number; lineTotal: number }[];
+    };
+
+    const raw: LedgerRaw[] = [
+      ...invoices.map((inv) => ({
+        id: inv.id,
+        date: inv.issueDate,
+        type: 'INVOICE' as const,
+        ref: inv.number,
+        description: `Invoice #${inv.number}${inv.notes ? ` — ${inv.notes}` : ''}`,
+        debit: Number(inv.total),
+        credit: 0,
+        itemsSummary: inv.items.map((it) => ({
+          name: it.product?.name || it.description || 'Item',
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice),
+          lineTotal: Number(it.lineTotal),
+        })),
+      })),
+      ...payments.map((p) => ({
+        id: p.id,
+        date: p.paymentDate,
+        type: 'PAYMENT' as const,
+        ref: p.number,
+        description: `Payment (${p.method}${p.reference ? ' · ' + p.reference : ''}${p.invoice ? ' for Inv #' + p.invoice.number : ''})`,
+        debit: 0,
+        credit: Number(p.amount),
+      })),
+    ];
+
+    raw.sort((a, b) => {
+      const ta = new Date(a.date).getTime();
+      const tb = new Date(b.date).getTime();
+      if (ta !== tb) return ta - tb;
+      return a.type === 'INVOICE' ? -1 : 1;
+    });
+
+    let current = openingBalance;
+    const entries = raw.map((r) => {
+      current = current + r.debit - r.credit;
+      return {
+        ...r,
+        runningBalance: current,
+      };
+    });
+
+    const totalBilled = entries.reduce((s, e) => s + e.debit, 0);
+    const totalPaid = entries.reduce((s, e) => s + e.credit, 0);
+    const closingBalance = current;
+
+    return {
+      client,
+      mode: 'FULL' as const,
+      startDate: startDate ? startDate.toISOString() : null,
+      endDate: endDate ? endDate.toISOString() : null,
+      openingBalance,
+      entries,
+      totalBilled,
+      totalPaid,
+      closingBalance,
+    };
+  }
+
+  /** Generates a formatted PDF statement of account for a client. */
+  async clientStatement(
+    clientId: string,
+    options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {},
+  ): Promise<Uint8Array> {
+    const data = await this.getClientStatementData(clientId, options);
+    const company = await this.company();
+
+    const pdf = await PDFDocument.create();
+    let page = pdf.addPage([595, 842]);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const fonts = { font, bold };
+    const width = page.getWidth();
+
+    const money = (n: any) =>
+      `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+      page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
+
+    const isFull = data.mode === 'FULL';
+    const docTitle = isFull ? 'Account Statement' : 'Payment History';
+
+    let y = await this.header(pdf, page, fonts, docTitle, company);
+
+    const client = data.client;
+    const mainAddr = client.addresses?.find((a: any) => a.isBilling) || client.addresses?.[0];
+    const clientRows: { text: string; bold?: boolean }[] = [{ text: client.name, bold: true }];
+    if (client.phone) clientRows.push({ text: client.phone });
+    if (client.email) clientRows.push({ text: client.email });
+    if (mainAddr) clientRows.push({ text: [mainAddr.line1, mainAddr.city].filter(Boolean).join(', ') });
+
+    const periodStr =
+      options.startDate && options.endDate
+        ? `${this.fmtDate(options.startDate)} – ${this.fmtDate(options.endDate)}`
+        : options.startDate
+          ? `From ${this.fmtDate(options.startDate)}`
+          : options.endDate
+            ? `Up to ${this.fmtDate(options.endDate)}`
+            : 'All Recorded History';
+
+    const metaRows: { label: string; value: string }[] = [
+      { label: 'Date', value: this.fmtDate(new Date()) },
+      { label: 'Period', value: periodStr },
+      { label: 'Account Type', value: `${client.type || 'Standard'} · ${client.tier || 'Retail'}` },
+    ];
+    if (Number(client.creditLimit) > 0) {
+      metaRows.push({ label: 'Credit Limit', value: money(client.creditLimit) });
+    }
+
+    y = this.band(
+      page,
+      fonts,
+      y,
+      { label: 'Client / Account', rows: clientRows },
+      metaRows,
+      'Statement Details',
+    );
+
+    // Summary Highlight Cards
+    if (isFull) {
+      const fullData = data as any;
+      const boxW = (width - 70) / 4;
+      const boxH = 42;
+      const metrics = [
+        { label: 'OPENING BALANCE', value: money(fullData.openingBalance), highlight: false },
+        { label: 'TOTAL INVOICED', value: money(fullData.totalBilled), highlight: false },
+        { label: 'TOTAL PAID', value: money(fullData.totalPaid), highlight: false },
+        { label: 'NET OUTSTANDING', value: money(fullData.closingBalance), highlight: true },
+      ];
+
+      metrics.forEach((m, idx) => {
+        const bx = 35 + idx * (boxW + 4);
+        page.drawRectangle({
+          x: bx,
+          y: y - boxH,
+          width: boxW,
+          height: boxH,
+          color: m.highlight ? rgb(0.98, 0.94, 0.9) : BAND,
+          borderColor: m.highlight ? rgb(0.9, 0.5, 0.1) : LIGHT,
+          borderWidth: m.highlight ? 1 : 0.5,
+        });
+        page.drawText(m.label, { x: bx + 8, y: y - 14, size: 7.5, font: bold, color: GRAY });
+        page.drawText(m.value, {
+          x: bx + 8,
+          y: y - 32,
+          size: 11,
+          font: bold,
+          color: m.highlight && Number(fullData.closingBalance) > 0 ? rgb(0.85, 0.25, 0.1) : DARK,
+        });
+      });
+      y -= boxH + 16;
+    } else {
+      const payData = data as any;
+      const boxW = (width - 70) / 2;
+      const boxH = 40;
+      const metrics = [
+        { label: 'TOTAL PAYMENTS COUNT', value: `${payData.totalPaymentsCount} transactions` },
+        { label: 'TOTAL AMOUNT RECEIVED', value: money(payData.totalAmountPaid) },
+      ];
+      metrics.forEach((m, idx) => {
+        const bx = 35 + idx * (boxW + 6);
+        page.drawRectangle({
+          x: bx,
+          y: y - boxH,
+          width: boxW,
+          height: boxH,
+          color: BAND,
+          borderColor: LIGHT,
+          borderWidth: 0.5,
+        });
+        page.drawText(m.label, { x: bx + 10, y: y - 14, size: 8, font: bold, color: GRAY });
+        page.drawText(m.value, { x: bx + 10, y: y - 32, size: 12, font: bold, color: DARK });
+      });
+      y -= boxH + 16;
+    }
+
+    // Draw Table
+    if (isFull) {
+      const fullData = data as any;
+      const colDate = 40;
+      const colRef = 110;
+      const colDesc = 185;
+      const colDebit = 380;
+      const colCredit = 465;
+      const colBal = width - 40;
+
+      const drawTableHeader = (p: PDFPage, curY: number) => {
+        p.drawLine({ start: { x: 35, y: curY + 6 }, end: { x: width - 35, y: curY + 6 }, thickness: 1, color: LIGHT });
+        curY -= 16;
+        p.drawText('Date', { x: colDate, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Ref #', { x: colRef, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Description / Details', { x: colDesc, y: curY, size: 9.5, font: bold, color: DARK });
+        rightAt('Charges (+)', colDebit, curY, 9.5, bold);
+        rightAt('Payments (-)', colCredit, curY, 9.5, bold);
+        rightAt('Balance', colBal, curY, 9.5, bold);
+        curY -= 8;
+        p.drawLine({ start: { x: 35, y: curY }, end: { x: width - 35, y: curY }, thickness: 1, color: LIGHT });
+        return curY - 16;
+      };
+
+      y = drawTableHeader(page, y);
+
+      // Opening balance row if start date is given
+      if (options.startDate) {
+        page.drawText(this.fmtDate(options.startDate), { x: colDate, y, size: 9, font, color: GRAY });
+        page.drawText('—', { x: colRef, y, size: 9, font, color: GRAY });
+        page.drawText('Opening Forward Balance', { x: colDesc, y, size: 9, font: bold, color: GRAY });
+        rightAt('—', colDebit, y, 9, font, GRAY);
+        rightAt('—', colCredit, y, 9, font, GRAY);
+        rightAt(money(fullData.openingBalance), colBal, y, 9.5, bold, DARK);
+        y -= 8;
+        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
+        y -= 14;
+      }
+
+      if (fullData.entries.length === 0) {
+        page.drawText('No transactions recorded within this period.', {
+          x: 45,
+          y,
+          size: 10,
+          font,
+          color: GRAY,
+        });
+        y -= 24;
+      }
+
+      for (const e of fullData.entries) {
+        const hasItems = e.itemsSummary && e.itemsSummary.length > 0;
+        const requiredSpace = 24 + (hasItems ? Math.min(e.itemsSummary.length, 3) * 12 : 0);
+        if (y < 120 + requiredSpace) {
+          page = pdf.addPage([595, 842]);
+          y = 790;
+          y = drawTableHeader(page, y);
+        }
+
+        const dateStr = this.fmtDate(new Date(e.date));
+        page.drawText(dateStr, { x: colDate, y, size: 8.5, font, color: DARK });
+        page.drawText(e.ref, { x: colRef, y, size: 8.5, font: bold, color: DARK });
+
+        const descText = e.description.length > 32 ? e.description.slice(0, 32) + '…' : e.description;
+        page.drawText(descText, {
+          x: colDesc,
+          y,
+          size: 8.5,
+          font: e.type === 'INVOICE' ? font : bold,
+          color: e.type === 'INVOICE' ? DARK : rgb(0.1, 0.5, 0.25),
+        });
+
+        rightAt(e.debit > 0 ? money(e.debit) : '—', colDebit, y, 8.5, font, e.debit > 0 ? DARK : GRAY);
+        rightAt(e.credit > 0 ? money(e.credit) : '—', colCredit, y, 8.5, font, e.credit > 0 ? rgb(0.1, 0.55, 0.25) : GRAY);
+        rightAt(money(e.runningBalance), colBal, y, 9, bold, DARK);
+
+        y -= 12;
+
+        if (hasItems) {
+          const displayedItems = e.itemsSummary.slice(0, 3);
+          for (const it of displayedItems) {
+            const itLabel = `• ${it.name} (x${it.quantity}) — ${money(it.lineTotal)}`;
+            page.drawText(itLabel.length > 45 ? itLabel.slice(0, 45) + '…' : itLabel, {
+              x: colDesc + 8,
+              y,
+              size: 7.5,
+              font,
+              color: GRAY,
+            });
+            y -= 10;
+          }
+          if (e.itemsSummary.length > 3) {
+            page.drawText(`+ ${e.itemsSummary.length - 3} more items…`, {
+              x: colDesc + 8,
+              y,
+              size: 7.5,
+              font,
+              color: GRAY,
+            });
+            y -= 10;
+          }
+        }
+
+        y -= 2;
+        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
+        y -= 12;
+      }
+
+      // Closing Total Box
+      if (y < 150) {
+        page = pdf.addPage([595, 842]);
+        y = 780;
+      }
+      y -= 8;
+      const sumBoxW = 240;
+      const sumBoxH = 65;
+      const bx = width - 35 - sumBoxW;
+      page.drawRectangle({
+        x: bx,
+        y: y - sumBoxH,
+        width: sumBoxW,
+        height: sumBoxH,
+        color: BAND,
+        borderColor: LIGHT,
+        borderWidth: 0.5,
+      });
+
+      page.drawText('Total Charges (Period):', { x: bx + 12, y: y - 18, size: 9, font, color: GRAY });
+      rightAt(money(fullData.totalBilled), bx + sumBoxW - 12, y - 18, 9, bold, DARK);
+
+      page.drawText('Total Payments (Period):', { x: bx + 12, y: y - 34, size: 9, font, color: GRAY });
+      rightAt(money(fullData.totalPaid), bx + sumBoxW - 12, y - 34, 9, bold, rgb(0.1, 0.55, 0.25));
+
+      page.drawLine({
+        start: { x: bx + 12, y: y - 42 },
+        end: { x: bx + sumBoxW - 12, y: y - 42 },
+        thickness: 0.5,
+        color: LIGHT,
+      });
+
+      page.drawText('Net Balance Outstanding:', { x: bx + 12, y: y - 56, size: 10, font: bold, color: DARK });
+      rightAt(
+        money(fullData.closingBalance),
+        bx + sumBoxW - 12,
+        y - 56,
+        11,
+        bold,
+        Number(fullData.closingBalance) > 0 ? rgb(0.85, 0.25, 0.1) : DARK,
+      );
+
+      y -= sumBoxH + 24;
+    } else {
+      // MODE B: PAYMENTS ONLY
+      const payData = data as any;
+      const colDate = 40;
+      const colRef = 115;
+      const colMethod = 190;
+      const colInvoice = 275;
+      const colNotes = 360;
+      const colAmount = width - 40;
+
+      const drawTableHeader = (p: PDFPage, curY: number) => {
+        p.drawLine({ start: { x: 35, y: curY + 6 }, end: { x: width - 35, y: curY + 6 }, thickness: 1, color: LIGHT });
+        curY -= 16;
+        p.drawText('Date', { x: colDate, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Payment #', { x: colRef, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Method', { x: colMethod, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Invoice Ref', { x: colInvoice, y: curY, size: 9.5, font: bold, color: DARK });
+        p.drawText('Reference / Notes', { x: colNotes, y: curY, size: 9.5, font: bold, color: DARK });
+        rightAt('Amount Received', colAmount, curY, 9.5, bold);
+        curY -= 8;
+        p.drawLine({ start: { x: 35, y: curY }, end: { x: width - 35, y: curY }, thickness: 1, color: LIGHT });
+        return curY - 16;
+      };
+
+      y = drawTableHeader(page, y);
+
+      if (payData.entries.length === 0) {
+        page.drawText('No payments found in this date range.', { x: 45, y, size: 10, font, color: GRAY });
+        y -= 24;
+      }
+
+      for (const p of payData.entries) {
+        if (y < 120) {
+          page = pdf.addPage([595, 842]);
+          y = 790;
+          y = drawTableHeader(page, y);
+        }
+
+        const dateStr = this.fmtDate(new Date(p.date));
+        page.drawText(dateStr, { x: colDate, y, size: 9, font, color: DARK });
+        page.drawText(p.number, { x: colRef, y, size: 9, font: bold, color: DARK });
+        page.drawText(p.method, { x: colMethod, y, size: 9, font, color: DARK });
+        page.drawText(p.invoiceNumber || '—', { x: colInvoice, y, size: 9, font, color: p.invoiceNumber ? DARK : GRAY });
+
+        const refText = [p.reference, p.notes].filter(Boolean).join(' · ');
+        const refTrunc = refText ? (refText.length > 25 ? refText.slice(0, 25) + '…' : refText) : '—';
+        page.drawText(refTrunc, { x: colNotes, y, size: 8.5, font, color: GRAY });
+
+        rightAt(money(p.amount), colAmount, y, 9.5, bold, rgb(0.1, 0.55, 0.25));
+
+        y -= 8;
+        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
+        y -= 14;
+      }
+
+      // Closing Total Box
+      if (y < 140) {
+        page = pdf.addPage([595, 842]);
+        y = 780;
+      }
+      y -= 8;
+      const sumBoxW = 240;
+      const sumBoxH = 46;
+      const bx = width - 35 - sumBoxW;
+      page.drawRectangle({
+        x: bx,
+        y: y - sumBoxH,
+        width: sumBoxW,
+        height: sumBoxH,
+        color: BAND,
+        borderColor: LIGHT,
+        borderWidth: 0.5,
+      });
+
+      page.drawText('Total Payments Received:', { x: bx + 12, y: y - 28, size: 10, font: bold, color: DARK });
+      rightAt(money(payData.totalAmountPaid), bx + sumBoxW - 12, y - 28, 12, bold, rgb(0.1, 0.55, 0.25));
+
+      y -= sumBoxH + 24;
+    }
+
+    this.footer(
+      page,
+      fonts,
+      company,
+      `For billing inquiries, please contact ${company.email || company.phone || company.name || 'our support'}. Thank you for your business.`,
+    );
+
+    return pdf.save();
+  }
 }

@@ -96,3 +96,27 @@ export async function downloadFile(url: string, filename: string) {
   a.click();
   URL.revokeObjectURL(blobUrl);
 }
+
+/** Open and preview or print a PDF in a new tab from an authenticated endpoint. */
+export async function openPdf(url: string) {
+  const res = await api.get(url, { responseType: 'blob' });
+  const blob = new Blob([res.data], { type: 'application/pdf' });
+  const blobUrl = URL.createObjectURL(blob);
+  const win = window.open(blobUrl, '_blank');
+  if (!win) {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.src = blobUrl;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    };
+  }
+}
+

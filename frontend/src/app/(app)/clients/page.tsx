@@ -5,11 +5,12 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, Archive, ShoppingCart, Pencil, ClipboardList } from 'lucide-react';
+import { Plus, Archive, ShoppingCart, Pencil, ClipboardList, FileSpreadsheet } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
 import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
+import ClientStatementDialog from '../../../components/client-statement-dialog';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -34,6 +35,7 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [statementTarget, setStatementTarget] = useState<any>(null);
   const [archived, setArchived] = useState(false);
   const [sort, setSort] = useState('newest');
 
@@ -141,6 +143,9 @@ export default function ClientsPage() {
                 </div>
               ) : (
               <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600 dark:text-indigo-400" title={t('clients.generateStatement')} onClick={(e) => { e.stopPropagation(); setStatementTarget(r); }}>
+                  <FileSpreadsheet />
+                </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" title={t('clients.viewOrders')} onClick={(e) => { e.stopPropagation(); router.push(`/clients/${r.id}/orders`); }}>
                   <ClipboardList />
                 </Button>
@@ -166,17 +171,18 @@ export default function ClientsPage() {
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <Field label={t('common.name')} className="sm:col-span-2">
-              <Input placeholder="e.g. John Doe / Solar Solutions SAL" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input placeholder="e.g. John Doe or Acme Solar Corp" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
             </Field>
             <Field label={t('clients.type')}>
-              <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <Select value={form.type ?? 'INDIVIDUAL'} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="INDIVIDUAL">{t('clients.INDIVIDUAL')}</option>
                 <option value="BUSINESS">{t('clients.BUSINESS')}</option>
               </Select>
             </Field>
             <Field label={t('clients.tier')}>
-              <Select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
+              <Select value={form.tier ?? 'RETAIL'} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
                 <option value="RETAIL">{t('clients.RETAIL')}</option>
+                <option value="WHOLESALE">{t('clients.WHOLESALE')}</option>
                 <option value="INSTALLER">{t('clients.INSTALLER')}</option>
               </Select>
             </Field>
@@ -187,17 +193,20 @@ export default function ClientsPage() {
               <Input type="email" dir="ltr" placeholder="e.g. client@example.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </Field>
             <Field label={t('clients.creditLimit')}>
-              <Input type="number" min={0} placeholder="0.00" value={form.creditLimit ?? ''} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} />
+              <Input type="number" min={0} step="0.01" placeholder="0.00" value={form.creditLimit ?? ''} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} />
             </Field>
-            <Field label={t('common.address')} className="sm:col-span-2 md:col-span-4">
-              <Input placeholder="e.g. Main Street, Building A, 2nd Floor, Beirut" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            <Field label={t('clients.taxNumber')}>
+              <Input placeholder="e.g. 123456-789" value={form.taxNumber ?? ''} onChange={(e) => setForm({ ...form, taxNumber: e.target.value })} />
             </Field>
-            <Field label={t('common.notes')} className="sm:col-span-2 md:col-span-4">
-              <Textarea rows={2} placeholder="Optional notes about the client..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <Field label={t('common.address')} className="sm:col-span-2">
+              <Input placeholder="e.g. Main Street, Building 4B, 2nd Floor" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </Field>
+            <Field label={t('common.notes')} className="sm:col-span-4">
+              <Textarea placeholder="Optional notes about credit terms, special pricing, or delivery instructions..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
             <Button onClick={save}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
@@ -205,14 +214,14 @@ export default function ClientsPage() {
 
       <ConfirmDialog
         open={!!deleteTarget}
+        title={t('common.delete')}
+        description={t('common.confirmDelete', { name: deleteTarget?.name ?? '' })}
         usagePath={deleteTarget ? `/clients/${deleteTarget.id}/usage` : undefined}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         requireText={t('common.deleteWord')}
         onConfirm={async () => {
           try {
             const { data } = await api.delete(`/clients/${deleteTarget.id}`);
-            // Say which of the two things actually happened — purged is
-            // irreversible, archived is not.
             toast.success(data?.mode === 'PURGED' ? t('common.purgedToast') : t('common.archivedToast'));
             invalidateCache('clients');
             setRefreshKey((k) => k + 1);
@@ -221,6 +230,14 @@ export default function ClientsPage() {
           }
         }}
       />
+
+      {statementTarget && (
+        <ClientStatementDialog
+          open={!!statementTarget}
+          onOpenChange={(v) => !v && setStatementTarget(null)}
+          client={statementTarget}
+        />
+      )}
     </div>
   );
 }

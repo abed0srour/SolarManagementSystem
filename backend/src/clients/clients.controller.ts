@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -11,6 +11,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import type { Response } from 'express';
 import { ClientsService } from './clients.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -100,6 +101,40 @@ export class ClientsController {
     return this.service.usage(id);
   }
 
+  /** Aggregated ledger data for statement of account. */
+  @Get(':id/statement')
+  statement(
+    @Param('id') id: string,
+    @Query('mode') mode?: 'FULL' | 'PAYMENTS',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.service.getStatementData(id, {
+      mode: mode || 'FULL',
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
+  }
+
+  /** Downloadable / printable PDF statement of account. */
+  @Get(':id/statement-pdf')
+  @Header('Content-Type', 'application/pdf')
+  async statementPdf(
+    @Param('id') id: string,
+    @Query('mode') mode: 'FULL' | 'PAYMENTS' = 'FULL',
+    @Query('startDate') startDate: string | undefined,
+    @Query('endDate') endDate: string | undefined,
+    @Res() res: Response,
+  ) {
+    const bytes = await this.service.generateStatementPdf(id, {
+      mode: mode || 'FULL',
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    });
+    res.setHeader('Content-Disposition', `inline; filename=statement-${id}.pdf`);
+    res.end(Buffer.from(bytes));
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
@@ -126,3 +161,4 @@ export class ClientsController {
     return this.service.remove(user.id, id);
   }
 }
+

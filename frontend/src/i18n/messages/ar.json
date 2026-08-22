@@ -407,7 +407,17 @@
     "billing": "فوترة",
     "installation": "موقع التركيب",
     "details": "التفاصيل",
-    "newOrder": "طلب جديد"
+    "newOrder": "طلب جديد",
+    "generateStatement": "كشف حساب (PDF)",
+    "statementMode": "نوع ونطاق كشف الحساب",
+    "modeFull": "كشف حساب شامل",
+    "modeFullDesc": "سجل كامل لجميع الفواتير والمشتريات والمدفوعات والرصيد التراكمي.",
+    "modePayments": "سجل المدفوعات فقط",
+    "modePaymentsDesc": "قائمة بجميع الدفعات المستلمة وطرق الدفع والمراجع وأرقام الفواتير.",
+    "statementPeriod": "الفترة الزمنية",
+    "allTransactions": "يتضمن جميع المعاملات المسجلة",
+    "printStatement": "طباعة / معاينة",
+    "statementDownloaded": "تم تحميل كشف الحساب بنجاح"
   },
   "suppliers": {
     "title": "الموردون",

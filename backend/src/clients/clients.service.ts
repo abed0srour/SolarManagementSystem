@@ -3,13 +3,24 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
+import { InvoicePdfService } from '../invoices/invoice-pdf.service';
 
 @Injectable()
 export class ClientsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private pdfService: InvoicePdfService,
   ) {}
+
+  async getStatementData(id: string, options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {}) {
+    return this.pdfService.getClientStatementData(id, options);
+  }
+
+  async generateStatementPdf(id: string, options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {}) {
+    return this.pdfService.clientStatement(id, options);
+  }
+
 
   async findAll(query: { search?: string; type?: string; tier?: string; sortBy?: string; sortDir?: string; page?: number; pageSize?: number; archived?: string }) {
     // `archived=true` shows the archive instead of the active list — the

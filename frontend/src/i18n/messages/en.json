@@ -407,7 +407,17 @@
     "billing": "Billing",
     "installation": "Installation site",
     "details": "Details",
-    "newOrder": "New order"
+    "newOrder": "New order",
+    "generateStatement": "Statement (PDF)",
+    "statementMode": "Statement Scope & Mode",
+    "modeFull": "Full Account Statement",
+    "modeFullDesc": "Complete ledger of all invoices, line items, payments & running balance.",
+    "modePayments": "Payment History Only",
+    "modePaymentsDesc": "List of payments received, methods, references & invoice IDs.",
+    "statementPeriod": "Date Range",
+    "allTransactions": "All recorded transactions included",
+    "printStatement": "Print / Preview",
+    "statementDownloaded": "Statement downloaded successfully"
   },
   "suppliers": {
     "title": "Suppliers",
