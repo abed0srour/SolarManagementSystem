@@ -11,7 +11,7 @@ import { downloadFile, openPdf, errMsg } from '../lib/api';
 import { cn } from '../lib/utils';
 
 type StatementMode = 'FULL' | 'PAYMENTS';
-type DatePreset = 'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'CUSTOM';
+type DatePreset = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'ALL' | 'CUSTOM';
 
 interface Props {
   open: boolean;
@@ -114,48 +114,56 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
     }
   };
 
+  const presets = [
+    { key: 'THIS_MONTH' as const, label: t('clients.thisMonth') || 'This Month' },
+    { key: 'LAST_MONTH' as const, label: t('clients.lastMonth') || 'Last Month' },
+    { key: 'THIS_YEAR' as const, label: t('clients.thisYear') || 'This Year' },
+    { key: 'ALL' as const, label: t('clients.allTime') || 'All Time' },
+    { key: 'CUSTOM' as const, label: t('clients.custom') || 'Custom' },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md sm:max-w-lg">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <DialogContent className="max-w-lg w-[95vw] sm:w-full p-4 sm:p-6 rounded-2xl">
+        <DialogHeader className="space-y-1.5 pb-1">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <DialogTitle className="text-lg">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-base sm:text-lg font-semibold tracking-tight">
                 {t('clients.generateStatement') || 'Statement of Account'}
               </DialogTitle>
-              <DialogDescription className="text-xs">
+              <DialogDescription className="text-xs sm:text-sm text-muted-foreground truncate">
                 {client.name}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-1">
           {/* Statement Mode Selection */}
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase text-muted-foreground">
-              {t('clients.statementMode') || 'Statement Mode / Scope'}
+            <Label className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
+              {t('clients.statementMode') || 'Statement Scope & Mode'}
             </Label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => setMode('FULL')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-xl border p-3 text-start transition-all',
+                  'flex flex-col items-start gap-1 rounded-xl border p-3 text-start transition-all cursor-pointer select-none',
                   mode === 'FULL'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border bg-card hover:bg-accent/50',
+                    ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary shadow-sm'
+                    : 'border-border/80 bg-card/60 hover:bg-muted/50 text-muted-foreground hover:text-foreground',
                 )}
               >
-                <div className="flex items-center gap-2 font-medium text-sm">
-                  <FileText className={cn('h-4 w-4', mode === 'FULL' ? 'text-primary' : 'text-muted-foreground')} />
-                  <span>{t('clients.modeFull') || 'Full Account Statement'}</span>
+                <div className="flex items-center gap-2 font-medium text-xs sm:text-sm">
+                  <FileText className={cn('h-4 w-4 shrink-0', mode === 'FULL' ? 'text-primary' : 'text-muted-foreground')} />
+                  <span className="font-semibold">{t('clients.modeFull') || 'Full Account Statement'}</span>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('clients.modeFullDesc') || 'All invoices, payments and running balance.'}
+                <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
+                  {t('clients.modeFullDesc') || 'Invoices, payments & running balance ledger.'}
                 </p>
               </button>
 
@@ -163,69 +171,65 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
                 type="button"
                 onClick={() => setMode('PAYMENTS')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-xl border p-3 text-start transition-all',
+                  'flex flex-col items-start gap-1 rounded-xl border p-3 text-start transition-all cursor-pointer select-none',
                   mode === 'PAYMENTS'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border bg-card hover:bg-accent/50',
+                    ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary shadow-sm'
+                    : 'border-border/80 bg-card/60 hover:bg-muted/50 text-muted-foreground hover:text-foreground',
                 )}
               >
-                <div className="flex items-center gap-2 font-medium text-sm">
-                  <Receipt className={cn('h-4 w-4', mode === 'PAYMENTS' ? 'text-primary' : 'text-muted-foreground')} />
-                  <span>{t('clients.modePayments') || 'Payment History Only'}</span>
+                <div className="flex items-center gap-2 font-medium text-xs sm:text-sm">
+                  <Receipt className={cn('h-4 w-4 shrink-0', mode === 'PAYMENTS' ? 'text-primary' : 'text-muted-foreground')} />
+                  <span className="font-semibold">{t('clients.modePayments') || 'Payment History Only'}</span>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('clients.modePaymentsDesc') || 'List of received payments and invoice references.'}
+                <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
+                  {t('clients.modePaymentsDesc') || 'List of payments received with invoice refs.'}
                 </p>
               </button>
             </div>
           </div>
 
           {/* Date Range Selection */}
-          <div className="space-y-3">
+          <div className="space-y-2.5 rounded-xl border border-border/60 bg-muted/20 p-3 sm:p-3.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">
+              <Label className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
                 {t('clients.statementPeriod') || 'Date Range'}
               </Label>
-              <Button
+              <button
                 type="button"
-                size="sm"
-                variant="secondary"
-                className="h-6 text-xs gap-1 px-2 font-medium text-primary bg-primary/10 hover:bg-primary/20"
                 onClick={handleSetTillToday}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
               >
                 <Sparkles className="h-3 w-3" />
                 {t('clients.tillToday') || 'Till Today'}
-              </Button>
+              </button>
             </div>
 
-            {/* Presets */}
+            {/* Presets Chips */}
             <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ['THIS_MONTH', t('reports.thisMonth') || 'This Month'],
-                  ['LAST_MONTH', t('reports.lastMonth') || 'Last Month'],
-                  ['THIS_YEAR', t('reports.thisYear') || 'This Year'],
-                  ['ALL', t('common.allTime') || 'All Time'],
-                  ['CUSTOM', t('reports.custom') || 'Custom'],
-                ] as const
-              ).map(([pKey, pLabel]) => (
-                <Button
-                  key={pKey}
-                  type="button"
-                  size="sm"
-                  variant={preset === pKey ? 'default' : 'outline'}
-                  className="h-7 text-xs"
-                  onClick={() => handlePresetChange(pKey)}
-                >
-                  {pLabel}
-                </Button>
-              ))}
+              {presets.map((p) => {
+                const isActive = preset === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => handlePresetChange(p.key)}
+                    className={cn(
+                      'px-2.5 py-1 text-xs rounded-lg font-medium transition-colors cursor-pointer',
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'bg-background hover:bg-muted text-muted-foreground hover:text-foreground border border-border/70',
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* From - To Date Inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t('clients.fromDate') || 'From Date'}</Label>
+                <Label className="text-[11px] text-muted-foreground">{t('clients.fromDate') || 'From Date'}</Label>
                 <Input
                   type="date"
                   value={startDate}
@@ -233,19 +237,11 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
                     setStartDate(e.target.value);
                     setPreset('CUSTOM');
                   }}
+                  className="h-9 text-xs sm:text-sm bg-background"
                 />
               </div>
               <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">{t('clients.toDate') || 'To Date'}</Label>
-                  <button
-                    type="button"
-                    onClick={handleSetTillToday}
-                    className="text-[11px] text-primary hover:underline"
-                  >
-                    {t('clients.tillToday') || 'Today'}
-                  </button>
-                </div>
+                <Label className="text-[11px] text-muted-foreground">{t('clients.toDate') || 'To Date'}</Label>
                 <Input
                   type="date"
                   value={endDate}
@@ -253,37 +249,30 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
                     setEndDate(e.target.value);
                     setPreset('CUSTOM');
                   }}
+                  className="h-9 text-xs sm:text-sm bg-background"
                 />
               </div>
             </div>
-
-            {startDate || endDate ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">
-                <Calendar className="h-3.5 w-3.5" />
-                <span>
-                  {startDate || 'Start'} &nbsp;→&nbsp; {endDate || 'Today'}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-lg">
-                <Calendar className="h-3.5 w-3.5" />
-                <span>{t('clients.allTransactions') || 'All recorded transactions included'}</span>
-              </div>
-            )}
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={downloading || printing}>
+        <DialogFooter className="pt-2 gap-2 sm:gap-2 flex-col-reverse sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={downloading || printing}
+            className="w-full sm:w-auto text-xs sm:text-sm h-9"
+          >
             {t('common.cancel')}
           </Button>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
             <Button
               type="button"
               variant="outline"
               onClick={handlePrint}
               disabled={downloading || printing}
-              className="flex-1 sm:flex-initial"
+              className="w-full sm:w-auto text-xs sm:text-sm h-9 gap-1.5"
             >
               {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               {t('clients.printStatement') || 'Print / Preview'}
@@ -292,7 +281,7 @@ export default function ClientStatementDialog({ open, onOpenChange, client }: Pr
               type="button"
               onClick={handleDownload}
               disabled={downloading || printing}
-              className="flex-1 sm:flex-initial"
+              className="w-full sm:w-auto text-xs sm:text-sm h-9 gap-1.5"
             >
               {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {t('common.downloadPdf') || 'Download PDF'}
