@@ -82,11 +82,12 @@ export default function AnchoredPanel({
   label?: ReactNode;
   className?: string;
 }) {
+  const isMobile = useIsMobile();
   const [placement, setPlacement] = useState<Placement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || isMobile) return;
     let frame = 0;
     // Re-measured every frame while open: a picker inside a dialog is often
     // opened while the dialog is still animating into place, so a single
@@ -102,7 +103,7 @@ export default function AnchoredPanel({
     };
     track();
     return () => cancelAnimationFrame(frame);
-  }, [open, anchorRef]);
+  }, [open, isMobile, anchorRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,8 +127,30 @@ export default function AnchoredPanel({
     };
   }, [open, onClose, anchorRef]);
 
-  if (!open || typeof document === 'undefined') return null;
-  if (!placement) return null;
+  if (!open) return null;
+
+  // On mobile devices, render in-flow directly beneath the search input so that
+  // opening suggestions naturally moves following form fields down.
+  if (isMobile) {
+    return (
+      <div
+        ref={panelRef}
+        data-entity-picker-list=""
+        className={cn(
+          'relative z-20 mt-1 flex w-full flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-sm animate-in fade-in-50 duration-150',
+          className,
+        )}
+        style={{
+          maxHeight: 280,
+          pointerEvents: 'auto',
+        }}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1">{children}</div>
+      </div>
+    );
+  }
+
+  if (typeof document === 'undefined' || !placement) return null;
 
   return createPortal(
     <div
