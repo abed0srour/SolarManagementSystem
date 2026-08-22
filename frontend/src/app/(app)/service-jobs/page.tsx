@@ -121,14 +121,14 @@ export default function ServiceJobsPage() {
                 </Field>
               )}
               <Field label={t('serviceJobs.technician')}>
-                <Input value={form.technicianName ?? ''} onChange={(e) => setForm({ ...form, technicianName: e.target.value })} />
+                <Input placeholder="e.g. Ali Ahmad" value={form.technicianName ?? ''} onChange={(e) => setForm({ ...form, technicianName: e.target.value })} />
               </Field>
               <Field label={t('serviceJobs.scheduledDate')}>
                 <Input type="date" value={form.scheduledDate ?? ''} onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })} />
               </Field>
             </div>
             <Field label={t('common.notes')}>
-              <Textarea rows={3} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea rows={3} placeholder="Job details, issue description, or site notes..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

@@ -120,6 +120,23 @@ export default function SalesOrderForm({
    * being given away, so the loss is a decision rather than a slip.
    */
   const attemptSave = () => {
+    if (!form.client) {
+      toast.error(t('orders.selectClient') || 'Please select a client');
+      return;
+    }
+    if (!form.warehouse) {
+      toast.error(t('orders.selectWarehouse') || 'Please select a warehouse');
+      return;
+    }
+    const payloadItems = toItemsPayload(lines);
+    if (payloadItems.length === 0) {
+      toast.error(t('orders.addAtLeastOneProduct') || 'Please add at least one product');
+      return;
+    }
+    if (hasInvalidLine(lines)) {
+      toast.error(t('orders.invalidLinesError') || 'Please enter valid quantities and prices for all items');
+      return;
+    }
     if (belowCostLines(lines).length > 0) setLossConfirmOpen(true);
     else void save();
   };
@@ -131,7 +148,7 @@ export default function SalesOrderForm({
         clientId: form.client?.id,
         warehouseId: form.warehouse?.id,
         discountType: form.discountType || undefined,
-        discountValue: form.discountType ? Number(form.discountValue) : undefined,
+        discountValue: form.discountType ? (Number(form.discountValue) || 0) : undefined,
         shippingFee: Number(form.shippingFee) || 0,
         showSubItemsOnInvoice: Boolean(form.showSubItemsOnInvoice),
         notes: form.notes || undefined,
@@ -172,8 +189,6 @@ export default function SalesOrderForm({
 
   // Confirmed orders have already moved stock; editing them is not allowed.
   const locked = editing && existing && existing.status !== 'PENDING';
-  const blocked =
-    !form.client || !form.warehouse || toItemsPayload(lines).length === 0 || hasInvalidLine(lines) || !!locked;
 
   return (
     <div className="space-y-4">
@@ -184,11 +199,11 @@ export default function SalesOrderForm({
               // Fixed by the route — changing it here would contradict the URL.
               <Input value={form.client?.name ?? ''} disabled />
             ) : (
-              <ClientPicker value={form.client} onChange={(c) => setForm({ ...form, client: c })} />
+              <ClientPicker value={form.client} onChange={(c) => setForm({ ...form, client: c })} placeholder={t('clients.selectClient') || 'Select a client...'} />
             )}
           </Field>
           <Field label={t('common.warehouse')} className="md:col-span-2">
-            <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} />
+            <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} placeholder={t('inventory.selectWarehouse') || 'Select a warehouse...'} />
           </Field>
           <Field label={`${t('common.discount')} (${t('common.total')})`}>
             <Select value={form.discountType ?? ''} onChange={(e) => setForm({ ...form, discountType: e.target.value })}>
@@ -199,14 +214,30 @@ export default function SalesOrderForm({
           </Field>
           {form.discountType && (
             <Field label={t('common.discount')}>
-              <Input type="number" min={0} value={form.discountValue ?? 0} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} />
+              <Input
+                type="number"
+                min={0}
+                placeholder="0.00"
+                value={form.discountValue ?? ''}
+                onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+              />
             </Field>
           )}
           <Field label={t('common.shipping')}>
-            <Input type="number" min={0} value={form.shippingFee ?? 0} onChange={(e) => setForm({ ...form, shippingFee: e.target.value })} />
+            <Input
+              type="number"
+              min={0}
+              placeholder="0.00"
+              value={form.shippingFee ?? ''}
+              onChange={(e) => setForm({ ...form, shippingFee: e.target.value })}
+            />
           </Field>
           <Field label={t('common.notes')}>
-            <Input value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <Input
+              placeholder={t('quotations.notesPlaceholder') || 'Optional notes...'}
+              value={form.notes ?? ''}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
           </Field>
         </div>
       </Section>
@@ -233,7 +264,7 @@ export default function SalesOrderForm({
         <Button variant="outline" onClick={() => router.push(returnTo)} disabled={saving}>
           {t('common.cancel')}
         </Button>
-        <Button onClick={attemptSave} disabled={blocked || saving}>
+        <Button onClick={attemptSave} disabled={saving || !!locked}>
           {saving ? t('common.loading') : t('common.save')}
         </Button>
       </div>

@@ -14,7 +14,7 @@ function linesFromUnits(units: ScannedUnit[]): LineItem[] {
   for (const u of units) {
     const line = byProduct.get(u.productId);
     if (line) {
-      line.quantity += 1;
+      line.quantity = Number(line.quantity || 0) + 1;
       continue;
     }
     byProduct.set(u.productId, {

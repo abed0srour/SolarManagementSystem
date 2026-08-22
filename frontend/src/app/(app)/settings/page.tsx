@@ -243,23 +243,23 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label={t('settings.companyName')}>
-                  <Input required value={company.name ?? ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
+                  <Input required placeholder="e.g. Solar Store SAL" value={company.name ?? ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
                 </Field>
                 <Field label={t('settings.tagline')}>
-                  <Input value={company.tagline ?? ''} onChange={(e) => setCompany({ ...company, tagline: e.target.value })} />
+                  <Input placeholder="e.g. Clean Energy Solutions" value={company.tagline ?? ''} onChange={(e) => setCompany({ ...company, tagline: e.target.value })} />
                 </Field>
                 <Field label={t('common.phone')}>
-                  <Input required value={company.phone ?? ''} onChange={(e) => setCompany({ ...company, phone: e.target.value })} />
+                  <Input required dir="ltr" placeholder="e.g. +961 1 234 567" value={company.phone ?? ''} onChange={(e) => setCompany({ ...company, phone: e.target.value })} />
                 </Field>
                 <Field label={t('common.email')}>
-                  <Input value={company.email ?? ''} onChange={(e) => setCompany({ ...company, email: e.target.value })} />
+                  <Input type="email" dir="ltr" placeholder="e.g. info@solarstore.com" value={company.email ?? ''} onChange={(e) => setCompany({ ...company, email: e.target.value })} />
                 </Field>
                 <Field label={t('common.address')} className="md:col-span-2">
-                  <Input required value={company.address ?? ''} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
+                  <Input required placeholder="e.g. Beirut, Lebanon" value={company.address ?? ''} onChange={(e) => setCompany({ ...company, address: e.target.value })} />
                 </Field>
                 {/* Printed on POS receipts and invoices when set. */}
                 <Field label={t('settings.taxNumber')}>
-                  <Input dir="ltr" value={company.taxNumber ?? ''} onChange={(e) => setCompany({ ...company, taxNumber: e.target.value })} />
+                  <Input dir="ltr" placeholder="e.g. 1234567-89" value={company.taxNumber ?? ''} onChange={(e) => setCompany({ ...company, taxNumber: e.target.value })} />
                 </Field>
               </div>
               <div className="rounded-md border bg-muted/30 p-4">
@@ -329,16 +329,16 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label={t('settings.defaultTaxRate')}>
-                  <Input type="number" min={0} value={finance.defaultTaxRatePct ?? 0} onChange={(e) => setFinance({ ...finance, defaultTaxRatePct: Number(e.target.value) })} />
+                  <Input type="number" min={0} placeholder="11" value={finance.defaultTaxRatePct ?? ''} onChange={(e) => setFinance({ ...finance, defaultTaxRatePct: e.target.value === '' ? '' : Number(e.target.value) })} />
                 </Field>
                 <Field label={t('settings.baseCurrency')}>
-                  <Input value={finance.baseCurrency ?? 'USD'} onChange={(e) => setFinance({ ...finance, baseCurrency: e.target.value })} />
+                  <Input placeholder="USD" value={finance.baseCurrency ?? 'USD'} onChange={(e) => setFinance({ ...finance, baseCurrency: e.target.value })} />
                 </Field>
                 <Field label={t('settings.secondaryCurrency')}>
-                  <Input value={finance.secondaryCurrency ?? ''} onChange={(e) => setFinance({ ...finance, secondaryCurrency: e.target.value })} />
+                  <Input placeholder="LBP" value={finance.secondaryCurrency ?? ''} onChange={(e) => setFinance({ ...finance, secondaryCurrency: e.target.value })} />
                 </Field>
                 <Field label={t('settings.exchangeRate')}>
-                  <Input type="number" min={0} value={finance.exchangeRate ?? 1} onChange={(e) => setFinance({ ...finance, exchangeRate: Number(e.target.value) })} />
+                  <Input type="number" min={0} placeholder="89500" value={finance.exchangeRate ?? ''} onChange={(e) => setFinance({ ...finance, exchangeRate: e.target.value === '' ? '' : Number(e.target.value) })} />
                 </Field>
               </div>
               <div className="flex justify-end border-t pt-4">

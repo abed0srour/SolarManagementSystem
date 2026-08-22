@@ -149,18 +149,19 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
         <Field label={t('common.name')} hint={err('name')}>
           <Input
             className={cn(err('name') && 'border-destructive')}
+            placeholder="e.g. Ali Ahmad"
             value={form.name ?? ''}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
         </Field>
         <Field label={t('workers.jobTitle')}>
-          <Input value={form.jobTitle ?? ''} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
+          <Input placeholder="e.g. Senior Solar Technician" value={form.jobTitle ?? ''} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
         </Field>
         <Field label={t('common.phone')}>
-          <Input dir="ltr" value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          <Input dir="ltr" placeholder="e.g. +961 71 234 567" value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
         </Field>
         <Field label={t('common.email')}>
-          <Input type="email" dir="ltr" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <Input type="email" dir="ltr" placeholder="e.g. ali@company.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
         <Field label={t('workers.hiredOn')}>
           <Input type="date" value={form.hiredOn ?? ''} onChange={(e) => setForm({ ...form, hiredOn: e.target.value })} />
@@ -182,15 +183,17 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
             <Field label={t('workers.hourlyRate')} hint={err('hourlyRate')}>
               <Input
                 type="number" min={0} step="0.01"
+                placeholder="0.00"
                 className={cn('text-end tabular-nums', err('hourlyRate') && 'border-destructive')}
-                value={form.hourlyRate ?? 0}
+                value={form.hourlyRate ?? ''}
                 onChange={(e) => setForm({ ...form, hourlyRate: e.target.value })}
               />
             </Field>
             <Field label={t('workers.expectedHours')}>
               <Input
                 type="number" min={0} step="0.5" className="text-end tabular-nums"
-                value={form.expectedHoursPerDay ?? 8}
+                placeholder="8"
+                value={form.expectedHoursPerDay ?? ''}
                 onChange={(e) => setForm({ ...form, expectedHoursPerDay: e.target.value })}
               />
             </Field>
@@ -199,8 +202,9 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
           <Field label={t('workers.dailyRate')} hint={err('dailyRate')}>
             <Input
               type="number" min={0} step="0.01"
+              placeholder="0.00"
               className={cn('text-end tabular-nums', err('dailyRate') && 'border-destructive')}
-              value={form.dailyRate ?? 0}
+              value={form.dailyRate ?? ''}
               onChange={(e) => setForm({ ...form, dailyRate: e.target.value })}
             />
           </Field>
@@ -209,7 +213,8 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
         <Field label={t('workers.lateDeduction')}>
           <Input
             type="number" min={0} step="0.01" className="text-end tabular-nums"
-            value={form.lateDeductionPerHour ?? 0}
+            placeholder="0.00"
+            value={form.lateDeductionPerHour ?? ''}
             onChange={(e) => setForm({ ...form, lateDeductionPerHour: e.target.value })}
           />
         </Field>
@@ -222,7 +227,7 @@ export default function WorkerForm({ workerId }: { workerId?: string }) {
       </Section>
 
       <Section title={t('common.notes')} cols={1}>
-        <Textarea rows={3} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+        <Textarea rows={3} placeholder="Optional notes about the worker..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </Section>
 
       <div className="sticky bottom-0 flex items-center justify-end gap-2 rounded-lg border bg-card/90 px-4 py-3 backdrop-blur">

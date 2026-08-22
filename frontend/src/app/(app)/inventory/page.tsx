@@ -220,18 +220,22 @@ export default function InventoryPage() {
           <div className="space-y-3">
             <Field label={t('common.product')}><ProductPicker value={form.product ?? null} onChange={(p) => setForm({ ...form, product: p })} /></Field>
             <Field label={t('common.warehouse')}><WarehousePicker value={form.warehouse ?? null} onChange={(w) => setForm({ ...form, warehouse: w })} /></Field>
-            <Field label={t('inventory.delta')}><Input type="number" step="0.001" value={form.delta ?? ''} onChange={(e) => setForm({ ...form, delta: e.target.value })} /></Field>
+            <Field label={t('inventory.delta')}>
+              <Input type="number" step="0.001" placeholder="e.g. +5 or -2" value={form.delta ?? ''} onChange={(e) => setForm({ ...form, delta: e.target.value })} />
+            </Field>
             {/* Only offered when adding: removing units never moves the average cost. */}
             {Number(form.delta) > 0 && (
               <Field label={t('inventory.unitCost')} hint={t('inventory.unitCostHint')}>
                 <Input
-                  type="number" step="0.01" min="0" placeholder={t('inventory.unitCostPlaceholder')}
+                  type="number" step="0.01" min="0" placeholder={t('inventory.unitCostPlaceholder') || '0.00'}
                   value={form.unitCost ?? ''}
                   onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                 />
               </Field>
             )}
-            <Field label={t('products.reason')}><Input value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
+            <Field label={t('products.reason')}>
+              <Input placeholder="e.g. Stock recount discrepancy" value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustOpen(false)}>{t('common.cancel')}</Button>
@@ -250,9 +254,15 @@ export default function InventoryPage() {
               <Field label={t('inventory.fromWarehouse')}><WarehousePicker value={form.fromWarehouse ?? null} onChange={(w) => setForm({ ...form, fromWarehouse: w })} /></Field>
               <Field label={t('inventory.toWarehouse')}><WarehousePicker value={form.toWarehouse ?? null} onChange={(w) => setForm({ ...form, toWarehouse: w })} /></Field>
             </div>
-            <Field label={t('common.quantity')}><Input type="number" min={1} value={form.quantity ?? ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></Field>
-            <Field label={t('orders.serialsHint')}><Input dir="ltr" value={form.serials ?? ''} onChange={(e) => setForm({ ...form, serials: e.target.value })} /></Field>
-            <Field label={t('products.reason')}><Input value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
+            <Field label={t('common.quantity')}>
+              <Input type="number" min={1} placeholder="1" value={form.quantity ?? ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+            </Field>
+            <Field label={t('orders.serialsHint')}>
+              <Input dir="ltr" placeholder="e.g. SN001, SN002" value={form.serials ?? ''} onChange={(e) => setForm({ ...form, serials: e.target.value })} />
+            </Field>
+            <Field label={t('products.reason')}>
+              <Input placeholder="e.g. Restock warehouse B" value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTransferOpen(false)}>{t('common.cancel')}</Button>
@@ -266,8 +276,12 @@ export default function InventoryPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{t('inventory.newWarehouse')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <Field label={t('common.name')}><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-            <Field label={t('common.address')}><Input value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
+            <Field label={t('common.name')}>
+              <Input placeholder="e.g. Main Warehouse" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label={t('common.address')}>
+              <Input placeholder="e.g. Beirut Industrial Zone" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </Field>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" className="h-4 w-4" checked={!!form.isDefault} onChange={(e) => setForm({ ...form, isDefault: e.target.checked })} />
               {t('inventory.default')}

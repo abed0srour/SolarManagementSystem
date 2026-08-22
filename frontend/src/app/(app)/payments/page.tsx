@@ -191,7 +191,7 @@ export default function PaymentsPage() {
               ))}
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('common.amount')}>
-                <Input type="number" min={0.01} step="0.01" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                <Input type="number" min={0.01} step="0.01" placeholder="0.00" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </Field>
               <Field label={t('common.method')}>
                 <Select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
@@ -204,7 +204,7 @@ export default function PaymentsPage() {
                 <Input type="date" value={form.paymentDate ?? ''} onChange={(e) => setForm({ ...form, paymentDate: e.target.value })} />
               </Field>
               <Field label={t('common.reference')}>
-                <Input value={form.reference ?? ''} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
+                <Input placeholder="e.g. Cash receipt #102 / Whish ref #98765" value={form.reference ?? ''} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
               </Field>
             </div>
           </div>

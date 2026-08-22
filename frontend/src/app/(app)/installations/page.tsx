@@ -113,29 +113,29 @@ export default function InstallationsPage() {
                 </Select>
               </Field>
               <Field label={t('installations.city')}>
-                <Input value={form.city ?? ''} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+                <Input placeholder="e.g. Beirut / Tripoli / Saida" value={form.city ?? ''} onChange={(e) => setForm({ ...form, city: e.target.value })} />
               </Field>
               <Field label={t('installations.capacityKw')}>
-                <Input type="number" step="0.1" value={form.capacityKw ?? ''} onChange={(e) => setForm({ ...form, capacityKw: e.target.value })} />
+                <Input type="number" step="0.1" placeholder="e.g. 5.5" value={form.capacityKw ?? ''} onChange={(e) => setForm({ ...form, capacityKw: e.target.value })} />
               </Field>
               <Field label={t('installations.panelCount')}>
-                <Input type="number" value={form.panelCount ?? ''} onChange={(e) => setForm({ ...form, panelCount: e.target.value })} />
+                <Input type="number" placeholder="e.g. 10" value={form.panelCount ?? ''} onChange={(e) => setForm({ ...form, panelCount: e.target.value })} />
               </Field>
               <Field label={t('installations.batteryKwh')}>
-                <Input type="number" step="0.1" value={form.batteryKwh ?? ''} onChange={(e) => setForm({ ...form, batteryKwh: e.target.value })} />
+                <Input type="number" step="0.1" placeholder="e.g. 10.2" value={form.batteryKwh ?? ''} onChange={(e) => setForm({ ...form, batteryKwh: e.target.value })} />
               </Field>
               <Field label={t('installations.tariff')}>
-                <Input type="number" step="0.01" value={form.tariffPerKwh ?? ''} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
+                <Input type="number" step="0.01" placeholder="e.g. 0.25" value={form.tariffPerKwh ?? ''} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
               </Field>
               <Field label={t('installations.expectedMonthlyKwh')}>
-                <Input type="number" value={form.expectedMonthlyKwh ?? ''} onChange={(e) => setForm({ ...form, expectedMonthlyKwh: e.target.value })} />
+                <Input type="number" placeholder="e.g. 750" value={form.expectedMonthlyKwh ?? ''} onChange={(e) => setForm({ ...form, expectedMonthlyKwh: e.target.value })} />
               </Field>
             </div>
             <Field label={t('installations.siteAddress')}>
-              <Input value={form.siteAddress ?? ''} onChange={(e) => setForm({ ...form, siteAddress: e.target.value })} />
+              <Input placeholder="e.g. 124 Main Road, Building B, Rooftop" value={form.siteAddress ?? ''} onChange={(e) => setForm({ ...form, siteAddress: e.target.value })} />
             </Field>
             <Field label={t('common.notes')}>
-              <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea rows={2} placeholder="Optional installation notes..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

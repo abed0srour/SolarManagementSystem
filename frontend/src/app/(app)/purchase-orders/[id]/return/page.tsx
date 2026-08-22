@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 interface ReturnLine {
   productId: string;
-  qty: number;
+  qty: number | string;
   serials: string[];
   reason: string;
 }
@@ -49,15 +49,15 @@ export default function PurchaseOrderReturnPage() {
   if (!po)
     return (
       <div className="space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-64" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
 
   const itemByProduct = (productId: string) => po.items.find((i: any) => i.productId === productId);
   const returnableQty = (productId: string) => itemByProduct(productId)?.returnableQty ?? 0;
   const inThisReturn = (productId: string) =>
-    mode === 'WHOLE' ? returnableQty(productId) : lines.find((l) => l.productId === productId)?.qty ?? 0;
+    mode === 'WHOLE' ? returnableQty(productId) : Number(lines.find((l) => l.productId === productId)?.qty || 0);
   const usedProducts = lines.map((l) => l.productId);
   const availableProducts = po.items.filter((i: any) => !usedProducts.includes(i.productId) && i.returnableQty > 0);
 
@@ -88,10 +88,10 @@ export default function PurchaseOrderReturnPage() {
                 : undefined,
           }))
       : lines
-          .filter((l) => l.qty > 0)
+          .filter((l) => Number(l.qty) > 0)
           .map((l) => ({
             productId: l.productId,
-            quantity: l.qty,
+            quantity: Number(l.qty),
             unitCost: Number(itemByProduct(l.productId)?.unitCost ?? 0),
             serialNumbers: l.serials.length ? l.serials : undefined,
             reason: l.reason || undefined,
@@ -251,7 +251,7 @@ export default function PurchaseOrderReturnPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-48">{t('common.product')}</TableHead>
-                      <TableHead className="w-24">{t('purchaseReturns.returnQty')}</TableHead>
+                      <TableHead className="w-32 min-w-28">{t('purchaseReturns.returnQty')}</TableHead>
                       <TableHead className="min-w-48">{t('inventory.serials')}</TableHead>
                       <TableHead className="min-w-32">{t('refunds.reason')}</TableHead>
                       <TableHead className="w-28 text-end">{t('common.lineTotal')}</TableHead>
@@ -290,14 +290,16 @@ export default function PurchaseOrderReturnPage() {
                               ))}
                           </Select>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-28">
                           <Input
                             type="number"
                             min={0}
                             max={maxQty}
                             disabled={tracked}
+                            className="tabular-nums"
+                            placeholder="1"
                             value={l.qty}
-                            onChange={(e) => setLine(idx, { qty: Math.min(maxQty, Math.max(0, Number(e.target.value))) })}
+                            onChange={(e) => setLine(idx, { qty: e.target.value === '' ? '' : Math.min(maxQty, Math.max(0, Number(e.target.value))) })}
                           />
                         </TableCell>
                         <TableCell className="whitespace-normal">
@@ -324,7 +326,7 @@ export default function PurchaseOrderReturnPage() {
                           />
                         </TableCell>
                         <TableCell className="text-end tabular-nums font-medium">
-                          {fmtMoney(l.qty * Number(item?.unitCost ?? 0), po.currency)}
+                          {fmtMoney((Number(l.qty) || 0) * Number(item?.unitCost ?? 0), po.currency)}
                         </TableCell>
                         <TableCell>
                           <Button

@@ -156,6 +156,19 @@ export default function QuotationForm({
   }, [itemsSubtotal, discountAmount]);
 
   const attemptSave = () => {
+    if (!form.client) {
+      toast.error(t('orders.selectClient') || 'Please select a client');
+      return;
+    }
+    const payloadItems = toItemsPayload(lines);
+    if (payloadItems.length === 0) {
+      toast.error(t('orders.addAtLeastOneProduct') || 'Please add at least one product');
+      return;
+    }
+    if (hasInvalidLine(lines)) {
+      toast.error(t('orders.invalidLinesError') || 'Please enter valid quantities and prices for all items');
+      return;
+    }
     if (belowCostLines(lines).length > 0) setLossConfirmOpen(true);
     else void save();
   };
@@ -168,7 +181,7 @@ export default function QuotationForm({
         status: form.status,
         validUntil: form.validUntil || undefined,
         discountType: form.discountType || undefined,
-        discountValue: form.discountType ? Number(form.discountValue) : undefined,
+        discountValue: form.discountType ? (Number(form.discountValue) || 0) : undefined,
         notes: form.notes || undefined,
         items: toItemsPayload(lines),
       };
@@ -217,8 +230,6 @@ export default function QuotationForm({
       </div>
     );
   }
-
-  const blocked = !form.client || toItemsPayload(lines).length === 0 || hasInvalidLine(lines) || saving;
 
   return (
     <div className="space-y-4">
@@ -398,7 +409,7 @@ export default function QuotationForm({
             </Button>
           </>
         )}
-        <Button type="button" onClick={attemptSave} disabled={blocked}>
+        <Button type="button" onClick={attemptSave} disabled={saving}>
           {saving ? t('common.loading') : t('common.save')}
         </Button>
       </div>

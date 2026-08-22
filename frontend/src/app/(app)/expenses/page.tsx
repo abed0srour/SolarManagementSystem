@@ -216,7 +216,7 @@ export default function ExpensesPage() {
                 </Select>
               </Field>
               <Field label={t('common.amount')}>
-                <Input type="number" step="0.01" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                <Input type="number" step="0.01" min={0} placeholder="0.00" value={form.amount ?? ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </Field>
               <Field label={t('expenses.expenseDate')}>
                 <Input type="date" value={form.expenseDate ?? ''} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} />
@@ -227,17 +227,17 @@ export default function ExpensesPage() {
                 </Select>
               </Field>
               <Field label={t('expenses.vendor')}>
-                <Input value={form.vendor ?? ''} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
+                <Input placeholder="e.g. Electricity Co. / Generator Owner" value={form.vendor ?? ''} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
               </Field>
               <Field label={t('common.reference')}>
-                <Input value={form.reference ?? ''} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
+                <Input placeholder="e.g. Receipt #4582" value={form.reference ?? ''} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
               </Field>
             </div>
             <Field label={t('expenses.description')}>
-              <Input value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <Input placeholder="e.g. Monthly workshop rent" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </Field>
             <Field label={t('common.notes')}>
-              <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea rows={2} placeholder="Optional notes..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

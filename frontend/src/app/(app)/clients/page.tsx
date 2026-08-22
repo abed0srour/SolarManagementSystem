@@ -165,7 +165,9 @@ export default function ClientsPage() {
             <DialogTitle>{editing ? t('clients.editClient') : t('clients.newClient')}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <Field label={t('common.name')} className="sm:col-span-2"><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            <Field label={t('common.name')} className="sm:col-span-2">
+              <Input placeholder="e.g. John Doe / Solar Solutions SAL" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
             <Field label={t('clients.type')}>
               <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="INDIVIDUAL">{t('clients.INDIVIDUAL')}</option>
@@ -178,14 +180,20 @@ export default function ClientsPage() {
                 <option value="INSTALLER">{t('clients.INSTALLER')}</option>
               </Select>
             </Field>
-            <Field label={t('common.phone')}><Input value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-            <Field label={t('common.email')}><Input type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-            <Field label={t('clients.creditLimit')}><Input type="number" min={0} value={form.creditLimit ?? 0} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} /></Field>
+            <Field label={t('common.phone')}>
+              <Input dir="ltr" placeholder="e.g. +961 70 123 456" value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </Field>
+            <Field label={t('common.email')}>
+              <Input type="email" dir="ltr" placeholder="e.g. client@example.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+            <Field label={t('clients.creditLimit')}>
+              <Input type="number" min={0} placeholder="0.00" value={form.creditLimit ?? ''} onChange={(e) => setForm({ ...form, creditLimit: e.target.value })} />
+            </Field>
             <Field label={t('common.address')} className="sm:col-span-2 md:col-span-4">
-              <Input value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+              <Input placeholder="e.g. Main Street, Building A, 2nd Floor, Beirut" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </Field>
             <Field label={t('common.notes')} className="sm:col-span-2 md:col-span-4">
-              <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea rows={2} placeholder="Optional notes about the client..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

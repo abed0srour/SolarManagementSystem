@@ -175,19 +175,19 @@ export default function CategoriesPage() {
           {dialog?.kind !== 'attr' ? (
             <div className="space-y-3">
               <Field label={t('common.name')}>
-                <Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <Input placeholder="e.g. Inverters / Solar Panels" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </Field>
               <Field label={t('categories.description')}>
-                <Input value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                <Input placeholder="e.g. Hybrid, off-grid and on-grid equipment" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </Field>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('categories.attrName')}>
-                <Input dir="ltr" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <Input dir="ltr" placeholder="e.g. ratedPower" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </Field>
               <Field label={t('categories.attrLabel')}>
-                <Input value={form.label ?? ''} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+                <Input placeholder="e.g. Rated Power" value={form.label ?? ''} onChange={(e) => setForm({ ...form, label: e.target.value })} />
               </Field>
               <Field label={t('categories.attrType')}>
                 <Select value={form.type ?? 'TEXT'} onChange={(e) => setForm({ ...form, type: e.target.value })}>
@@ -199,11 +199,11 @@ export default function CategoriesPage() {
                 </Select>
               </Field>
               <Field label={t('categories.attrUnit')}>
-                <Input value={form.unit ?? ''} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+                <Input placeholder="e.g. kW / Ah / V" value={form.unit ?? ''} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
               </Field>
               {form.type === 'SELECT' && (
                 <Field label={t('categories.attrOptions')} className="col-span-2">
-                  <Input value={form.options ?? ''} onChange={(e) => setForm({ ...form, options: e.target.value })} />
+                  <Input placeholder="e.g. Option 1, Option 2, Option 3" value={form.options ?? ''} onChange={(e) => setForm({ ...form, options: e.target.value })} />
                 </Field>
               )}
               <div className="flex items-center gap-2">

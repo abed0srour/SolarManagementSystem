@@ -160,7 +160,7 @@ export default function WarrantyPage() {
               </Field>
             )}
             <Field label={t('warranty.issue')}>
-              <Textarea rows={3} value={form.issue ?? ''} onChange={(e) => setForm({ ...form, issue: e.target.value })} />
+              <Textarea rows={3} placeholder="Describe the reported defect or fault..." value={form.issue ?? ''} onChange={(e) => setForm({ ...form, issue: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

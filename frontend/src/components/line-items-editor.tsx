@@ -22,16 +22,16 @@ export interface SubLine {
   /** The catalogue product. Its stock is drawn when the order is confirmed. */
   product: any | null;
   description: string;
-  quantity: number;
+  quantity: number | string;
   unit: string;
-  unitPrice: number;
+  unitPrice: number | string;
 }
 
 export interface LineItem {
   product: any | null;
-  quantity: number;
+  quantity: number | string;
   /** What the customer is charged per unit on this line. Editable. */
-  unitPrice: number;
+  unitPrice: number | string;
   /** The product's list price when it was picked — reference only, never sent. */
   basePrice: number;
   /** What the product costs us. Shown beside the price so margin is visible. Never sent. */
@@ -46,22 +46,22 @@ export interface LineItem {
 }
 
 export function emptyLine(): LineItem {
-  return { product: null, quantity: 1, unitPrice: 0, basePrice: 0, costPrice: 0 };
+  return { product: null, quantity: 1, unitPrice: '', basePrice: 0, costPrice: 0 };
 }
 
 export function emptyBundle(): LineItem {
   return {
-    product: null, quantity: 1, unitPrice: 0, basePrice: 0, costPrice: 0,
+    product: null, quantity: 1, unitPrice: '', basePrice: 0, costPrice: 0,
     isComposite: true, description: '', autoPrice: true, subItems: [emptySubLine()],
   };
 }
 
 export function emptySubLine(): SubLine {
-  return { product: null, description: '', quantity: 1, unit: 'pcs', unitPrice: 0 };
+  return { product: null, description: '', quantity: 1, unit: 'pcs', unitPrice: '' };
 }
 
 export function subLineTotal(s: SubLine): number {
-  return Math.round(Math.max(0, Number(s.quantity) * Number(s.unitPrice)) * 100) / 100;
+  return Math.round(Math.max(0, (Number(s.quantity) || 0) * (Number(s.unitPrice) || 0)) * 100) / 100;
 }
 
 /** Sum of a bundle's components — what an auto-priced bundle charges. */
@@ -70,8 +70,8 @@ export function bundleComponentsTotal(l: LineItem): number {
 }
 
 export function lineSubtotal(l: LineItem): number {
-  const unit = l.isComposite && l.autoPrice !== false ? bundleComponentsTotal(l) : l.unitPrice;
-  return Math.round(Math.max(0, l.quantity * unit) * 100) / 100;
+  const unit = l.isComposite && l.autoPrice !== false ? bundleComponentsTotal(l) : (Number(l.unitPrice) || 0);
+  return Math.round(Math.max(0, (Number(l.quantity) || 0) * unit) * 100) / 100;
 }
 
 export function lineTotal(l: LineItem): number {
@@ -86,7 +86,7 @@ export function isLineFilled(l: LineItem): boolean {
 /** Profit per unit at the current price. Negative means selling below cost. */
 export function lineUnitMargin(l: LineItem): number {
   if (!l.product) return 0;
-  return Math.round((l.unitPrice - l.costPrice) * 100) / 100;
+  return Math.round(((Number(l.unitPrice) || 0) - l.costPrice) * 100) / 100;
 }
 
 /**
@@ -103,7 +103,7 @@ export function belowCostLines(lines: LineItem[]): LineItem[] {
 
 /** What the whole order gives away, across every below-cost line. */
 export function belowCostLoss(lines: LineItem[]): number {
-  const loss = belowCostLines(lines).reduce((s, l) => s + lineUnitMargin(l) * Number(l.quantity), 0);
+  const loss = belowCostLines(lines).reduce((s, l) => s + lineUnitMargin(l) * (Number(l.quantity) || 0), 0);
   return Math.round(Math.abs(loss) * 100) / 100;
 }
 
@@ -117,21 +117,21 @@ const plain = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
 /** Difference between the charged price and the product's list price. */
 export function lineMarkup(l: LineItem): number {
   if (!l.product) return 0;
-  return Math.round((l.unitPrice - l.basePrice) * 100) / 100;
+  return Math.round(((Number(l.unitPrice) || 0) - l.basePrice) * 100) / 100;
 }
 
 /** True when any line is unusable — blocks submitting the order. */
 export function hasInvalidLine(lines: LineItem[]): boolean {
   return lines.some((l) => {
     if (!isLineFilled(l)) return false;
-    if (!Number.isFinite(l.quantity) || l.quantity < 1) return true;
+    if (l.quantity === '' || !Number.isFinite(Number(l.quantity)) || Number(l.quantity) < 1) return true;
     if (l.isComposite) {
       // A bundle needs at least one named component, and none may be negative.
       const subs = (l.subItems ?? []).filter((s) => s.product);
       if (!subs.length) return true;
-      return subs.some((s) => !Number.isFinite(s.quantity) || s.quantity < 0 || !Number.isFinite(s.unitPrice) || s.unitPrice < 0);
+      return subs.some((s) => s.quantity === '' || !Number.isFinite(Number(s.quantity)) || Number(s.quantity) <= 0 || s.unitPrice === '' || !Number.isFinite(Number(s.unitPrice)) || Number(s.unitPrice) < 0);
     }
-    return !Number.isFinite(l.unitPrice) || l.unitPrice < 0;
+    return l.unitPrice === '' || !Number.isFinite(Number(l.unitPrice)) || Number(l.unitPrice) < 0;
   });
 }
 
@@ -141,64 +141,62 @@ export function toItemsPayload(lines: LineItem[]) {
       ? {
           isComposite: true,
           description: l.description?.trim(),
-          quantity: Number(l.quantity),
+          quantity: Number(l.quantity) || 1,
           autoPrice: l.autoPrice !== false,
           // Only priced when overridden; otherwise the server sums the parts.
-          unitPrice: l.autoPrice === false ? Number(l.unitPrice) : undefined,
+          unitPrice: l.autoPrice === false ? Number(l.unitPrice) || 0 : undefined,
           subItems: (l.subItems ?? [])
             .filter((s) => s.product)
             .map((s) => ({
               productId: s.product.id,
-              quantity: Number(s.quantity),
+              quantity: Number(s.quantity) || 1,
               unit: s.unit || undefined,
-              unitPrice: Number(s.unitPrice),
+              unitPrice: Number(s.unitPrice) || 0,
             })),
         }
       : {
           productId: l.product.id,
-          quantity: Number(l.quantity),
-          unitPrice: Number(l.unitPrice),
+          quantity: Number(l.quantity) || 1,
+          unitPrice: Number(l.unitPrice) || 0,
         },
   );
 }
 
 /** Rebuild editor lines from a saved document, including bundle contents. */
-export function linesFromStored(items: any[], priceField: 'salePrice' | 'costPrice' = 'salePrice'): LineItem[] {
-  return items
-    .filter((i) => !i.parentItemId)
-    .map((i) =>
-      i.isComposite
-        ? {
-            product: null,
-            isComposite: true,
-            description: i.description ?? '',
-            quantity: Number(i.quantity),
-            unitPrice: Number(i.unitPrice),
-            basePrice: Number(i.unitPrice),
-            costPrice: 0,
-            autoPrice: i.autoPrice !== false,
-            subItems: (i.subItems ?? []).map((s: any) => ({
-              product: s.productId ? { id: s.productId, name: s.product?.name ?? s.description ?? '', sku: s.product?.sku ?? '', salePrice: s.unitPrice } : null,
-              description: s.description ?? '',
-              quantity: Number(s.quantity),
-              unit: s.unit ?? 'pcs',
-              unitPrice: Number(s.unitPrice),
-            })),
-          }
-        : {
-            product: {
-              id: i.productId,
-              name: i.product?.name ?? '',
-              sku: i.product?.sku ?? '',
-              [priceField]: i.unitPrice,
-              trackSerials: i.product?.trackSerials,
-            },
-            quantity: Number(i.quantity),
-            unitPrice: Number(i.unitPrice),
-            basePrice: Number(i.product?.salePrice ?? i.unitPrice),
-            costPrice: Number(i.product?.costPrice ?? 0),
+export function linesFromStored(items: any[]): LineItem[] {
+  return (items ?? []).map((i) =>
+    i.isComposite
+      ? {
+          product: null,
+          isComposite: true,
+          description: i.description ?? '',
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice ?? 0),
+          basePrice: 0,
+          costPrice: 0,
+          autoPrice: i.autoPrice !== false,
+          subItems: (i.subItems ?? []).map((s: any) => ({
+            product: s.product ? { id: s.productId, name: s.product?.name ?? '', sku: s.product?.sku ?? '' } : null,
+            description: s.description ?? s.product?.name ?? '',
+            quantity: s.quantity,
+            unit: s.unit ?? 'pcs',
+            unitPrice: Number(s.unitPrice ?? 0),
+          })),
+        }
+      : {
+          product: {
+            id: i.productId,
+            name: i.product?.name ?? '',
+            sku: i.product?.sku ?? '',
+            costPrice: i.product?.costPrice ?? 0,
+            salePrice: i.product?.salePrice ?? 0,
           },
-    );
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+          basePrice: Number(i.product?.salePrice ?? i.unitPrice),
+          costPrice: Number(i.product?.costPrice ?? 0),
+        },
+  );
 }
 
 /**
@@ -239,13 +237,20 @@ function BundleRow({
             />
           </div>
         </TableCell>
-        <TableCell>
-          <Input type="number" min={1} value={line.quantity} onChange={(e) => onChange({ quantity: Math.max(1, Number(e.target.value)) })} />
+        <TableCell className="min-w-32">
+          <Input
+            type="number"
+            min={1}
+            className="tabular-nums"
+            placeholder="1"
+            value={line.quantity}
+            onChange={(e) => onChange({ quantity: e.target.value })}
+          />
         </TableCell>
         <TableCell className="text-end text-xs text-muted-foreground">
           {t('orders.componentCount', { count: subs.filter((s) => s.product).length })}
         </TableCell>
-        <TableCell>
+        <TableCell className="min-w-36">
           <div className="flex items-center justify-end gap-1.5">
             <button
               type="button"
@@ -265,9 +270,10 @@ function BundleRow({
                 type="number"
                 min={0}
                 step="0.01"
-                className="w-24 text-end tabular-nums"
+                placeholder="0.00"
+                className="w-28 text-end tabular-nums"
                 value={line.unitPrice}
-                onChange={(e) => onChange({ unitPrice: Math.max(0, Number(e.target.value)) })}
+                onChange={(e) => onChange({ unitPrice: e.target.value })}
               />
             )}
           </div>
@@ -294,7 +300,7 @@ function BundleRow({
                         setSub(i, {
                           product: p,
                           description: p?.name ?? '',
-                          unitPrice: p ? Number(p.salePrice ?? 0) : 0,
+                          unitPrice: p ? (Number(p.salePrice) || '') : '',
                         })
                       }
                     />
@@ -304,9 +310,10 @@ function BundleRow({
                     type="number"
                     min={0}
                     step="0.001"
-                    className="w-24 text-end tabular-nums"
+                    className="w-28 text-end tabular-nums"
+                    placeholder="1"
                     value={s.quantity}
-                    onChange={(e) => setSub(i, { quantity: Math.max(0, Number(e.target.value)) })}
+                    onChange={(e) => setSub(i, { quantity: e.target.value })}
                   />
                   <Select className="w-20" value={s.unit} onChange={(e) => setSub(i, { unit: e.target.value })}>
                     {UNITS.map((u) => (
@@ -317,10 +324,10 @@ function BundleRow({
                     type="number"
                     min={0}
                     step="0.01"
-                    className="w-28 text-end tabular-nums"
-                    placeholder={t('common.unitPrice')}
+                    className="w-32 text-end tabular-nums"
+                    placeholder="0.00"
                     value={s.unitPrice}
-                    onChange={(e) => setSub(i, { unitPrice: Math.max(0, Number(e.target.value)) })}
+                    onChange={(e) => setSub(i, { unitPrice: e.target.value })}
                   />
                   <span className="w-28 text-end text-sm tabular-nums text-muted-foreground">{plain(subLineTotal(s))}</span>
                   <Button
@@ -369,9 +376,9 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-56">{t('common.product')}</TableHead>
-            <TableHead className="w-20">{t('common.quantity')}</TableHead>
+            <TableHead className="w-36 min-w-32">{t('common.quantity')}</TableHead>
             <TableHead className="w-32 text-end">{t('products.costPrice')}</TableHead>
-            <TableHead className="w-36 text-end">{t('common.unitPrice')}</TableHead>
+            <TableHead className="w-40 min-w-36 text-end">{t('common.unitPrice')}</TableHead>
             <TableHead className="w-28 text-end">{t('common.lineTotal')}</TableHead>
             <TableHead className="w-10"></TableHead>
           </TableRow>
@@ -393,15 +400,22 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
                   onChange={(p) =>
                     set(idx, {
                       product: p,
-                      unitPrice: p ? Number(p[priceField]) : 0,
+                      unitPrice: p ? (Number(p[priceField]) || '') : '',
                       basePrice: p ? Number(p[priceField]) : 0,
                       costPrice: p ? Number(p.costPrice ?? 0) : 0,
                     })
                   }
                 />
               </TableCell>
-              <TableCell>
-                <Input type="number" min={1} value={l.quantity} onChange={(e) => set(idx, { quantity: Math.max(1, Number(e.target.value)) })} />
+              <TableCell className="min-w-32">
+                <Input
+                  type="number"
+                  min={1}
+                  className="tabular-nums"
+                  placeholder="1"
+                  value={l.quantity}
+                  onChange={(e) => set(idx, { quantity: e.target.value })}
+                />
               </TableCell>
               {/*
                 Read-only cost, sat immediately left of the editable price so
@@ -431,16 +445,17 @@ export default function LineItemsEditor({ lines, onChange, priceField = 'salePri
                 tall as the plain inputs beside it. In normal flow it stretched
                 the cell and pushed the price input out of line with Qty.
               */}
-              <TableCell>
+              <TableCell className="min-w-36">
                 <div className="relative">
                   <Input
                     type="number"
                     min={0}
                     step="0.01"
+                    placeholder="0.00"
                     className={cn('text-end tabular-nums', lineMarkup(l) !== 0 && 'border-amber-500/70')}
                     value={l.unitPrice}
                     disabled={!l.product}
-                    onChange={(e) => set(idx, { unitPrice: Math.max(0, Number(e.target.value)) })}
+                    onChange={(e) => set(idx, { unitPrice: e.target.value })}
                   />
                   {/*
                     Only shown once the price differs from list. Repeating the

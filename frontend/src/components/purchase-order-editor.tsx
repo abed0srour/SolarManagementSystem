@@ -16,8 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 interface PoLine {
   product: any | null;
-  quantity: number;
-  unitCost: number;
+  quantity: number | string;
+  unitCost: number | string;
 }
 
 /**
@@ -36,13 +36,13 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           supplier: editing.supplier,
           warehouse: editing.warehouse,
           expectedDelivery: editing.expectedDelivery ? editing.expectedDelivery.slice(0, 10) : '',
-          currency: editing.currency,
-          exchangeRate: Number(editing.exchangeRate),
+          currency: editing.currency ?? 'USD',
+          exchangeRate: editing.exchangeRate !== undefined ? String(editing.exchangeRate) : '1',
           notes: editing.notes ?? '',
           hasDeliveryCost: editing.hasDeliveryCost ?? false,
-          deliveryCost: Number(editing.deliveryCost ?? 0),
+          deliveryCost: editing.deliveryCost !== undefined ? String(editing.deliveryCost) : '0',
         }
-      : { supplier: null, warehouse: null, expectedDelivery: '', currency: 'USD', exchangeRate: 1, notes: '', hasDeliveryCost: false, deliveryCost: 0 },
+      : { supplier: null, warehouse: null, expectedDelivery: '', currency: 'USD', exchangeRate: '1', notes: '', hasDeliveryCost: false, deliveryCost: '0' },
   );
   const [lines, setLines] = useState<PoLine[]>(() =>
     editing
@@ -51,7 +51,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           quantity: i.quantity,
           unitCost: Number(i.unitCost),
         }))
-      : [{ product: null, quantity: 1, unitCost: 0 }],
+      : [{ product: null, quantity: 1, unitCost: '' }],
   );
   const [saving, setSaving] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -59,25 +59,53 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
 
   const setLine = (idx: number, patch: Partial<PoLine>) => setLines(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
-  const totalQty = lines.filter((l) => l.product).reduce((s, l) => s + Number(l.quantity || 0), 0);
-  const subtotal = lines.filter((l) => l.product).reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unitCost || 0), 0);
+  const totalQty = lines.filter((l) => l.product).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+  const subtotal = lines.filter((l) => l.product).reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitCost) || 0), 0);
   const deliveryCost = form.hasDeliveryCost ? Number(form.deliveryCost) || 0 : 0;
   const deliveryCostPerUnit = form.hasDeliveryCost && totalQty > 0 ? deliveryCost / totalQty : 0;
   const total = subtotal + deliveryCost;
 
+  const validate = () => {
+    if (!form.supplier) {
+      toast.error(t('orders.selectSupplier') || 'Please select a supplier');
+      return false;
+    }
+    if (!form.warehouse) {
+      toast.error(t('orders.selectWarehouse') || 'Please select a warehouse');
+      return false;
+    }
+    const activeLines = lines.filter((l) => l.product);
+    if (activeLines.length === 0) {
+      toast.error(t('orders.addAtLeastOneProduct') || 'Please add at least one product to the order');
+      return false;
+    }
+    for (const l of activeLines) {
+      if (l.quantity === '' || Number.isNaN(Number(l.quantity)) || Number(l.quantity) <= 0) {
+        toast.error(t('orders.invalidQuantity') || `Please enter a valid quantity for ${l.product.name}`);
+        return false;
+      }
+      if (l.unitCost === '' || Number.isNaN(Number(l.unitCost)) || Number(l.unitCost) < 0) {
+        toast.error(t('orders.invalidUnitCost') || `Please enter a valid unit cost for ${l.product.name}`);
+        return false;
+      }
+    }
+    return true;
+  };
+
   const save = async () => {
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
         supplierId: form.supplier?.id,
         warehouseId: form.warehouse?.id,
         expectedDelivery: form.expectedDelivery || undefined,
-        currency: form.currency,
-        exchangeRate: Number(form.exchangeRate) || 1,
+        currency: form.currency || 'USD',
+        exchangeRate: form.exchangeRate === '' ? 1 : Number(form.exchangeRate) || 1,
         notes: form.notes || undefined,
         hasDeliveryCost: form.hasDeliveryCost,
         deliveryCost: form.hasDeliveryCost ? Number(form.deliveryCost) || 0 : 0,
-        items: lines.filter((l) => l.product).map((l) => ({ productId: l.product.id, quantity: Number(l.quantity), unitCost: Number(l.unitCost) })),
+        items: lines.filter((l) => l.product).map((l) => ({ productId: l.product.id, quantity: Number(l.quantity), unitCost: Number(l.unitCost) || 0 })),
       };
       if (editing) await api.patch(`/purchase-orders/${editing.id}`, payload);
       else await api.post('/purchase-orders', payload);
@@ -89,8 +117,6 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
       setSaving(false);
     }
   };
-
-  const canSave = editable && form.supplier && form.warehouse && lines.some((l) => l.product);
 
   const isCancellable = editing && editing.status !== 'CANCELLED' && (editing.cancellable ?? (
     (editing.items ?? []).every((i: any) => !i.receivedQty) && Number(editing.paidAmount ?? 0) === 0
@@ -119,13 +145,13 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
             <Input type="date" disabled={!editable} value={form.expectedDelivery ?? ''} onChange={(e) => setForm({ ...form, expectedDelivery: e.target.value })} />
           </Field>
           <Field label={t('common.currency')}>
-            <Input disabled={!editable} value={form.currency ?? 'USD'} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+            <Input disabled={!editable} placeholder="USD" value={form.currency ?? 'USD'} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
           </Field>
           <Field label={t('orders.exchangeRate')}>
-            <Input type="number" min={0} step="0.000001" disabled={!editable} value={form.exchangeRate ?? 1} onChange={(e) => setForm({ ...form, exchangeRate: e.target.value })} />
+            <Input type="number" min={0} step="0.000001" placeholder="1.00" disabled={!editable} value={form.exchangeRate ?? ''} onChange={(e) => setForm({ ...form, exchangeRate: e.target.value })} />
           </Field>
           <Field label={t('common.notes')}>
-            <Input disabled={!editable} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <Input disabled={!editable} placeholder={t('quotations.notesPlaceholder') || 'Optional notes...'} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Field>
         </CardContent>
       </Card>
@@ -136,7 +162,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 accent-primary"
               disabled={!editable}
               checked={!!form.hasDeliveryCost}
               onChange={(e) => setForm({ ...form, hasDeliveryCost: e.target.checked })}
@@ -148,7 +174,8 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
               <Field label={t('orders.deliveryCost')}>
                 <Input
                   type="number" min={0} step="0.01" disabled={!editable}
-                  value={form.deliveryCost ?? 0}
+                  placeholder="0.00"
+                  value={form.deliveryCost ?? ''}
                   onChange={(e) => setForm({ ...form, deliveryCost: e.target.value })}
                 />
               </Field>
@@ -170,8 +197,8 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-56">{t('common.product')}</TableHead>
-                  <TableHead className="w-28">{t('common.quantity')}</TableHead>
-                  <TableHead className="w-36">{t('orders.unitCost')}</TableHead>
+                  <TableHead className="w-36 min-w-32">{t('common.quantity')}</TableHead>
+                  <TableHead className="w-40 min-w-36">{t('orders.unitCost')}</TableHead>
                   {editing && <TableHead className="w-28 text-end">{t('orders.received')}</TableHead>}
                   <TableHead className="w-32 text-end">{t('common.lineTotal')}</TableHead>
                   {editable && <TableHead className="w-10" />}
@@ -187,7 +214,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
                   <TableRow key={idx}>
                     <TableCell>
                       {editable ? (
-                        <ProductPicker value={l.product} onChange={(p) => setLine(idx, { product: p, unitCost: p ? Number(p.costPrice) : 0 })} />
+                        <ProductPicker value={l.product} onChange={(p) => setLine(idx, { product: p, unitCost: p ? (Number(p.costPrice) || '') : '' })} />
                       ) : (
                         <div>
                           <div className="font-medium">{l.product?.name}</div>
@@ -195,18 +222,35 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Input type="number" min={1} disabled={!editable} value={l.quantity} onChange={(e) => setLine(idx, { quantity: Number(e.target.value) })} />
+                    <TableCell className="min-w-32">
+                      <Input
+                        type="number"
+                        min={1}
+                        className="tabular-nums"
+                        placeholder="1"
+                        disabled={!editable}
+                        value={l.quantity}
+                        onChange={(e) => setLine(idx, { quantity: e.target.value })}
+                      />
                     </TableCell>
-                    <TableCell>
-                      <Input type="number" min={0} step="0.01" disabled={!editable} value={l.unitCost} onChange={(e) => setLine(idx, { unitCost: Number(e.target.value) })} />
+                    <TableCell className="min-w-36">
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="text-end tabular-nums"
+                        placeholder="0.00"
+                        disabled={!editable}
+                        value={l.unitCost}
+                        onChange={(e) => setLine(idx, { unitCost: e.target.value })}
+                      />
                     </TableCell>
                     {editing && (
                       <TableCell className="text-end tabular-nums text-muted-foreground">
                         {editing.items?.find((i: any) => i.productId === l.product?.id)?.receivedQty ?? 0}/{l.quantity}
                       </TableCell>
                     )}
-                    <TableCell className="text-end tabular-nums">{fmtMoney(l.quantity * l.unitCost, form.currency)}</TableCell>
+                    <TableCell className="text-end tabular-nums">{fmtMoney((Number(l.quantity) || 0) * (Number(l.unitCost) || 0), form.currency)}</TableCell>
                     {editable && (
                       <TableCell>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>
@@ -220,7 +264,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
             </Table>
           </div>
           {editable && (
-            <Button type="button" variant="outline" size="sm" onClick={() => setLines([...lines, { product: null, quantity: 1, unitCost: 0 }])}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setLines([...lines, { product: null, quantity: 1, unitCost: '' }])}>
               <Plus /> {t('common.addLine')}
             </Button>
           )}
@@ -250,7 +294,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
           </Button>
         )}
         {editable && (
-          <Button onClick={save} disabled={!canSave || saving}>
+          <Button onClick={save} disabled={saving}>
             <PackagePlus /> {t('common.save')}
           </Button>
         )}

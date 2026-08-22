@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 interface RefundLine {
   productId: string;
-  qty: number;
+  qty: number | string;
   condition: string;
   serials: string[];
 }
@@ -78,7 +78,7 @@ export default function OrderRefundPage() {
   const refundableQty = (productId: string) =>
     Math.max(0, (itemByProduct(productId)?.quantity ?? 0) - (refunded[productId] ?? 0));
   const inThisRefund = (productId: string) =>
-    mode === 'WHOLE' ? refundableQty(productId) : (lines.find((l) => l.productId === productId)?.qty ?? 0);
+    mode === 'WHOLE' ? refundableQty(productId) : Number(lines.find((l) => l.productId === productId)?.qty || 0);
   const usedProducts = lines.map((l) => l.productId);
   const availableProducts = so.items.filter((i: any) => !usedProducts.includes(i.productId) && refundableQty(i.productId) > 0);
 
@@ -105,10 +105,10 @@ export default function OrderRefundPage() {
               : undefined,
           }))
       : lines
-          .filter((l) => l.qty > 0)
+          .filter((l) => Number(l.qty) > 0)
           .map((l) => ({
             productId: l.productId,
-            quantity: l.qty,
+            quantity: Number(l.qty),
             unitPrice: Number(itemByProduct(l.productId)?.unitPrice ?? 0),
             condition: l.condition,
             serialNumbers: l.serials.length ? l.serials : undefined,
@@ -247,7 +247,7 @@ export default function OrderRefundPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-48">{t('common.product')}</TableHead>
-                      <TableHead className="w-24">{t('refunds.refundQty')}</TableHead>
+                      <TableHead className="w-32 min-w-28">{t('refunds.refundQty')}</TableHead>
                       <TableHead className="w-36">{t('refunds.condition')}</TableHead>
                       <TableHead className="min-w-48">{t('inventory.serials')}</TableHead>
                       <TableHead className="w-28 text-end">{t('common.lineTotal')}</TableHead>
@@ -276,14 +276,16 @@ export default function OrderRefundPage() {
                               ))}
                           </Select>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="min-w-28">
                           <Input
                             type="number"
                             min={0}
                             max={maxQty}
                             disabled={tracked}
+                            className="tabular-nums"
+                            placeholder="1"
                             value={l.qty}
-                            onChange={(e) => setLine(idx, { qty: Math.min(maxQty, Math.max(0, Number(e.target.value))) })}
+                            onChange={(e) => setLine(idx, { qty: e.target.value === '' ? '' : Math.min(maxQty, Math.max(0, Number(e.target.value))) })}
                           />
                         </TableCell>
                         <TableCell>
@@ -308,7 +310,7 @@ export default function OrderRefundPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-end tabular-nums font-medium">
-                          {fmtMoney(l.qty * Number(item?.unitPrice ?? 0))}
+                          {fmtMoney((Number(l.qty) || 0) * Number(item?.unitPrice ?? 0))}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setLines(lines.filter((_, j) => j !== idx))}>

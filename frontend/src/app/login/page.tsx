@@ -93,14 +93,14 @@ export default function LoginPage() {
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">{t('auth.email')}</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+              <Input id="email" type="email" dir="ltr" placeholder="e.g. user@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
             </div>
             {mode === 'login' && (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="password">{t('auth.password')}</Label>
                   <div className="relative">
-                    <Input id="password" type={showPassword ? 'text' : 'password'} className="pe-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                    <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" className="pe-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
                     <button
                       type="button"
                       tabIndex={-1}
@@ -122,11 +122,11 @@ export default function LoginPage() {
               <>
                 <div className="space-y-1.5">
                   <Label>{t('auth.resetToken')}</Label>
-                  <Input value={resetToken} onChange={(e) => setResetToken(e.target.value)} required />
+                  <Input dir="ltr" placeholder="Paste reset token here" value={resetToken} onChange={(e) => setResetToken(e.target.value)} required />
                 </div>
                 <div className="space-y-1.5">
                   <Label>{t('auth.newPassword')}</Label>
-                  <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
+                  <Input type="password" placeholder="••••••••" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
                 </div>
               </>
             )}

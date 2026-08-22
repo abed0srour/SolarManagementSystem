@@ -312,10 +312,10 @@ export default function CalculatorPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label={t('calculator.current')}>
-                        <Input type="number" step="0.1" min="0" value={form.dayAmps} onChange={(e) => setForm({ ...form, dayAmps: e.target.value })} />
+                        <Input type="number" step="0.1" min="0" placeholder="e.g. 15" value={form.dayAmps} onChange={(e) => setForm({ ...form, dayAmps: e.target.value })} />
                       </Field>
                       <Field label={t('calculator.hours')}>
-                        <Input type="number" step="0.5" min="0" max="24" value={form.dayHours} onChange={(e) => setForm({ ...form, dayHours: e.target.value })} />
+                        <Input type="number" step="0.5" min="0" max="24" placeholder="10" value={form.dayHours} onChange={(e) => setForm({ ...form, dayHours: e.target.value })} />
                       </Field>
                     </div>
                   </div>
@@ -325,10 +325,10 @@ export default function CalculatorPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label={t('calculator.current')}>
-                        <Input type="number" step="0.1" min="0" value={form.nightAmps} onChange={(e) => setForm({ ...form, nightAmps: e.target.value })} />
+                        <Input type="number" step="0.1" min="0" placeholder="e.g. 8" value={form.nightAmps} onChange={(e) => setForm({ ...form, nightAmps: e.target.value })} />
                       </Field>
                       <Field label={t('calculator.hours')}>
-                        <Input type="number" step="0.5" min="0" max="24" value={form.nightHours} onChange={(e) => setForm({ ...form, nightHours: e.target.value })} />
+                        <Input type="number" step="0.5" min="0" max="24" placeholder="14" value={form.nightHours} onChange={(e) => setForm({ ...form, nightHours: e.target.value })} />
                       </Field>
                     </div>
                   </div>
@@ -351,6 +351,7 @@ export default function CalculatorPage() {
                   <Field label={t('calculator.powerFactor')}>
                     <Input
                       type="number" step="0.05" min="0.5" max="1"
+                      placeholder="0.9"
                       value={form.phase === 'DC' ? '1' : form.powerFactor}
                       disabled={form.phase === 'DC'}
                       onChange={(e) => setForm({ ...form, powerFactor: e.target.value })}
@@ -379,13 +380,13 @@ export default function CalculatorPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <Field label={t('calculator.monthlyKwh')}>
-                  <Input type="number" value={form.monthlyKwh} onChange={(e) => setForm({ ...form, monthlyKwh: e.target.value })} />
+                  <Input type="number" placeholder="e.g. 600" value={form.monthlyKwh} onChange={(e) => setForm({ ...form, monthlyKwh: e.target.value })} />
                 </Field>
                 <Field label={t('calculator.backupHours')}>
-                  <Input type="number" value={form.backupHours} onChange={(e) => setForm({ ...form, backupHours: e.target.value })} />
+                  <Input type="number" placeholder="e.g. 8" value={form.backupHours} onChange={(e) => setForm({ ...form, backupHours: e.target.value })} />
                 </Field>
                 <Field label={t('calculator.peakLoad')} hint={t('calculator.peakLoadHint')}>
-                  <Input type="number" step="0.1" value={form.peakLoadKw} onChange={(e) => setForm({ ...form, peakLoadKw: e.target.value })} />
+                  <Input type="number" step="0.1" placeholder="e.g. 4.5" value={form.peakLoadKw} onChange={(e) => setForm({ ...form, peakLoadKw: e.target.value })} />
                 </Field>
               </div>
             )}
@@ -440,7 +441,7 @@ export default function CalculatorPage() {
           <Step n={3} title={t('calculator.stepMoney')} hint={t('calculator.stepMoneyHint')} last>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Field label={t('calculator.tariff')}>
-                <Input type="number" step="0.01" value={form.tariffPerKwh} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
+                <Input type="number" step="0.01" placeholder="0.25" value={form.tariffPerKwh} onChange={(e) => setForm({ ...form, tariffPerKwh: e.target.value })} />
               </Field>
             </div>
           </Step>

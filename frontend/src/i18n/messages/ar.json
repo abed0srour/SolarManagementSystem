@@ -522,7 +522,14 @@
     "autoPick": "اختيار تلقائي",
     "noSerialsInStock": "لا توجد أرقام تسلسلية في المخزون لهذا المنتج.",
     "confirmCancelPurchaseOrder": "هل أنت متأكد من إلغاء أمر الشراء هذا؟",
-    "confirmDeletePurchaseOrder": "سيتم حذف أمر الشراء الملغى هذا. ستبقى السجلات التاريخية محفوظة."
+    "confirmDeletePurchaseOrder": "سيتم حذف أمر الشراء الملغى هذا. ستبقى السجلات التاريخية محفوظة.",
+    "selectSupplier": "يرجى تحديد مورد",
+    "selectWarehouse": "يرجى تحديد مستودع",
+    "selectClient": "يرجى تحديد عميل",
+    "addAtLeastOneProduct": "يرجى إضافة منتج واحد على الأقل",
+    "invalidQuantity": "يرجى إدخال كمية صحيحة للمنتج {product}",
+    "invalidUnitCost": "يرجى إدخال سعر تكلفة صحيح للمنتج {product}",
+    "invalidLinesError": "يرجى إدخال كميات وأسعار صحيحة لجميع العناصر"
   },
   "invoices": {
     "title": "الفواتير",

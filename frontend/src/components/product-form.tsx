@@ -254,6 +254,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
             <div className="relative">
               <Input
                 className={cn('pe-9 font-mono', err('sku') && 'border-destructive')}
+                placeholder="e.g. INV-5KW-001"
                 value={form.sku ?? ''}
                 onChange={(e) => setForm({ ...form, sku: e.target.value })}
               />
@@ -273,6 +274,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
           <Field label={t('common.name')} className="md:col-span-2" hint={err('name')}>
             <Input
               className={cn(err('name') && 'border-destructive')}
+              placeholder="e.g. 5kW Hybrid Inverter Single Phase"
               value={form.name ?? ''}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -287,8 +289,8 @@ export default function ProductForm({ productId }: { productId?: string }) {
           />
           {!form.isService && (
             <>
-              <Field label={t('products.brand')}><Input value={form.brand ?? ''} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></Field>
-              <Field label={t('products.model')}><Input value={form.model ?? ''} onChange={(e) => setForm({ ...form, model: e.target.value })} /></Field>
+              <Field label={t('products.brand')}><Input placeholder="e.g. Deye" value={form.brand ?? ''} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></Field>
+              <Field label={t('products.model')}><Input placeholder="e.g. SUN-5K-SG03LP1" value={form.model ?? ''} onChange={(e) => setForm({ ...form, model: e.target.value })} /></Field>
               <Field label={t('products.subCategory')} hint={err('subCategoryId')}>
                 <Select
                   className={cn(err('subCategoryId') && 'border-destructive')}
@@ -303,7 +305,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
                   ))}
                 </Select>
               </Field>
-              <Field label={t('products.barcode')}><Input value={form.barcode ?? ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></Field>
+              <Field label={t('products.barcode')}><Input placeholder="e.g. 6901234567890" value={form.barcode ?? ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></Field>
             </>
           )}
         </Section>
@@ -330,8 +332,9 @@ export default function ProductForm({ productId }: { productId?: string }) {
                 type="number"
                 min={0}
                 step="0.01"
+                placeholder="0.00"
                 className={cn(err('costPrice') && 'border-destructive')}
-                value={form.costPrice ?? 0}
+                value={form.costPrice ?? ''}
                 onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
               />
             </Field>
@@ -341,14 +344,15 @@ export default function ProductForm({ productId }: { productId?: string }) {
               type="number"
               min={0}
               step="0.01"
+              placeholder="0.00"
               className={cn(err('salePrice') && 'border-destructive')}
-              value={form.salePrice ?? 0}
+              value={form.salePrice ?? ''}
               onChange={(e) => setForm({ ...form, salePrice: e.target.value })}
             />
           </Field>
           {editing && (
             <Field label={t('products.priceChangeReason')} className="md:col-span-2">
-              <Input value={form.priceChangeReason ?? ''} onChange={(e) => setForm({ ...form, priceChangeReason: e.target.value })} />
+              <Input placeholder="e.g. Supplier price update" value={form.priceChangeReason ?? ''} onChange={(e) => setForm({ ...form, priceChangeReason: e.target.value })} />
             </Field>
           )}
         </Section>
@@ -360,8 +364,9 @@ export default function ProductForm({ productId }: { productId?: string }) {
               <Input
                 type="number"
                 min={0}
+                placeholder="5"
                 className={cn(err('lowStockThreshold') && 'border-destructive')}
-                value={form.lowStockThreshold ?? 5}
+                value={form.lowStockThreshold ?? ''}
                 onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })}
               />
             </Field>
@@ -411,13 +416,13 @@ export default function ProductForm({ productId }: { productId?: string }) {
                 onChange={(e) => setForm({ ...form, performanceWarrantyYears: e.target.value })}
               />
             </Field>
-            <Field label={t('products.shelfLifeMonths')}><Input type="number" min={0} value={form.shelfLifeMonths ?? ''} onChange={(e) => setForm({ ...form, shelfLifeMonths: e.target.value })} /></Field>
+            <Field label={t('products.shelfLifeMonths')}><Input type="number" min={0} placeholder="e.g. 12" value={form.shelfLifeMonths ?? ''} onChange={(e) => setForm({ ...form, shelfLifeMonths: e.target.value })} /></Field>
           </Section>
         )}
 
         <Section title={t('common.notes')} cols={1}>
           {/* Not a Field, so it claims the row tracks itself. */}
-          <Textarea className="row-span-3" rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <Textarea className="row-span-3" rows={2} placeholder="Optional notes or specifications..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </Section>
       </div>
 

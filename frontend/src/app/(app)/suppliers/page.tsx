@@ -119,15 +119,29 @@ export default function SuppliersPage() {
             <DialogTitle>{editing ? t('suppliers.editSupplier') : t('suppliers.newSupplier')}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <Field label={t('common.name')} className="sm:col-span-2"><Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-            <Field label={t('suppliers.contactName')}><Input value={form.contactName ?? ''} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></Field>
-            <Field label={t('suppliers.taxId')}><Input value={form.taxId ?? ''} onChange={(e) => setForm({ ...form, taxId: e.target.value })} /></Field>
-            <Field label={t('common.phone')}><Input value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-            <Field label={t('common.email')}><Input type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-            <Field label={t('common.address')}><Input value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
-            <Field label={t('suppliers.leadTime')}><Input type="number" min={0} value={form.leadTimeDays ?? ''} onChange={(e) => setForm({ ...form, leadTimeDays: e.target.value })} /></Field>
+            <Field label={t('common.name')} className="sm:col-span-2">
+              <Input placeholder="e.g. Deye Middle East / Alpha Solar SARL" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label={t('suppliers.contactName')}>
+              <Input placeholder="e.g. Jane Smith" value={form.contactName ?? ''} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
+            </Field>
+            <Field label={t('suppliers.taxId')}>
+              <Input dir="ltr" placeholder="e.g. 1234567-89" value={form.taxId ?? ''} onChange={(e) => setForm({ ...form, taxId: e.target.value })} />
+            </Field>
+            <Field label={t('common.phone')}>
+              <Input dir="ltr" placeholder="e.g. +961 1 234 567" value={form.phone ?? ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </Field>
+            <Field label={t('common.email')}>
+              <Input type="email" dir="ltr" placeholder="e.g. info@supplier.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+            <Field label={t('common.address')}>
+              <Input placeholder="e.g. Industrial Zone, Sector 4, Beirut" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </Field>
+            <Field label={t('suppliers.leadTime')}>
+              <Input type="number" min={0} placeholder="e.g. 7" value={form.leadTimeDays ?? ''} onChange={(e) => setForm({ ...form, leadTimeDays: e.target.value })} />
+            </Field>
             <Field label={t('common.notes')} className="sm:col-span-2 md:col-span-4">
-              <Textarea rows={2} value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <Textarea rows={2} placeholder="Optional notes about this supplier..." value={form.notes ?? ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </Field>
           </div>
           <DialogFooter>

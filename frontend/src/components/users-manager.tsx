@@ -212,11 +212,11 @@ export default function UsersManager() {
             <div className="grid gap-3 sm:grid-cols-2">
               {form.isNew && (
                 <Field label={t('common.email')}>
-                  <Input type="email" dir="ltr" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                  <Input type="email" dir="ltr" placeholder="e.g. user@example.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                 </Field>
               )}
               <Field label={t('common.name')}>
-                <Input value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <Input placeholder="e.g. Full Name" value={form.name ?? ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </Field>
               <Field
                 label={form.isNew ? t('auth.newPassword') : t('users.resetPassword')}
@@ -224,6 +224,7 @@ export default function UsersManager() {
               >
                 <PasswordInput
                   autoComplete="new-password"
+                  placeholder="••••••••"
                   value={form.password ?? ''}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                 />

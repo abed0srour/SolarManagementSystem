@@ -522,7 +522,14 @@
     "autoPick": "Auto-pick",
     "noSerialsInStock": "No serial numbers in stock for this product.",
     "confirmCancelPurchaseOrder": "Are you sure you want to cancel this purchase order?",
-    "confirmDeletePurchaseOrder": "This cancelled purchase order will be removed. Its history will stay intact."
+    "confirmDeletePurchaseOrder": "This cancelled purchase order will be removed. Its history will stay intact.",
+    "selectSupplier": "Please select a supplier",
+    "selectWarehouse": "Please select a warehouse",
+    "selectClient": "Please select a client",
+    "addAtLeastOneProduct": "Please add at least one product",
+    "invalidQuantity": "Please enter a valid quantity for {product}",
+    "invalidUnitCost": "Please enter a valid unit cost for {product}",
+    "invalidLinesError": "Please enter valid quantities and prices for all items"
   },
   "invoices": {
     "title": "Invoices",
