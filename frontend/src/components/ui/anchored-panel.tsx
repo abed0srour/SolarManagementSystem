@@ -33,7 +33,10 @@ const VIEWPORT_MARGIN = 8;
 
 function measure(anchor: HTMLElement): Placement {
   const r = anchor.getBoundingClientRect();
-  const spaceBelow = window.innerHeight - r.bottom - GAP - VIEWPORT_MARGIN;
+  const vHeight = typeof window !== 'undefined' && window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vWidth = typeof window !== 'undefined' && window.visualViewport ? window.visualViewport.width : window.innerWidth;
+
+  const spaceBelow = vHeight - r.bottom - GAP - VIEWPORT_MARGIN;
   const spaceAbove = r.top - GAP - VIEWPORT_MARGIN;
 
   // Prefer below, but flip above when below cannot show a usable list and above
@@ -43,12 +46,15 @@ function measure(anchor: HTMLElement): Placement {
   const available = Math.max(MIN_PANEL_HEIGHT, flip ? spaceAbove : spaceBelow);
   const maxHeight = Math.min(PREFERRED_PANEL_HEIGHT, available);
 
-  const width = Math.max(r.width, 220);
-  // Keep the panel inside the viewport horizontally too — a right-aligned
-  // anchor in a narrow window would otherwise overflow.
-  const left = Math.min(Math.max(VIEWPORT_MARGIN, r.left), Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN));
+  const maxAllowedWidth = Math.max(100, vWidth - 2 * VIEWPORT_MARGIN);
+  const width = Math.min(Math.max(r.width, 220), maxAllowedWidth);
+  const isRtl = typeof document !== 'undefined' && (document.documentElement.dir === 'rtl' || getComputedStyle(anchor).direction === 'rtl');
+  const idealLeft = isRtl ? r.right - width : r.left;
 
-  return { top: flip ? r.top - GAP - maxHeight : r.bottom + GAP, left, width, maxHeight };
+  // Keep the panel inside the viewport horizontally too
+  const left = Math.min(Math.max(VIEWPORT_MARGIN, idealLeft), Math.max(VIEWPORT_MARGIN, vWidth - width - VIEWPORT_MARGIN));
+
+  return { top: flip ? Math.max(VIEWPORT_MARGIN, r.top - GAP - maxHeight) : r.bottom + GAP, left, width, maxHeight };
 }
 
 const same = (a: Placement | null, b: Placement) =>
@@ -58,37 +64,29 @@ const same = (a: Placement | null, b: Placement) =>
  * A floating panel tethered to an anchor element.
  *
  * Rendered in a body portal so it is never clipped by a dialog's or a table's
- * `overflow`, and positioned so it is never clipped by the viewport either: it
- * flips above the anchor when there is no room below and clamps its height to
- * the space that actually exists. The previous hand-rolled versions of this
- * pinned the list to `anchor.bottom + 4` with a fixed `max-height`, which is
- * why a picker near the bottom of the screen ran off the edge.
- *
- * On phones it stops being a dropdown altogether and becomes a bottom sheet —
- * a 200px-wide list anchored to a cramped input is unusable on a touch screen.
+ * `overflow`, and positioned directly next to the anchor on both mobile and
+ * desktop: it flips above the anchor when there is no room below and clamps its
+ * height to the space that actually exists.
  */
 export default function AnchoredPanel({
   anchorRef,
   open,
   onClose,
   children,
-  label,
   className,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  /** Sheet heading, shown on mobile only, where the field label scrolls away. */
   label?: ReactNode;
   className?: string;
 }) {
-  const isMobile = useIsMobile();
   const [placement, setPlacement] = useState<Placement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (!open || isMobile) return;
+    if (!open) return;
     let frame = 0;
     // Re-measured every frame while open: a picker inside a dialog is often
     // opened while the dialog is still animating into place, so a single
@@ -104,7 +102,7 @@ export default function AnchoredPanel({
     };
     track();
     return () => cancelAnimationFrame(frame);
-  }, [open, isMobile, anchorRef]);
+  }, [open, anchorRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,54 +127,31 @@ export default function AnchoredPanel({
   }, [open, onClose, anchorRef]);
 
   if (!open || typeof document === 'undefined') return null;
-  if (!isMobile && !placement) return null;
+  if (!placement) return null;
 
-  const panel = (
+  return createPortal(
     <div
       ref={panelRef}
       // Radix marks everything outside an open dialog `pointer-events: none`,
       // and dialog.tsx looks for this attribute to know a click in here is not
       // an "outside interaction" that should dismiss the dialog.
       data-entity-picker-list=""
-      style={
-        isMobile
-          ? { position: 'fixed', insetInline: 8, bottom: 8, zIndex: 100, pointerEvents: 'auto' }
-          : {
-              position: 'fixed',
-              top: placement!.top,
-              left: placement!.left,
-              width: placement!.width,
-              maxHeight: placement!.maxHeight,
-              zIndex: 100,
-              pointerEvents: 'auto',
-            }
-      }
+      style={{
+        position: 'fixed',
+        top: placement.top,
+        left: placement.left,
+        width: placement.width,
+        maxHeight: placement.maxHeight,
+        zIndex: 100,
+        pointerEvents: 'auto',
+      }}
       className={cn(
-        'flex flex-col overflow-hidden rounded-lg border bg-popover shadow-lg',
-        isMobile && 'max-h-[70vh] rounded-xl',
+        'flex flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg',
         className,
       )}
     >
-      {isMobile && label && (
-        <div className="shrink-0 border-b px-4 py-3 text-sm font-semibold">{label}</div>
-      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1">{children}</div>
-    </div>
-  );
-
-  return createPortal(
-    <>
-      {/* Dimmer only on the sheet, so the desktop dropdown stays lightweight. */}
-      {isMobile && (
-        <div
-          data-entity-picker-list=""
-          style={{ position: 'fixed', inset: 0, zIndex: 99, pointerEvents: 'auto' }}
-          className="bg-black/40"
-          onMouseDown={onClose}
-        />
-      )}
-      {panel}
-    </>,
+    </div>,
     document.body,
   );
 }
