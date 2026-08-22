@@ -661,6 +661,7 @@ export class InvoicePdfService {
       date: Date;
       type: 'INVOICE' | 'PAYMENT';
       ref: string;
+      invoiceNumber?: string | null;
       description: string;
       debit: number;
       credit: number;
@@ -673,6 +674,7 @@ export class InvoicePdfService {
         date: inv.issueDate,
         type: 'INVOICE' as const,
         ref: inv.number,
+        invoiceNumber: null,
         description: `Invoice #${inv.number}${inv.notes ? ` — ${inv.notes}` : ''}`,
         debit: Number(inv.total),
         credit: 0,
@@ -688,6 +690,7 @@ export class InvoicePdfService {
         date: p.paymentDate,
         type: 'PAYMENT' as const,
         ref: p.number,
+        invoiceNumber: p.invoice?.number ?? null,
         description: `Payment (${p.method}${p.reference ? ' · ' + p.reference : ''}${p.invoice ? ' for Inv #' + p.invoice.number : ''})`,
         debit: 0,
         credit: Number(p.amount),
@@ -901,7 +904,12 @@ export class InvoicePdfService {
         const dateStr = this.fmtDate(new Date(e.date));
         page.drawText(dateStr, { x: colDate, y, size: 8.5, font, color: DARK });
 
-        const label = e.type === 'INVOICE' ? `Invoice #${e.ref}` : `Payment #${e.ref}`;
+        const label =
+          e.type === 'INVOICE'
+            ? `Invoice #${e.ref}`
+            : e.invoiceNumber
+              ? `Payment #${e.ref} for Invoice #${e.invoiceNumber}`
+              : `Payment #${e.ref}`;
         page.drawText(label, {
           x: colRef,
           y,
