@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { supabaseConfig } from './config';
 
 /**
  * Supabase client for Server Components, Route Handlers and Server Actions.
@@ -12,10 +13,7 @@ import { cookies } from 'next/headers';
  */
 export async function supabaseServer() {
   const store = await cookies();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321';
-  const anonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+  const [url, anonKey] = supabaseConfig();
 
   return createServerClient(url, anonKey, {
     cookies: {

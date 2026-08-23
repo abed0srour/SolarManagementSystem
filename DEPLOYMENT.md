@@ -151,10 +151,23 @@ curl https://<backend>.vercel.app/api/products      # 401 = running, auth workin
 | Variable | Value |
 | --- | --- |
 | `API_URL` | `https://<backend>.vercel.app` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon / publishable key |
 
 `next.config.ts` rewrites `/api/*` to that host, so the browser only ever talks
 to its own origin — no CORS preflight, and the API URL is not baked into the
 client bundle.
+
+The two `NEXT_PUBLIC_` values, by contrast, **are** baked in — Next.js inlines
+them at build time. Two consequences worth knowing before you debug a sign-in:
+
+- Setting them after a deploy changes nothing until you **rebuild**, and a
+  rebuild that reuses the build cache may not pick them up either. Redeploy with
+  "Use existing Build Cache" off.
+- A build that lacks them fails at `supabaseConfig()` with a message naming the
+  missing variables. That is deliberate — an earlier version defaulted to the
+  local stack instead, which shipped `http://127.0.0.1:54321` inside the bundle
+  and made every sign-in fail with a bare `Failed to fetch`.
 
 After it deploys, set `CORS_ORIGINS` on the **backend** to the frontend's URL
 and redeploy the backend.
