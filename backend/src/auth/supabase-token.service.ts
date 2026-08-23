@@ -1,6 +1,24 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { normaliseClaims, SupabaseClaims } from './supabase-claims';
+
+type Jose = typeof import('jose');
+type JWTPayload = import('jose').JWTPayload;
+type JWKS = ReturnType<Jose['createRemoteJWKSet']>;
+
+/**
+ * `jose` is published as ESM only, and this project compiles to CommonJS, so a
+ * plain `import ... from 'jose'` becomes `require()` and throws
+ * ERR_REQUIRE_ESM the first time a request touches this service. TypeScript
+ * also rewrites a literal `await import()` into `require()` under
+ * `module: commonjs`, which is why the specifier goes through `new Function` --
+ * that keeps a genuine dynamic import in the emitted JavaScript. The types
+ * above come in via `import type` syntax, which is erased at compile time and
+ * so emits no require of its own.
+ */
+const importJose = new Function('return import("jose")') as () => Promise<Jose>;
+
+let cached: Promise<Jose> | undefined;
+const loadJose = (): Promise<Jose> => (cached ??= importJose());
 
 /**
  * Verifies Supabase access tokens.
@@ -21,16 +39,19 @@ import { normaliseClaims, SupabaseClaims } from './supabase-claims';
 @Injectable()
 export class SupabaseTokenService {
   private readonly logger = new Logger(SupabaseTokenService.name);
-  private jwks?: ReturnType<typeof createRemoteJWKSet>;
+  private jwksUrl?: URL;
+  private jwks?: JWKS;
   private secret?: Uint8Array;
 
   constructor() {
     const raw = process.env.SUPABASE_JWT_SECRET;
     if (raw) this.secret = new TextEncoder().encode(raw);
     const url = process.env.SUPABASE_URL;
-    if (url) this.jwks = createRemoteJWKSet(new URL(`${url.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`));
+    // Only the URL is built here. Constructing the key set needs `jose` itself,
+    // which can only be loaded asynchronously, so that is deferred to first use.
+    if (url) this.jwksUrl = new URL(`${url.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`);
     if (!raw && !url) {
-      this.logger.error('Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set — every request will be rejected.');
+      this.logger.error('Neither SUPABASE_JWT_SECRET nor SUPABASE_URL is set - every request will be rejected.');
     }
   }
 
@@ -58,13 +79,25 @@ export class SupabaseTokenService {
     return claims;
   }
 
+  /** The remote key set, built once and reused; undefined when no URL is set. */
+  private async getJwks(): Promise<JWKS | undefined> {
+    if (!this.jwksUrl) return undefined;
+    if (!this.jwks) {
+      const { createRemoteJWKSet } = await loadJose();
+      this.jwks = createRemoteJWKSet(this.jwksUrl);
+    }
+    return this.jwks;
+  }
+
   private async verifySignature(token: string): Promise<JWTPayload> {
+    const { jwtVerify } = await loadJose();
     const header = this.decodeHeader(token);
+    const jwks = await this.getJwks();
 
     // Asymmetric tokens name a key id; symmetric ones do not.
-    if (header?.kid && this.jwks) {
+    if (header?.kid && jwks) {
       try {
-        const { payload } = await jwtVerify(token, this.jwks);
+        const { payload } = await jwtVerify(token, jwks);
         return payload;
       } catch (err: any) {
         throw new UnauthorizedException(`Invalid or expired token: ${err.code ?? err.message}`);
@@ -80,9 +113,9 @@ export class SupabaseTokenService {
       }
     }
 
-    if (this.jwks) {
+    if (jwks) {
       try {
-        const { payload } = await jwtVerify(token, this.jwks);
+        const { payload } = await jwtVerify(token, jwks);
         return payload;
       } catch (err: any) {
         throw new UnauthorizedException(`Invalid or expired token: ${err.code ?? err.message}`);
