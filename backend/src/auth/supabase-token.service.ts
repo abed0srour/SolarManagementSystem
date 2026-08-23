@@ -1,4 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { pathToFileURL } from 'node:url';
 import { normaliseClaims, SupabaseClaims } from './supabase-claims';
 
 type Jose = typeof import('jose');
@@ -10,15 +11,23 @@ type JWKS = ReturnType<Jose['createRemoteJWKSet']>;
  * plain `import ... from 'jose'` becomes `require()` and throws
  * ERR_REQUIRE_ESM the first time a request touches this service. TypeScript
  * also rewrites a literal `await import()` into `require()` under
- * `module: commonjs`, which is why the specifier goes through `new Function` --
- * that keeps a genuine dynamic import in the emitted JavaScript. The types
- * above come in via `import type` syntax, which is erased at compile time and
- * so emits no require of its own.
+ * `module: commonjs`, so the import goes through `new Function` to keep a
+ * genuine dynamic import in the emitted JavaScript.
+ *
+ * The specifier has to be an absolute file URL rather than the bare name
+ * "jose": code inside `new Function` carries no module context, so a bare
+ * specifier has no `node_modules` to resolve against and fails with
+ * ERR_MODULE_NOT_FOUND. `require.resolve` still locates the file happily -- it
+ * only refuses to *execute* ESM -- so it supplies the path.
+ *
+ * The types above come in via `import type` syntax, which is erased at compile
+ * time and so emits no require of its own.
  */
-const importJose = new Function('return import("jose")') as () => Promise<Jose>;
+const importModule = new Function('url', 'return import(url)') as (url: string) => Promise<Jose>;
 
 let cached: Promise<Jose> | undefined;
-const loadJose = (): Promise<Jose> => (cached ??= importJose());
+const loadJose = (): Promise<Jose> =>
+  (cached ??= importModule(pathToFileURL(require.resolve('jose')).href));
 
 /**
  * Verifies Supabase access tokens.
