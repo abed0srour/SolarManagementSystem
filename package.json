@@ -1,0 +1,31 @@
+{
+  "name": "solar-store-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Solar Store Management System - Monorepo Workspace",
+  "scripts": {
+    "local": "node scripts/start-local.mjs",
+    "dev": "node scripts/start-local.mjs",
+    "start": "node scripts/start-local.mjs",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:seed": "npm --prefix backend run prisma:seed:staging",
+    "db:reset": "npm --prefix backend run db:reset",
+    "backend:dev": "npm --prefix backend run start:dev",
+    "backend:test": "npm --prefix backend run test",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build"
+  },
+  "keywords": [
+    "solar",
+    "erp",
+    "pos",
+    "crm",
+    "nestjs",
+    "nextjs",
+    "prisma",
+    "supabase"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}

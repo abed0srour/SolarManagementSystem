@@ -1,2 +1,8 @@
+# Vercel deployment cache
 .vercel
-.env*
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example

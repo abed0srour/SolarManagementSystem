@@ -1,10 +1,25 @@
 # Dependencies
 node_modules/
+.pnp
+.pnp.js
 
-# Environment
+# Environment variables & secrets (Explicitly whitelist examples)
 .env
+.env.*
 .env.local
-.env.*.local
+.env.development
+.env.development.local
+.env.staging
+.env.staging.local
+.env.production
+.env.production.local
+.env.test
+.env.test.local
+!.env.example
+!.env.*.example
+
+# Vercel & Cloud deployment metadata
+.vercel
 
 # Build output
 dist/
@@ -12,27 +27,35 @@ build/
 .next/
 .next-verify/
 next-env.d.ts
+out/
 
 # Uploaded files
 backend/uploads/
+uploads/
 
-# Local backup snapshots
+# Local backup snapshots & temp DB files
 backend/backups/
 solar_store_backup.sql
 *.sql.bak
 supabase/.temp/
+supabase/.branches/
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Prisma generated client
+# Prisma generated client & cache
 backend/generated/
 
-# OS
+# OS / System files
 Thumbs.db
 .DS_Store
 
-# IDE
+# IDE & Editor
 .vscode/
 .idea/
+*.swp
+*.swo

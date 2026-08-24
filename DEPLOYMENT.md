@@ -1,249 +1,147 @@
-# Deploying to Vercel
+# 3-Tier Deployment & Infrastructure Architecture
 
-Two Vercel projects from this one repository:
+This guide covers deploying the **Solar Store Management System** across three strictly isolated tiers:
+1. **Local Development** (`localhost` / Docker / Supabase CLI)
+2. **Staging / Preview** (`staging` branch &rarr; Staging Supabase + Preview Host)
+3. **Production** (`main` branch &rarr; Production Supabase + Live Host)
 
-| Project | Root Directory | What it is |
-| --- | --- | --- |
-| `solar-frontend` | `frontend` | Next.js app (zero config) |
-| `solar-backend` | `backend` | NestJS API as a single serverless function |
-
-Plus **Supabase** for Postgres and **Vercel Blob** for files.
-
-Do the backend first — the frontend needs its URL.
+For branching policies and PR promotion workflows, see [WORKFLOW.md](file:///c:/Users/HP/SolarManagementSystem/WORKFLOW.md).
 
 ---
 
-## Supabase Auth
+## 1. Architecture Overview
 
-Identity is Supabase Auth, not the API. The browser signs in directly; NestJS
-only verifies the tokens it is handed.
-
-1. **Authentication → Hooks → Customize Access Token**: enable it and point it
-   at `public.custom_access_token_hook`. Without this, `role` and `tenant_id`
-   never reach the JWT, and every request falls back to the `app_metadata`
-   mirror — workable, but the hook is the intended source.
-2. **Authentication → URL Configuration**: set the Site URL to the frontend
-   origin and add `<origin>/reset-password` as a redirect URL, or password
-   recovery links will bounce.
-3. **Authentication → Providers → Email**: leave signups disabled. Stores are
-   provisioned by the super admin; nobody self-registers.
-
-### Environment variables
-
-| Where | Variable | Notes |
-| --- | --- | --- |
-| backend | `SUPABASE_URL` | project URL |
-| backend | `SUPABASE_JWT_SECRET` | legacy HS256 secret; omit if the project signs with keys |
-| backend | `SUPABASE_SERVICE_ROLE_KEY` | **server only** — creates and deletes accounts, bypasses RLS |
-| backend | `APP_URL` | where invite and recovery links land |
-| frontend | `NEXT_PUBLIC_SUPABASE_URL` | public |
-| frontend | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public by design; RLS is what constrains it |
-
-The service role key must never be given a `NEXT_PUBLIC_` name. Anything with
-that prefix is compiled into the JavaScript every visitor downloads, and this
-key can read and rewrite every store on the platform.
-
----
-
-## Multi-tenancy
-
-Each store is a `Tenant` row, and every business table carries `tenantId`.
-
-Isolation is enforced in `backend/src/prisma/tenant-scope.ts`, a Prisma client
-extension that rewrites every query: reads gain `WHERE tenantId = …`, writes are
-stamped with it, and anything running with no tenant established is refused
-outright rather than quietly spanning all of them.
-
-RLS policies exist too (`supabase/migrations/…_rls_policies.sql`) but are
-**defense-in-depth, not the primary boundary** — Prisma connects as the table
-owner, and a table owner bypasses RLS in Postgres. They protect anything that
-reaches the database with a user JWT instead: supabase-js from the browser,
-Realtime, Edge Functions.
-
----
-
-## 1. Supabase (database)
-
-1. Create a project. Save the database password.
-2. **Project Settings → Database → Connection string**. Take two URLs:
-   - **Transaction pooler**, port `6543` → `DATABASE_URL`
-   - **Session / direct**, port `5432` → `DIRECT_URL`
-3. Append `?pgbouncer=true&connection_limit=1` to `DATABASE_URL`.
-
-Why both: a serverless function opens a connection per invocation, so normal
-traffic would exhaust Postgres' connection limit within seconds. The pooler
-handles that. But PgBouncer's transaction pooling cannot run migrations, so
-Prisma needs the direct URL for those — hence `directUrl` in `schema.prisma`.
-
-`connection_limit=1` is not a typo. Each function instance should hold one
-connection and let the pooler do the multiplexing.
-
----
-
-## 2. Backend project
-
-**New Project → import this repo → Root Directory: `backend`.**
-
-Vercel reads `backend/vercel.json`, which routes every path to
-`api/index.ts` and declares the cron jobs.
-
-### Environment variables
-
-| Variable | Value | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | pooled Supabase URL (6543) | with `?pgbouncer=true&connection_limit=1` |
-| `DIRECT_URL` | direct Supabase URL (5432) | migrations only |
-| `JWT_SECRET` | `openssl rand -base64 48` | **also signs pickup QR codes** — changing it logs everyone out and voids every printed QR |
-| `CRON_SECRET` | `openssl rand -hex 32` | Vercel sends this to `/api/cron/*`; without it those endpoints refuse everything |
-| `CORS_ORIGINS` | `https://<frontend>.vercel.app` | set it — unset means "reflect any origin" |
-| `SEED_ADMIN_EMAIL` | your email | optional |
-
-### Blob storage
-
-**Storage → Create → Blob → connect to the backend project.** Vercel injects
-`BLOB_READ_WRITE_TOKEN` automatically.
-
-`StorageService` switches on that token: present → Vercel Blob, absent → local
-disk. Nothing else changes, so local development keeps writing to `uploads/`
-and `backups/` exactly as before.
-
-**Without a Blob store connected, uploads and backups will fail in production.**
-
-### First deploy
-
-`vercel-build` runs `prisma generate && prisma migrate deploy`, which applies
-the historical Prisma migrations only.
-
-**Schema changes now live in `supabase/migrations/` and are NOT applied by a
-deploy.** They are pushed deliberately, from a machine linked to the project:
-
-```bash
-npx supabase link --project-ref <ref>
-npm --prefix backend run db:push
+```
+                      +─────────────────────────────────────────+
+                      |         GitHub Repository               |
+                      |  - PRs to `staging` / `main`            |
+                      +────────────────────┬────────────────────+
+                                           │
+                    ┌──────────────────────┴──────────────────────┐
+                    ▼                                             ▼
+       +─────────────────────────+                   +─────────────────────────+
+       |   Push to `staging`     |                   |     Push to `main`      |
+       |  (Staging Deployment)   |                   | (Production Deployment) |
+       +────────────┬────────────+                   +────────────┬────────────+
+                    │                                             │
+      ┌─────────────┴─────────────┐                 ┌─────────────┴─────────────┐
+      ▼                           ▼                 ▼                           ▼
++─────────────+             +───────────+     +─────────────+             +───────────+
+|   Staging   |             |  Staging  |     | Production  |             |Production |
+|  Supabase   |             |  Vercel   |     |  Supabase   |             |  Vercel   |
+| (DB + Auth) |             | (API+Web) |     | (DB + Auth) |             | (API+Web) |
++─────────────+             +───────────+     +─────────────+             +───────────+
 ```
 
-That separation is on purpose. These migrations rewrite unique indexes and
-backfill every table; running them automatically on each push means a routine
-frontend deploy could reshape a production database at an unattended moment.
+### Core Architecture Components
+- **Frontend**: Next.js App Router (located in [`frontend`](file:///c:/Users/HP/SolarManagementSystem/frontend))
+- **Backend**: NestJS Serverless API (located in [`backend`](file:///c:/Users/HP/SolarManagementSystem/backend))
+- **Databases**: Supabase PostgreSQL with PgBouncer connection pooler
+- **Blob Storage**: Vercel Blob (for documents, PDFs, and database snapshots)
+- **CI/CD**: GitHub Actions automated pipelines in [`.github/workflows/`](file:///c:/Users/HP/SolarManagementSystem/.github/workflows)
 
-Then create the platform owner:
+---
 
+## 2. Supabase Provisioning (Staging & Production)
+
+> [!IMPORTANT]
+> **Database Isolation Boundary**: You must create **two separate Supabase projects** in the Supabase Dashboard:
+> - `solar-store-staging`
+> - `solar-store-production`
+
+### Step A: Configure Supabase Auth (Perform on both Staging & Prod)
+1. **Authentication &rarr; Hooks &rarr; Customize Access Token**:
+   - Enable hook and point to `public.custom_access_token_hook`.
+   - This injects `tenant_id` and `role` claims directly into user session JWTs.
+2. **Authentication &rarr; URL Configuration**:
+   - **Site URL**: Point to your frontend origin (e.g. `https://staging.solarstore.example.com` or `https://app.solarstore.example.com`).
+   - **Redirect URLs**: Add `<origin>/reset-password` so password recovery links route correctly.
+3. **Authentication &rarr; Providers &rarr; Email**:
+   - Leave public signups **disabled**. Stores and users are provisioned by administrators.
+
+### Step B: Database Connection Strings
+For each Supabase project, navigate to **Project Settings &rarr; Database &rarr; Connection string**:
+- **DATABASE_URL (Transaction Pooler - Port 6543)**:
+  `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1`
+- **DIRECT_URL (Session / Direct - Port 5432)**:
+  `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
+
+---
+
+## 3. Environment Variables Reference
+
+### Backend (`backend/.env.*`)
+
+| Variable | Staging | Production | Description |
+|---|---|---|---|
+| `NODE_ENV` | `staging` | `production` | Runtime mode |
+| `DATABASE_URL` | Staging Pooled URL (6543) | Prod Pooled URL (6543) | Pooled PostgreSQL connection string |
+| `DIRECT_URL` | Staging Direct URL (5432) | Prod Direct URL (5432) | Direct connection for schema migrations |
+| `SUPABASE_URL` | `https://<staging_ref>.supabase.co` | `https://<prod_ref>.supabase.co` | Supabase API endpoint |
+| `SUPABASE_SERVICE_ROLE_KEY` | Staging Service Role Key | Prod Service Role Key | **Server-only secret** (bypasses RLS) |
+| `APP_URL` | `https://staging.solarstore.com` | `https://app.solarstore.com` | Frontend URL for user invites/recovery |
+| `JWT_SECRET` | 48-char random secret | 48-char random secret | Signs receipt QR codes and internal tokens |
+| `CRON_SECRET` | 32-char hex secret | 32-char hex secret | Secures `/api/cron/*` endpoints |
+| `CORS_ORIGINS` | Staging frontend origin | Production frontend origin | Allowed browser origins |
+| `BLOB_READ_WRITE_TOKEN` | Staging Blob Token | Production Blob Token | Vercel Blob access token |
+
+### Frontend (`frontend/.env.*`)
+
+| Variable | Staging | Production | Description |
+|---|---|---|---|
+| `API_URL` | `https://staging-api.solarstore.com` | `https://api.solarstore.com` | Backend API URL (rewritten at `/api/*`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://<staging_ref>.supabase.co` | `https://<prod_ref>.supabase.co` | Public Supabase URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`| Staging Public Anon Key | Production Public Anon Key | Public Supabase Anon Key |
+
+---
+
+## 4. Database Migrations & Seeding Strategy
+
+### Applying Migrations
+Migrations are stored sequentially in [`supabase/migrations/`](file:///c:/Users/HP/SolarManagementSystem/supabase/migrations).
+
+#### Automated (Recommended):
+- Merging into `staging` triggers [`.github/workflows/deploy-staging.yml`](file:///c:/Users/HP/SolarManagementSystem/.github/workflows/deploy-staging.yml), applying migrations to the Staging DB.
+- Merging into `main` triggers [`.github/workflows/deploy-production.yml`](file:///c:/Users/HP/SolarManagementSystem/.github/workflows/deploy-production.yml), applying migrations to the Production DB.
+
+#### Manual Migration (CLI):
+```bash
+# Push migrations to Staging:
+STAGING_DIRECT_URL="<staging_direct_url>" npm --prefix backend run db:migrate:staging
+
+# Push migrations to Production:
+PRODUCTION_DIRECT_URL="<prod_direct_url>" npm --prefix backend run db:migrate:prod
+```
+
+### Seeding Dummy Data (Local & Staging Only)
+To populate a fresh local or staging database with realistic multi-tenant data:
+```bash
+# Runs safety-guarded multi-tenant seeder (Refuses to run in production):
+npm --prefix backend run prisma:seed:staging
+```
+
+### Creating Initial Super Admin (Production & Staging)
+To bootstrap the platform owner in a hosted environment:
 ```bash
 cd backend
-SUPABASE_URL="https://<ref>.supabase.co" SUPABASE_SERVICE_ROLE_KEY="<service role key>" SUPER_ADMIN_EMAIL="you@example.com" npm run superadmin:create
+SUPABASE_URL="https://<ref>.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="<service_role_key>" \
+SUPER_ADMIN_EMAIL="admin@yourcompany.com" \
+npm run superadmin:create
 ```
 
-It prints a generated password once. Save it. Signing in with it lands on
-`/superadmin/dashboard`, where the first store is created.
+---
 
-### Check it
+## 5. Scheduled Jobs (Vercel Cron)
 
+Serverless functions use Vercel Cron to invoke scheduled maintenance tasks:
+
+| Endpoint | Schedule | Purpose |
+|---|---|---|
+| `/api/cron/notifications` | `0 7 * * *` | Check low stock, overdue payments, expiring quotes |
+| `/api/cron/daily` | `0 3 * * *` | Daily contract maintenance check + scheduled backup |
+
+Manually test an endpoint:
 ```bash
-curl https://<backend>.vercel.app/api/products      # 401 = running, auth working
+curl -H "Authorization: Bearer $CRON_SECRET" https://<api-host>/api/cron/notifications
 ```
-
----
-
-## 3. Frontend project
-
-**New Project → same repo → Root Directory: `frontend`.**
-
-| Variable | Value |
-| --- | --- |
-| `API_URL` | `https://<backend>.vercel.app` |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the project's anon / publishable key |
-
-`next.config.ts` rewrites `/api/*` to that host, so the browser only ever talks
-to its own origin — no CORS preflight, and the API URL is not baked into the
-client bundle.
-
-The two `NEXT_PUBLIC_` values, by contrast, **are** baked in — Next.js inlines
-them at build time. Two consequences worth knowing before you debug a sign-in:
-
-- Setting them after a deploy changes nothing until you **rebuild**, and a
-  rebuild that reuses the build cache may not pick them up either. Redeploy with
-  "Use existing Build Cache" off.
-- A build that lacks them fails at `supabaseConfig()` with a message naming the
-  missing variables. That is deliberate — an earlier version defaulted to the
-  local stack instead, which shipped `http://127.0.0.1:54321` inside the bundle
-  and made every sign-in fail with a bare `Failed to fetch`.
-
-After it deploys, set `CORS_ORIGINS` on the **backend** to the frontend's URL
-and redeploy the backend.
-
----
-
-## 4. Scheduled jobs
-
-In-process `@Cron` timers cannot fire on serverless — nothing is alive between
-requests. The same service methods are exposed over HTTP and driven by Vercel
-Cron instead:
-
-| Endpoint | Does |
-| --- | --- |
-| `/api/cron/notifications` | low stock, overdue payments, expiring quotations |
-| `/api/cron/maintenance` | expire contracts, upcoming visit reminders |
-| `/api/cron/backup` | backup, if today matches the configured day |
-| `/api/cron/daily` | maintenance + backup in one call |
-
-`vercel.json` ships two jobs, because **Hobby allows a maximum of two cron jobs,
-each running at most once per day**:
-
-```json
-{ "path": "/api/cron/notifications", "schedule": "0 7 * * *" }
-{ "path": "/api/cron/daily",         "schedule": "0 3 * * *" }
-```
-
-On **Pro**, hourly notifications and separate jobs become possible:
-
-```json
-{ "path": "/api/cron/notifications", "schedule": "0 * * * *" }
-{ "path": "/api/cron/maintenance",   "schedule": "0 6 * * *" }
-{ "path": "/api/cron/backup",        "schedule": "0 3 * * *" }
-```
-
-The backup job reads the admin's configured weekly day from Settings and skips
-any day that isn't it, with a 12-hour cooldown so an hourly schedule cannot take
-24 backups in one day.
-
-Test one by hand:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://<backend>.vercel.app/api/cron/notifications
-```
-
----
-
-## Known limits of running this on serverless
-
-Worth knowing before they surprise you in production.
-
-**Function timeout.** `vercel.json` sets `maxDuration: 60`, the Hobby ceiling.
-A full backup or restore of a large database can exceed it. Restore in
-particular is a ten-minute operation in the code's own timeout budget — for a
-large database, run it from a machine with a direct connection rather than
-through the API.
-
-**Cold starts.** The first request after idle boots Nest and Prisma, typically
-1–3 seconds. The app caches the booted instance per container, so subsequent
-requests are fast.
-
-**Cron precision.** Vercel Cron is best-effort and may fire minutes late. None
-of these jobs are time-critical.
-
-**PDF generation** holds the document in memory; fine for normal invoices, but
-a several-hundred-line invoice on a 1 GB function is worth watching.
-
----
-
-## Local development is unchanged
-
-```bash
-docker compose up -d      # Postgres
-cd backend  && npm run start:dev
-cd frontend && npm run dev
-```
-
-With no `BLOB_READ_WRITE_TOKEN` and no `VERCEL` env var, the app writes files to
-disk and runs its own in-process schedulers, exactly as before.

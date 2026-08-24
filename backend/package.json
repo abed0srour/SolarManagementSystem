@@ -10,6 +10,7 @@
     "start:prod": "node dist/src/main",
     "prisma:generate": "prisma generate",
     "prisma:seed": "prisma db seed",
+    "prisma:seed:staging": "tsx prisma/seed-staging.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -20,6 +21,8 @@
     "superadmin:create": "node scripts/create-super-admin.mjs",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
+    "db:migrate:staging": "supabase db push --db-url \"$STAGING_DIRECT_URL\"",
+    "db:migrate:prod": "supabase db push --db-url \"$PRODUCTION_DIRECT_URL\"",
     "prisma:diff": "prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-url $DIRECT_URL --script",
     "users:migrate": "node scripts/migrate-users-to-supabase.mjs"
   },
