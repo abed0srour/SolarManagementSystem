@@ -103,35 +103,45 @@ export class SupabaseTokenService {
     const header = this.decodeHeader(token);
     const jwks = await this.getJwks();
 
-    // Asymmetric tokens name a key id; symmetric ones do not.
+    let lastError: any = null;
+
+    // 1. Try Asymmetric JWKS if key id is present
     if (header?.kid && jwks) {
       try {
         const { payload } = await jwtVerify(token, jwks);
         return payload;
       } catch (err: any) {
-        throw new UnauthorizedException(`Invalid or expired token: ${err.code ?? err.message}`);
+        lastError = err;
+        this.logger.warn(`JWKS verification for kid '${header.kid}' failed (${err.code ?? err.message}). Attempting secret fallback.`);
       }
     }
 
+    // 2. Fallback to Symmetric Secret if configured
     if (this.secret) {
       try {
         const { payload } = await jwtVerify(token, this.secret);
         return payload;
       } catch (err: any) {
-        throw new UnauthorizedException(`Invalid or expired token: ${err.code ?? err.message}`);
+        lastError = err;
+        this.logger.warn(`Secret verification failed (${err.code ?? err.message}).`);
       }
     }
 
-    if (jwks) {
+    // 3. Try JWKS fallback without kid
+    if (jwks && !header?.kid) {
       try {
         const { payload } = await jwtVerify(token, jwks);
         return payload;
       } catch (err: any) {
-        throw new UnauthorizedException(`Invalid or expired token: ${err.code ?? err.message}`);
+        lastError = err;
       }
     }
 
-    throw new UnauthorizedException('Token verification is not configured on this server');
+    if (!jwks && !this.secret) {
+      throw new UnauthorizedException('Token verification is not configured on this server (check SUPABASE_URL / SUPABASE_JWT_SECRET)');
+    }
+
+    throw new UnauthorizedException(`Invalid or expired token: ${lastError?.code ?? lastError?.message ?? 'ERR_JWKS_NO_MATCHING_KEY'}`);
   }
 
   private decodeHeader(token: string): Record<string, any> | null {
