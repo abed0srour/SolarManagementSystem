@@ -9,6 +9,7 @@ import { AuditService } from '../common/audit.service';
 import { StorageService } from '../common/storage';
 import { isServerless } from '../common/runtime';
 import { requireTenantId, runAsTenant, runUnscoped } from '../common/tenant-context';
+import { buildRestoreRow } from './restore-row';
 
 /**
  * Storage keys rather than paths: StorageService puts these on disk in
@@ -584,6 +585,8 @@ export class BackupService implements OnModuleInit {
     const order = this.modelOrder();
     let rowCount = 0;
     let tableCount = 0;
+    let skippedRows = 0;
+    const skipReasons: string[] = [];
     try {
       // This install's own backup schedule must survive restoring someone
       // else's (or an older) snapshot.
@@ -600,6 +603,13 @@ export class BackupService implements OnModuleInit {
           }
         } catch {}
       }
+
+      // Accounts live in Supabase Auth, not in the backup file, so an export
+      // from another environment always names users this database has never
+      // seen. Those rows are adopted by whoever is running the restore rather
+      // than discarded -- losing an invoice to preserve a "created by" label is
+      // the wrong trade.
+      const fallbackUserId = insertedIdsByModel.get('User')?.has(userId) ? userId : null;
 
       await this.prisma.$transaction(
         async (tx) => {
@@ -627,79 +637,19 @@ export class BackupService implements OnModuleInit {
 
             const validRows: any[] = [];
             for (const row of rawRows) {
-              const clean: Record<string, any> = {};
-              for (const [key, val] of Object.entries(row)) {
-                const field = fieldMap.get(key);
-                if (!field || field.kind === 'object') continue; // skip unmapped or virtual relation fields
-
-                const isRequired = field.isRequired;
-
-                if (val === null || val === undefined || val === '' || val === 'null' || val === 'undefined') {
-                  if (!isRequired) {
-                    clean[key] = null;
-                  } else {
-                    if (field.type === 'Int') clean[key] = 0;
-                    else if (field.type === 'Float' || field.type === 'Decimal') clean[key] = 0;
-                    else if (field.type === 'Boolean') clean[key] = false;
-                    else if (field.type === 'DateTime') clean[key] = new Date();
-                    else if (field.type === 'Json') clean[key] = {};
-                    else clean[key] = '';
-                  }
-                  continue;
-                }
-
-                if (field.type === 'DateTime') {
-                  const d = new Date(val as string);
-                  clean[key] = isNaN(d.getTime()) ? (isRequired ? new Date() : null) : d;
-                } else if (field.type === 'Int') {
-                  const num = parseInt(String(val), 10);
-                  clean[key] = isNaN(num) ? (isRequired ? 0 : null) : num;
-                } else if (field.type === 'Float' || field.type === 'Decimal') {
-                  const num = parseFloat(String(val));
-                  clean[key] = isNaN(num) ? (isRequired ? 0 : null) : num;
-                } else if (field.type === 'Boolean') {
-                  clean[key] = val === 'true' || val === true || val === '1' || val === 1;
-                } else if (field.type === 'Json') {
-                  if (typeof val === 'string') {
-                    try {
-                      clean[key] = JSON.parse(val);
-                    } catch {
-                      clean[key] = val;
-                    }
-                  } else {
-                    clean[key] = val;
-                  }
-                } else {
-                  clean[key] = String(val);
-                }
+              const outcome = buildRestoreRow(row as Record<string, unknown>, {
+                fieldMap: fieldMap as any,
+                relationFieldMap,
+                knownIdsByModel: insertedIdsByModel,
+                tenantId,
+                fallbackUserId,
+              });
+              if (!outcome.ok) {
+                skippedRows++;
+                if (skipReasons.length < 20) skipReasons.push(`${name}: ${outcome.reason}`);
+                continue;
               }
-
-              // Check foreign key constraints against already inserted parents
-              let rowValid = true;
-              for (const [fkCol, targetModel] of relationFieldMap.entries()) {
-                const targetIds = insertedIdsByModel.get(targetModel);
-                const val = clean[fkCol];
-                if (val !== null && val !== undefined && val !== '') {
-                  if (!targetIds || !targetIds.has(String(val))) {
-                    const fDef = fieldMap.get(fkCol);
-                    if (fDef?.isRequired) {
-                      rowValid = false;
-                      break;
-                    } else {
-                      clean[fkCol] = null;
-                    }
-                  }
-                }
-              }
-
-              if (!rowValid) continue;
-
-              // Always scope restored records to the current tenant
-              if (fieldMap.has('tenantId')) {
-                clean['tenantId'] = tenantId;
-              }
-
-              validRows.push(clean);
+              validRows.push(outcome.row);
             }
 
             if (!validRows.length) continue;
@@ -730,12 +680,25 @@ export class BackupService implements OnModuleInit {
         { timeout: RESTORE_TIMEOUT_MS, maxWait: RESTORE_MAX_WAIT_MS },
       );
 
+      // A restore that inserted nothing is a failure, whatever the file
+      // contained. Reporting it as success is how an unusable backup goes
+      // unnoticed until the day it is actually needed.
+      if (rowCount === 0) {
+        const detail = skipReasons.length ? ` First problems: ${skipReasons.slice(0, 5).join('; ')}` : '';
+        throw new BadRequestException(
+          `Restore added no rows. ${skippedRows} row(s) in the file could not be matched to this database.${detail}`,
+        );
+      }
+
       await this.prisma.backupLog.create({
         data: { type: 'RESTORE', status: 'SUCCESS', tableCount, rowCount, triggeredBy: userId, durationMs: Date.now() - start },
       });
-      await this.audit.log(userId, 'RESTORE', 'System', undefined, { rowCount, tableCount });
-      this.logger.warn(`Restore complete: ${tableCount} tables, ${rowCount} rows restored by ${userId}`);
-      return { success: true, rowCount, tableCount };
+      await this.audit.log(userId, 'RESTORE', 'System', undefined, { rowCount, tableCount, skippedRows });
+      this.logger.warn(
+        `Restore complete: ${tableCount} tables, ${rowCount} rows restored by ${userId}` +
+          (skippedRows ? ` (${skippedRows} row(s) skipped)` : ''),
+      );
+      return { success: true, rowCount, tableCount, skippedRows };
     } catch (err: any) {
       await this.prisma.backupLog
         .create({ data: { type: 'RESTORE', status: 'FAILED', error: String(err.message ?? err).slice(0, 1000), triggeredBy: userId, durationMs: Date.now() - start } })
