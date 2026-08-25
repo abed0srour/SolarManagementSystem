@@ -140,7 +140,12 @@
     "updatePassword": "Update password",
     "verificationCode": "Verification code",
     "welcome": "Sign in to the management system",
-    "yourStore": "Your store"
+    "yourStore": "Your store",
+    "tagline": "One system for the whole solar business — stock, quotations, invoices and installations.",
+    "highlightInventory": "Track stock, serial numbers and warranties",
+    "highlightSales": "Quotations, orders and invoices in one flow",
+    "highlightIsolation": "Every business's data stays private and separate",
+    "signInToAccount": "Sign in to your account"
   },
   "common": {
     "actions": "Actions",

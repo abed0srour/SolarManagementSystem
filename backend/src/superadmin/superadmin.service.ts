@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Prisma, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -55,6 +55,27 @@ function slugify(value: string): string {
  * has nothing to filter on; stepping outside it is spelled out at each call
  * site so it is obvious in review which queries cross the boundary and why.
  */
+/**
+ * Where an invited store owner lands after clicking the link in their email.
+ *
+ * This used to be `${process.env.APP_URL ?? ''}/reset-password`, which without
+ * APP_URL evaluates to the relative string "/reset-password". Supabase discards
+ * a redirect it cannot parse and silently substitutes the project's Site URL --
+ * still the local dev origin on a hosted project -- so the invitation in a real
+ * customer's inbox pointed at their own machine. Failing here instead means the
+ * misconfiguration surfaces when the store is created, to the super admin who
+ * can fix it, rather than to the customer who cannot.
+ */
+function inviteRedirectUrl(): string {
+  const base = process.env.APP_URL?.trim();
+  if (!base) {
+    throw new InternalServerErrorException(
+      'APP_URL is not set on this server, so invitation emails would link nowhere. Set it to this environment\'s frontend origin.',
+    );
+  }
+  return `${base.replace(/\/$/, '')}/reset-password`;
+}
+
 @Injectable()
 export class SuperadminService {
   constructor(
@@ -253,7 +274,7 @@ export class SuperadminService {
         permissions: [] as string[],
       };
       admin = dto.invite
-        ? await this.supabase.inviteUser(input, `${process.env.APP_URL ?? ''}/reset-password`)
+        ? await this.supabase.inviteUser(input, inviteRedirectUrl())
         : await this.supabase.createUser(input);
     } catch (err) {
       // Clean up the created tenant so no empty phantom store is left behind

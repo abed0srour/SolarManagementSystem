@@ -157,7 +157,15 @@ export default function AccountSettings({ onProfileSaved }: { onProfileSaved?: (
     setSavingEmail(true);
     setEmailNotice(null);
     try {
-      const { error } = await supabaseBrowser().auth.updateUser({ email: target });
+      const { error } = await supabaseBrowser().auth.updateUser(
+        { email: target },
+        // Without this, Supabase falls back to the project's Site URL, which is
+        // the local dev origin -- so the confirmation link in a real customer's
+        // inbox points at their own machine and cannot work. Taking the origin
+        // from the browser keeps every deployment self-consistent: production,
+        // staging preview and localhost each send links back to themselves.
+        { emailRedirectTo: `${window.location.origin}/login` },
+      );
       if (error) throw error;
       /*
        * `double_confirm_changes` is on, so Supabase emails BOTH addresses and
