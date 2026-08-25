@@ -22,5 +22,8 @@
       "path": "/api/cron/daily",
       "schedule": "0 3 * * *"
     }
+  ],
+  "regions": [
+    "sin1"
   ]
 }
