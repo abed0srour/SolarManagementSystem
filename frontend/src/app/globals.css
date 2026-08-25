@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&family=Dancing+Script:wght@400..700&family=Great+Vibes&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -99,6 +100,15 @@
   .dark[data-accent='sunset'] {
     --primary: 24 88% 55%;
     --ring: 24 88% 55%;
+  }
+
+  [data-accent='cyan'] {
+    --primary: 189 88% 33%;
+    --ring: 189 88% 40%;
+  }
+  .dark[data-accent='cyan'] {
+    --primary: 189 90% 48%;
+    --ring: 189 90% 48%;
   }
 }
 

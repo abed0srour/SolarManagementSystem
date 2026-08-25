@@ -98,7 +98,7 @@ export class ReportsService {
           items: { select: { product: { select: { name: true } }, quantity: true, lineTotal: true }, take: 2 },
         },
         orderBy: { issueDate: 'desc' },
-        take: 15,
+        take: 50,
       }),
     ]);
 

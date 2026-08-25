@@ -52,21 +52,27 @@ export class BackupController {
   @Get('download')
   async download(@Res() res: Response) {
     const body = await this.service.downloadBody();
+    const companyName = await this.service.getCompanyName();
+    const safeName = (companyName || 'SolarStore').trim().replace(/[\s/\\?%*:|"<>]+/g, '-').replace(/-+/g, '-');
+    const dateStr = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/gzip',
-      'Content-Disposition': `attachment; filename="solar-store-backup-${new Date().toISOString().slice(0, 10)}.json.gz"`,
+      'Content-Disposition': `attachment; filename="${safeName}-backup-${dateStr}.json.gz"`,
       'Content-Length': String(body.length),
     });
     res.end(body);
   }
 
-  /** Every table as CSV in one zip — readable in Excel, not restorable. */
+  /** Every table as CSV in one zip */
   @Get('csv')
   async csv(@Res() res: Response) {
     const body = await this.service.csvExport();
+    const companyName = await this.service.getCompanyName();
+    const safeName = (companyName || 'SolarStore').trim().replace(/[\s/\\?%*:|"<>]+/g, '-').replace(/-+/g, '-');
+    const dateStr = new Date().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="solar-store-csv-${new Date().toISOString().slice(0, 10)}.zip"`,
+      'Content-Disposition': `attachment; filename="${safeName}-backup-${dateStr}.zip"`,
       'Content-Length': String(body.length),
     });
     res.end(body);

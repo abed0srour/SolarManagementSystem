@@ -343,6 +343,16 @@ export class SalesOrdersService {
     const client = await this.prisma.client.findUnique({ where: { id: dto.clientId } });
     if (!client) throw new NotFoundException('Client not found');
 
+    let warehouseId = dto.warehouseId;
+    if (!warehouseId) {
+      const warehouses = await this.prisma.warehouse.findMany({ select: { id: true } });
+      if (warehouses.length === 1) {
+        warehouseId = warehouses[0].id;
+      } else if (warehouses.length > 1) {
+        throw new BadRequestException('Please select a warehouse');
+      }
+    }
+
     const built = await this.buildItems(dto.items);
     const totals = calcDocTotals(
       built.map((b) => b._totals),
@@ -359,7 +369,7 @@ export class SalesOrdersService {
           pickupCode,
           clientId: dto.clientId,
           quotationId: dto.quotationId,
-          warehouseId: dto.warehouseId,
+          warehouseId,
           status: 'PENDING',
           discountType: dto.discountType ?? null,
           discountValue: dto.discountValue ?? 0,

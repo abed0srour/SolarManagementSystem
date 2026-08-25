@@ -12,6 +12,7 @@ export const ACCENTS = [
   { id: 'rose', swatch: ['#b31843', '#e23e6b'] },
   { id: 'violet', swatch: ['#5b32bd', '#8b5cf6'] },
   { id: 'sunset', swatch: ['#c2510c', '#f97316'] },
+  { id: 'cyan', swatch: ['#0e7490', '#06b6d4'] },
 ] as const;
 
 export type AccentId = (typeof ACCENTS)[number]['id'];

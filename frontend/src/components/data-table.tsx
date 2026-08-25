@@ -326,13 +326,13 @@ export default function DataTable({
 
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
-      <div className="no-print flex flex-col gap-2.5 border-b p-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="flex flex-1 flex-wrap items-center gap-2 w-full sm:w-auto">
+      <div className="no-print flex flex-wrap items-center justify-between gap-2.5 border-b p-3">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           {searchable && (
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full sm:w-48 md:w-56 lg:w-64 shrink-0">
               <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="ps-8 w-full"
+                className="ps-8 w-full h-9 text-xs sm:text-sm"
                 placeholder={t('common.search')}
                 value={search}
                 onChange={(e) => {
@@ -342,16 +342,16 @@ export default function DataTable({
               />
             </div>
           )}
-          {filters && <div className="flex flex-wrap items-center gap-2">{filters}</div>}
+          {filters && <div className="flex flex-wrap items-center gap-2 shrink-0 [&_select]:h-9 [&_input]:h-9 [&_button]:h-9">{filters}</div>}
           {onArchivedChange && (
-            <div className="inline-flex rounded-md border p-0.5" role="group">
+            <div className="inline-flex h-9 items-center rounded-md border p-0.5 shrink-0" role="group">
               {[false, true].map((mode) => (
                 <button
                   key={String(mode)}
                   type="button"
                   onClick={() => onArchivedChange(mode)}
                   className={cn(
-                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    'flex h-full items-center rounded px-2.5 text-xs font-medium transition-colors',
                     archived === mode
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
@@ -383,7 +383,11 @@ export default function DataTable({
             </Button>
           )}
         </div>
-        {toolbar && <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">{toolbar}</div>}
+        {toolbar && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0 ms-auto [&_button]:h-9 [&_a]:h-9 [&_select]:h-9 [&_input]:h-9 [&_button]:text-xs [&_button]:sm:text-sm">
+            {toolbar}
+          </div>
+        )}
       </div>
 
       {selectionMode && (

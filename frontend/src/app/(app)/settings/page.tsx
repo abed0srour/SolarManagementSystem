@@ -1,16 +1,17 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Building2, Coins, Hash, ShieldCheck, KeyRound, Mail, MailCheck, Upload, History, Settings as SettingsIcon,
   DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet, UsersRound, Trash2,
+  UploadCloud, FileArchive, X, Loader2,
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
 import { getClaims } from '../../../lib/auth';
 import AccountSettings from '../../../components/account-settings';
-import { invalidateCache } from '../../../lib/cache';
+import { clearCache, invalidateCache, refreshAllCaches } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -40,6 +41,9 @@ export default function SettingsPage() {
   const [restoreLocalOpen, setRestoreLocalOpen] = useState(false);
   const [restoreUploadOpen, setRestoreUploadOpen] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   /*
    * Presentation only — /users is independently restricted server-side.
    *
@@ -96,7 +100,9 @@ export default function SettingsPage() {
 
   const doDownload = async () => {
     try {
-      await downloadFile('/backup/download', `solar-store-backup-${new Date().toISOString().slice(0, 10)}.json.gz`);
+      const storeName = (company.name || 'SolarTech-Solutions-Beirut').trim().replace(/[\s/\\?%*:|"<>]+/g, '-').replace(/-+/g, '-');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      await downloadFile('/backup/download', `${storeName}-backup-${dateStr}.json.gz`);
     } catch (e) {
       toast.error(errMsg(e));
     }
@@ -105,7 +111,9 @@ export default function SettingsPage() {
   const doCsvExport = async () => {
     setCsvBusy(true);
     try {
-      await downloadFile('/backup/csv', csvFilename());
+      const storeName = (company.name || 'SolarTech-Solutions-Beirut').trim().replace(/[\s/\\?%*:|"<>]+/g, '-').replace(/-+/g, '-');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      await downloadFile('/backup/csv', `${storeName}-backup-${dateStr}.zip`);
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -117,8 +125,21 @@ export default function SettingsPage() {
     setBackupBusy(true);
     try {
       const { data } = await api.post('/backup/restore/local');
-      toast.success(t('settings.restoreDone', { rows: data.rowCount }));
+      clearCache();
+      refreshAllCaches();
+      try {
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && (k.startsWith('sms:') || k.startsWith('solar:') || k.includes('cache'))) {
+            window.localStorage.removeItem(k);
+          }
+        }
+      } catch {}
+      toast.success(t('settings.restoreDone', { rows: data.rowCount }) || `Restored ${data.rowCount} records across ${data.tableCount} tables!`);
       loadBackup();
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 800);
     } catch (e) {
       toast.error(errMsg(e));
       throw e;
@@ -134,9 +155,22 @@ export default function SettingsPage() {
       const fd = new FormData();
       fd.append('file', restoreFile);
       const { data } = await api.post('/backup/restore/upload', fd);
-      toast.success(t('settings.restoreDone', { rows: data.rowCount }));
+      clearCache();
+      refreshAllCaches();
+      try {
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && (k.startsWith('sms:') || k.startsWith('solar:') || k.includes('cache'))) {
+            window.localStorage.removeItem(k);
+          }
+        }
+      } catch {}
+      toast.success(t('settings.restoreDone', { rows: data.rowCount }) || `Restored ${data.rowCount} records across ${data.tableCount} tables!`);
       setRestoreFile(null);
       loadBackup();
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 800);
     } catch (e) {
       toast.error(errMsg(e));
       throw e;
@@ -231,26 +265,89 @@ export default function SettingsPage() {
                   <Input dir="ltr" placeholder="e.g. 1234567-89" value={company.taxNumber ?? ''} onChange={(e) => setCompany({ ...company, taxNumber: e.target.value })} />
                 </Field>
               </div>
-              <div className="rounded-md border bg-muted/30 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-                  <Upload className="h-4 w-4 text-muted-foreground" /> {t('settings.logo')}
-                </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md border bg-background shrink-0">
-                    {company.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={company.logoUrl} alt="logo" className="h-full w-full object-contain" />
-                    ) : (
-                      <Building2 className="h-6 w-6 text-muted-foreground/40" />
-                    )}
+              <div className="rounded-xl border bg-card p-4 sm:p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <UploadCloud className="h-4 w-4 text-primary" /> {t('settings.logo')}
                   </div>
-                  <Input
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    className="max-w-xs"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
+                  <span className="text-xs text-muted-foreground">PNG, JPG or WEBP (Max 5MB)</span>
+                </div>
+
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsUploadingLogo(true);
+                    try {
+                      const fd = new FormData();
+                      fd.append('file', file);
+                      fd.append('entity', 'Company');
+                      fd.append('entityId', 'company');
+                      const { data } = await api.post('/uploads', fd);
+                      setCompany({ ...company, logoUrl: data.path });
+                      toast.success(t('settings.logoUploaded'));
+                    } catch (err) {
+                      toast.error(errMsg(err));
+                    } finally {
+                      setIsUploadingLogo(false);
+                      if (logoInputRef.current) logoInputRef.current.value = '';
+                    }
+                  }}
+                />
+
+                {company.logoUrl ? (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border bg-muted/20 p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-18 w-28 items-center justify-center overflow-hidden rounded-lg border bg-white p-2 shadow-xs shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={company.logoUrl} alt="Company Logo" className="h-full w-full object-contain" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold">{company.name || 'Store Brand Logo'}</div>
+                        <p className="text-xs text-muted-foreground mt-0.5">Active company logo for invoices, receipts & theme</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isUploadingLogo}
+                        onClick={() => logoInputRef.current?.click()}
+                        className="gap-1.5"
+                      >
+                        {isUploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        <span>Change Logo</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          setCompany({ ...company, logoUrl: null });
+                          toast.success(t('settings.logoRemoved'));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>{t('common.remove')}</span>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => !isUploadingLogo && logoInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
                       if (!file) return;
+                      setIsUploadingLogo(true);
                       try {
                         const fd = new FormData();
                         fd.append('file', file);
@@ -261,25 +358,24 @@ export default function SettingsPage() {
                         toast.success(t('settings.logoUploaded'));
                       } catch (err) {
                         toast.error(errMsg(err));
+                      } finally {
+                        setIsUploadingLogo(false);
                       }
                     }}
-                  />
-                  {company.logoUrl && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => {
-                        setCompany({ ...company, logoUrl: null });
-                        toast.success(t('settings.logoRemoved'));
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>{t('common.remove')}</span>
-                    </Button>
-                  )}
-                </div>
+                    className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted-foreground/25 hover:border-primary/60 bg-muted/10 hover:bg-muted/30 p-6 text-center cursor-pointer transition-all"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                      {isUploadingLogo ? <Loader2 className="h-6 w-6 animate-spin" /> : <UploadCloud className="h-6 w-6" />}
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                        Click to upload store logo
+                      </span>
+                      <span className="text-sm text-muted-foreground"> or drag and drop</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">High-resolution PNG, JPG, or WEBP (Max 5MB)</p>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end border-t pt-4">
                 <Button onClick={() => saveSetting('company', company)}>{t('common.save')}</Button>
@@ -504,27 +600,117 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-destructive/30">
+            <Card className="border-destructive/30 shadow-xs">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-destructive" />{t('settings.restore')}</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-destructive" />
+                  {t('settings.restore')}
+                </CardTitle>
                 <CardDescription>{t('settings.restoreHint')}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" className="text-destructive" onClick={() => setRestoreLocalOpen(true)} disabled={!backup?.hasLocalFile || backupBusy}>
-                    <RotateCcw /> {t('settings.restoreFromLocal')}
+              <CardContent className="space-y-6">
+                {/* 1. Restore from Server Storage */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
+                  <div className="space-y-0.5">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <HardDrive className="h-4 w-4 text-muted-foreground" />
+                      Restore from Server Storage
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Restores all database tables from the latest snapshot stored on the server
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10 shrink-0 gap-1.5"
+                    onClick={() => setRestoreLocalOpen(true)}
+                    disabled={!backup?.hasLocalFile || backupBusy}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    <span>{t('settings.restoreFromLocal')}</span>
                   </Button>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-                  <Input
+
+                {/* 2. Upload & Restore from Custom File / ZIP Archive */}
+                <div className="space-y-3 border-t pt-4">
+                  <div className="text-sm font-semibold flex items-center gap-2">
+                    <FileArchive className="h-4 w-4 text-primary" />
+                    Restore from Backup Archive (.zip / .json.gz)
+                  </div>
+
+                  <input
+                    ref={restoreInputRef}
                     type="file"
-                    accept=".gz"
-                    className="max-w-xs"
+                    accept=".zip,.gz,.json.gz,.csv"
+                    className="hidden"
                     onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
                   />
-                  <Button variant="outline" className="text-destructive" onClick={() => setRestoreUploadOpen(true)} disabled={!restoreFile || backupBusy}>
-                    <Upload /> {t('settings.restoreFromFile')}
-                  </Button>
+
+                  {restoreFile ? (
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border-2 border-primary/30 bg-primary/5 p-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                          <FileArchive className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold truncate">{restoreFile.name}</div>
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {(restoreFile.size / 1024 / 1024).toFixed(2)} MB · Ready to restore
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setRestoreFile(null);
+                            if (restoreInputRef.current) restoreInputRef.current.value = '';
+                          }}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                          <span className="sr-only">Remove</span>
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setRestoreUploadOpen(true)}
+                          disabled={backupBusy}
+                          className="gap-1.5"
+                        >
+                          <Upload className="h-4 w-4" />
+                          <span>{t('settings.restoreFromFile')}</span>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => restoreInputRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) setRestoreFile(file);
+                      }}
+                      className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted-foreground/25 hover:border-primary/60 bg-muted/10 hover:bg-muted/30 p-6 text-center cursor-pointer transition-all"
+                    >
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                        <FileArchive className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Click to select backup archive
+                        </span>
+                        <span className="text-sm text-muted-foreground"> or drag & drop ZIP / CSV folder here</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Supports <span className="font-mono font-semibold">.zip</span> archives containing CSV tables, or <span className="font-mono font-semibold">.json.gz</span> system snapshots
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

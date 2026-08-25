@@ -65,6 +65,7 @@ model Tenant {
   categories           Category[]
   subCategories        SubCategory[]
   attributeDefinitions AttributeDefinition[]
+  productAttributes    ProductAttribute[]
   products             Product[]
   priceHistory         PriceHistory[]
   compatibilityLinks   CompatibilityLink[]
@@ -376,6 +377,36 @@ model AttributeDefinition {
   @@index([tenantId])
 }
 
+enum DynamicAttributeType {
+  STRING
+  INTEGER
+  DECIMAL
+  FLOAT
+  BOOLEAN
+}
+
+model ProductAttribute {
+  id              String               @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId        String               @default("")
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name            String               // e.g. "Color", "Size", "Dimensions", "Capacity"
+  type            DynamicAttributeType @default(STRING) // STRING, INTEGER, DECIMAL, FLOAT, BOOLEAN
+  unit            String?              // e.g. "mm", "kW", "V", "Ah"
+  isFreeForm      Boolean              @default(false)
+  permittedValues Json?                // array of permitted values, e.g. ["Red", "Blue"] or [10, 20] or [true, false]
+  sortOrder       Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([productId, name])
+  @@index([tenantId])
+  @@index([productId])
+}
+
 model Product {
   id String @id @default(uuid())
 
@@ -397,12 +428,6 @@ model Product {
   /// Capture a serial per unit when goods are received.
   trackSerials              Boolean     @default(true)
   /// Ask which specific units are leaving when an order is confirmed.
-  ///
-  /// Separate from `trackSerials` because the two directions have different
-  /// economics. Panels arrive 270 at a time and are interchangeable to the
-  /// customer, so they are worth recording against a supplier on the way in
-  /// but not worth matching one by one on the way out. An inverter is worth
-  /// both, because a warranty claim needs to know which unit went where.
   requireSerialOnSale       Boolean     @default(true)
   lowStockThreshold         Int         @default(5)
   warrantyMonths            Int? // product warranty
@@ -414,6 +439,15 @@ model Product {
   isActive                  Boolean     @default(true)
   createdAt                 DateTime    @default(now())
   deletedAt                 DateTime?
+
+  // Variant & Parent-Child support
+  parentProductId           String?
+  parent                    Product?            @relation("ProductVariants", fields: [parentProductId], references: [id], onDelete: Cascade)
+  variants                  Product[]           @relation("ProductVariants")
+  isVariant                 Boolean             @default(false)
+  hasVariants               Boolean             @default(false)
+  variantAttributes         Json                @default("{}")
+  customAttributes          ProductAttribute[]
 
   priceHistory       PriceHistory[]
   stockLevels        StockLevel[]
@@ -434,6 +468,7 @@ model Product {
   @@index([brand])
   @@index([subCategoryId])
   @@index([tenantId])
+  @@index([parentProductId])
 }
 
 model PriceHistory {

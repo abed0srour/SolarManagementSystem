@@ -2,6 +2,7 @@
 
 import { spawn, execSync } from 'child_process';
 import net from 'net';
+import fs from 'fs';
 import process from 'process';
 
 const colors = {
@@ -12,8 +13,6 @@ const colors = {
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   red: '\x1b[31m',
-  bgGreen: '\x1b[42m',
-  black: '\x1b[30m',
 };
 
 console.log(`${colors.bright}${colors.cyan}======================================================${colors.reset}`);
@@ -23,6 +22,31 @@ console.log(`${colors.bright}${colors.cyan}=====================================
 const isWindows = process.platform === 'win32';
 let backendProcess = null;
 let frontendProcess = null;
+
+// Free ports 3000 & 5173 if previously occupied
+function freePort(port) {
+  try {
+    if (isWindows) {
+      const output = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const lines = output.trim().split('\n');
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        const pid = parts[parts.length - 1];
+        if (pid && pid !== '0' && pid !== String(process.pid)) {
+          try {
+            execSync(`taskkill /PID ${pid} /F 2>nul`, { shell: 'cmd.exe' });
+            console.log(`${colors.yellow}🧹 Freed port ${port} (terminated orphaned process ${pid})${colors.reset}`);
+          } catch {}
+        }
+      }
+    } else {
+      execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null || true`);
+    }
+  } catch {}
+}
+
+freePort(3000);
+freePort(5173);
 
 function pipeOutput(proc, prefix, color) {
   proc.stdout.on('data', (data) => {
@@ -96,6 +120,9 @@ function cleanup() {
     if (frontendProcess) frontendProcess.kill('SIGINT');
   }
 
+  freePort(3000);
+  freePort(5173);
+
   console.log(`${colors.green}👋 Local environment stopped.${colors.reset}`);
   process.exit(0);
 }
@@ -131,7 +158,15 @@ async function main() {
   }
 
   // Step 3: Frontend Web App
-  console.log(`${colors.yellow}💻 [3/3] Starting Frontend App and waiting for server on http://localhost:5173...${colors.reset}\n`);
+  console.log(`${colors.yellow}💻 [3/3] Starting Frontend App with instant Hot-Reload on http://localhost:5173...${colors.reset}\n`);
+  
+  // Clean stale build cache if present to prevent module mismatches
+  try {
+    if (fs.existsSync('./frontend/.next')) {
+      fs.rmSync('./frontend/.next', { recursive: true, force: true });
+    }
+  } catch {}
+
   frontendProcess = isWindows
     ? spawn('cmd.exe', ['/c', 'npm', 'run', 'dev'], { cwd: './frontend', stdio: 'pipe' })
     : spawn('npm', ['run', 'dev'], { cwd: './frontend', stdio: 'pipe' });
@@ -141,7 +176,7 @@ async function main() {
   try {
     await waitForPort(5173, '127.0.0.1', 45000);
     
-    // Final Banner
+    // Final Live Dashboard Banner
     console.log(`\n${colors.bright}${colors.green}========================================================================${colors.reset}`);
     console.log(`${colors.bright}${colors.green}  🚀 YOU ARE LIVE NOW!                                                 ${colors.reset}`);
     console.log(`${colors.bright}${colors.green}========================================================================${colors.reset}`);

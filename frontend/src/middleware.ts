@@ -59,6 +59,14 @@ export async function middleware(request: NextRequest) {
 
     const wantsPlatform = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
 
+    // Solar Operations routes are disabled across the system
+    const isSolarRoute = ['/installations', '/monitoring', '/calculator'].some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    );
+    if (isSolarRoute) {
+      return redirect('/dashboard');
+    }
+
     if (wantsPlatform && !isSuperAdmin(claims)) {
       // A store user has no business on the platform portal. Sent to their own
       // dashboard rather than /login: they are signed in, just not for this.

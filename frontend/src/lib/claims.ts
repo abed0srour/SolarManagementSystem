@@ -19,6 +19,7 @@ export type ProfileRole = 'super_admin' | 'tenant_admin' | 'staff' | 'none';
 export interface SessionClaims {
   sub: string;
   email?: string;
+  fullName?: string;
   exp?: number;
   role: ProfileRole;
   tenantId: string | null;
@@ -66,9 +67,12 @@ export function toClaims(payload: Record<string, any> | null): SessionClaims | n
   const pick = (key: string) => (payload[key] !== undefined ? payload[key] : meta[key]);
 
   const tenantId = pick('tenant_id');
+  const userMeta = payload.user_metadata ?? {};
+  const fullName = userMeta.full_name || userMeta.name || payload.full_name || payload.name || undefined;
   return {
     sub: payload.sub,
     email: payload.email,
+    fullName,
     exp: payload.exp,
     role: (pick('role') ?? 'none') as ProfileRole,
     tenantId: tenantId === undefined || tenantId === '' ? null : tenantId,

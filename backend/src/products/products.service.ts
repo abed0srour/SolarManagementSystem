@@ -20,14 +20,20 @@ export class ProductsService {
     brand?: string;
     isActive?: string;
     archived?: string;
+    parentOnly?: string;
     sortBy?: string;
     sortDir?: string;
     page?: number;
     pageSize?: number;
   }) {
-    // `archived=true` shows the archive instead of the active list — the
-    // same query, with the soft-delete filter inverted.
     const where: Prisma.ProductWhereInput = query.archived === 'true' ? { deletedAt: { not: null } } : { deletedAt: null };
+    
+    // By default in catalog views or when parentOnly=true, only show parent products
+    // (variants are nested under their parent)
+    if (query.parentOnly === 'true') {
+      where.isVariant = false;
+    }
+
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -35,6 +41,17 @@ export class ProductsService {
         { brand: { contains: query.search, mode: 'insensitive' } },
         { model: { contains: query.search, mode: 'insensitive' } },
         { barcode: { contains: query.search, mode: 'insensitive' } },
+        {
+          variants: {
+            some: {
+              OR: [
+                { sku: { contains: query.search, mode: 'insensitive' } },
+                { name: { contains: query.search, mode: 'insensitive' } },
+                { barcode: { contains: query.search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
       ];
     }
     if (query.subCategoryId) where.subCategoryId = query.subCategoryId;
@@ -50,11 +67,17 @@ export class ProductsService {
     const sortDir = query.sortDir === 'desc' ? 'desc' : 'asc';
 
     const [items, total] = await Promise.all([
-      this.prisma.product.findMany({ relationLoadStrategy: 'join',
+      this.prisma.product.findMany({
         where,
         include: {
           subCategory: { include: { category: true } },
           stockLevels: { include: { warehouse: true } },
+          customAttributes: { orderBy: { sortOrder: 'asc' } },
+          variants: {
+            where: { deletedAt: null },
+            include: { stockLevels: { include: { warehouse: true } } },
+            orderBy: { sku: 'asc' },
+          },
         },
         orderBy: { [sortBy]: sortDir },
         skip: (page - 1) * pageSize,
@@ -66,7 +89,7 @@ export class ProductsService {
   }
 
   async findOne(id: string) {
-    const product = await this.prisma.product.findUnique({ relationLoadStrategy: 'join',
+    const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         subCategory: { include: { category: true, attributeDefs: { orderBy: { sortOrder: 'asc' } } } },
@@ -76,6 +99,13 @@ export class ProductsService {
         supplierProducts: { include: { supplier: true } },
         compatibleFrom: { include: { compatibleWith: { select: { id: true, name: true, sku: true } } } },
         compatibleTo: { include: { product: { select: { id: true, name: true, sku: true } } } },
+        customAttributes: { orderBy: { sortOrder: 'asc' } },
+        variants: {
+          where: { deletedAt: null },
+          include: { stockLevels: { include: { warehouse: true } } },
+          orderBy: { sku: 'asc' },
+        },
+        parent: { select: { id: true, name: true, sku: true } },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -84,18 +114,8 @@ export class ProductsService {
 
   /**
    * Sub-category every service is filed under, created on first use.
-   *
-   * `Product.subCategoryId` is a required relation, but asking the admin to file
-   * an installation under "Batteries / Lithium" is meaningless. Services get
-   * their own bucket instead, so the form can drop the picker entirely and
-   * reports still group them sensibly. Restores the rows if they were archived,
-   * since the unique constraints (`Category.name`, `SubCategory[categoryId,name]`)
-   * apply to soft-deleted rows too.
    */
   private async serviceSubCategoryId(tx: Prisma.TransactionClient): Promise<string> {
-    // Category names are unique per store now, so the upsert has to name the
-    // store as well. The scoping extension adds `tenantId` to the filter too,
-    // but an upsert needs a genuine unique key to decide insert-vs-update.
     const category = await tx.category.upsert({
       where: { tenantId_name: { tenantId: requireTenantId(), name: 'Services' } },
       update: { deletedAt: null },
@@ -109,12 +129,6 @@ export class ProductsService {
     return sub.id;
   }
 
-  /**
-   * Strip fields that make no sense for a service. A service is sold as labour:
-   * it has no stock, no serials, no warranty period and no physical specs, so
-   * those columns are forced to their empty values rather than left to whatever
-   * the form last held.
-   */
   private static serviceDefaults() {
     return {
       trackSerials: false,
@@ -130,32 +144,14 @@ export class ProductsService {
     };
   }
 
-  /**
-   * Create a product definition. Deliberately has no effect on stock.
-   *
-   * This used to accept `serialNumbers` and turn them into in-stock units plus
-   * an `IN` movement, so defining a product silently invented inventory that
-   * was never bought. Stock now has exactly one origin: goods received against
-   * a purchase order (`PurchaseOrdersService.receiveGoods`, which takes serials
-   * per line and checks them against the received quantity) or an explicit
-   * stock adjustment.
-   */
   async create(userId: string, data: any) {
     const isService = data.isService ?? false;
     if (!isService && !data.subCategoryId) {
-      // Otherwise the required relation fails with an opaque constraint error.
       throw new BadRequestException('Pick a sub-category, or mark this as a service');
     }
-    // A stocked product has no meaningful cost until it is bought: the first
-    // goods receipt sets it via weighted average, and because a new product has
-    // no stock on hand that calculation reduces to the received unit cost — so
-    // anything typed here would be overwritten anyway. Services keep a manual
-    // cost, as no purchase order ever touches them.
     const costPrice = data.costPrice ?? 0;
 
     const product = await this.prisma.$transaction(async (tx) => {
-      // A service only carries name, SKU and the two prices; everything else is
-      // either meaningless or resolved for it.
       const p = await tx.product.create({
         data: isService
           ? {
@@ -163,6 +159,7 @@ export class ProductsService {
               name: data.name,
               costPrice,
               salePrice: data.salePrice,
+              imageUrl: data.imageUrl ?? null,
               notes: data.notes,
               isService: true,
               subCategoryId: data.subCategoryId || (await this.serviceSubCategoryId(tx)),
@@ -177,6 +174,7 @@ export class ProductsService {
               attributes: data.attributes ?? {},
               costPrice,
               salePrice: data.salePrice,
+              imageUrl: data.imageUrl ?? null,
               isService: false,
               trackSerials: data.trackSerials ?? true,
               requireSerialOnSale: data.requireSerialOnSale ?? true,
@@ -216,7 +214,6 @@ export class ProductsService {
       (data.costPrice !== undefined && Number(data.costPrice) !== Number(existing.costPrice)) ||
       (data.salePrice !== undefined && Number(data.salePrice) !== Number(existing.salePrice));
 
-    // `isService` may be absent from a partial update — fall back to the stored value.
     const isService = data.isService ?? existing.isService;
 
     const product = await this.prisma.$transaction(async (tx) => {
@@ -225,6 +222,7 @@ export class ProductsService {
         name: data.name,
         costPrice: data.costPrice,
         salePrice: data.salePrice,
+        imageUrl: data.imageUrl !== undefined ? data.imageUrl : undefined,
         notes: data.notes,
         isActive: data.isActive,
         isService: data.isService,
@@ -235,8 +233,6 @@ export class ProductsService {
         data: isService
           ? {
               ...base,
-              // Clears stock/warranty/spec fields left over from a product that
-              // has just been switched to a service.
               subCategoryId: data.subCategoryId || (await this.serviceSubCategoryId(tx)),
               ...ProductsService.serviceDefaults(),
             }
@@ -274,7 +270,205 @@ export class ProductsService {
     return product;
   }
 
-  /** Bulk price update: rows of { sku, costPrice?, salePrice? } (e.g. parsed from a supplier CSV price list). */
+  /**
+   * Dynamic Attribute & Variant Management
+   */
+  async getVariants(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        customAttributes: { orderBy: { sortOrder: 'asc' } },
+        variants: {
+          where: { deletedAt: null },
+          include: { stockLevels: { include: { warehouse: true } } },
+          orderBy: { sku: 'asc' },
+        },
+      },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    return {
+      attributes: product.customAttributes,
+      variants: product.variants,
+    };
+  }
+
+  async setAttributes(userId: string, productId: string, attributes: any[]) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const tenantId = requireTenantId();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productAttribute.deleteMany({ where: { productId } });
+      for (const [idx, attr] of attributes.entries()) {
+        await tx.productAttribute.create({
+          data: {
+            tenantId,
+            productId,
+            name: attr.name.trim(),
+            type: attr.type,
+            unit: attr.unit?.trim() || null,
+            isFreeForm: Boolean(attr.isFreeForm),
+            permittedValues: attr.permittedValues ?? null,
+            sortOrder: attr.sortOrder ?? idx,
+          },
+        });
+      }
+    });
+
+    await this.audit.log(userId, 'UPDATE_ATTRIBUTES', 'Product', productId, {
+      count: attributes.length,
+    });
+
+    return this.getVariants(productId);
+  }
+
+  async generateVariants(userId: string, productId: string, data: { attributes?: any[]; variants: any[] }) {
+    const parent = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { customAttributes: true },
+    });
+    if (!parent) throw new NotFoundException('Parent product not found');
+
+    const tenantId = requireTenantId();
+
+    const createdVariants = await this.prisma.$transaction(async (tx) => {
+      if (data.attributes && Array.isArray(data.attributes)) {
+        await tx.productAttribute.deleteMany({ where: { productId } });
+        for (const [idx, attr] of data.attributes.entries()) {
+          await tx.productAttribute.create({
+            data: {
+              tenantId,
+              productId,
+              name: attr.name.trim(),
+              type: attr.type,
+              unit: attr.unit?.trim() || null,
+              isFreeForm: Boolean(attr.isFreeForm),
+              permittedValues: attr.permittedValues ?? null,
+              sortOrder: attr.sortOrder ?? idx,
+            },
+          });
+        }
+      }
+
+      const results: any[] = [];
+      for (const v of data.variants) {
+        const sku = String(v.sku).trim();
+        const name = String(v.name).trim();
+        const salePrice = Number(v.salePrice) || Number(parent.salePrice);
+        const costPrice = v.costPrice !== undefined ? Number(v.costPrice) : Number(parent.costPrice);
+
+        const existing = await tx.product.findFirst({
+          where: { sku, tenantId },
+        });
+
+        if (existing) {
+          if (existing.parentProductId && existing.parentProductId !== parent.id) {
+            throw new BadRequestException(`SKU "${sku}" is already in use by another product variant`);
+          }
+          if (!existing.parentProductId && existing.id !== parent.id) {
+            throw new BadRequestException(`SKU "${sku}" is already in use by another product`);
+          }
+          const updated = await tx.product.update({
+            where: { id: existing.id },
+            data: {
+              name,
+              salePrice,
+              costPrice,
+              barcode: v.barcode || existing.barcode,
+              imageUrl: v.imageUrl || existing.imageUrl,
+              variantAttributes: v.variantAttributes ?? {},
+              isActive: true,
+              deletedAt: null,
+            },
+          });
+          results.push(updated);
+        } else {
+          const created = await tx.product.create({
+            data: {
+              tenantId,
+              parentProductId: parent.id,
+              isVariant: true,
+              sku,
+              name,
+              brand: parent.brand,
+              model: parent.model,
+              subCategoryId: parent.subCategoryId,
+              attributes: (parent.attributes as any) ?? {},
+              variantAttributes: v.variantAttributes ?? {},
+              costPrice,
+              salePrice,
+              isService: parent.isService,
+              trackSerials: parent.trackSerials,
+              requireSerialOnSale: parent.requireSerialOnSale,
+              lowStockThreshold: parent.lowStockThreshold,
+              warrantyMonths: parent.warrantyMonths,
+              performanceWarrantyMonths: parent.performanceWarrantyMonths,
+              shelfLifeMonths: parent.shelfLifeMonths,
+              barcode: v.barcode || null,
+              imageUrl: v.imageUrl || parent.imageUrl,
+              notes: parent.notes,
+            },
+          });
+
+          await tx.priceHistory.create({
+            data: {
+              productId: created.id,
+              newCostPrice: costPrice,
+              newSalePrice: salePrice,
+              reason: 'Initial variant price',
+              changedById: userId,
+            },
+          });
+
+          results.push(created);
+        }
+      }
+
+      await tx.product.update({
+        where: { id: parent.id },
+        data: { hasVariants: true },
+      });
+
+      return results;
+    });
+
+    await this.audit.log(userId, 'GENERATE_VARIANTS', 'Product', parent.id, {
+      variantCount: createdVariants.length,
+    });
+
+    return this.getVariants(productId);
+  }
+
+  async deleteVariant(userId: string, productId: string, variantId: string) {
+    const variant = await this.prisma.product.findFirst({
+      where: { id: variantId, parentProductId: productId },
+    });
+    if (!variant) throw new NotFoundException('Variant not found');
+
+    const counts = await this.productUsage(variantId);
+    if (!isUnused(counts)) {
+      throw new BadRequestException('Cannot delete variant with existing sales, purchases or inventory records');
+    }
+
+    await this.prisma.product.delete({ where: { id: variantId } });
+
+    const remaining = await this.prisma.product.count({
+      where: { parentProductId: productId, deletedAt: null },
+    });
+    if (remaining === 0) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { hasVariants: false },
+      });
+    }
+
+    await this.audit.log(userId, 'DELETE_VARIANT', 'Product', variantId, {
+      parentProductId: productId,
+    });
+
+    return { success: true };
+  }
+
   async bulkPriceUpdate(userId: string, rows: { sku: string; costPrice?: number; salePrice?: number }[], reason?: string) {
     const results: { sku: string; status: string }[] = [];
     for (const row of rows) {
@@ -315,17 +509,6 @@ export class ProductsService {
     return { results };
   }
 
-  /**
-   * Create products in bulk from parsed CSV rows.
-   *
-   * Every row is independent: one bad line reports an error and the rest still
-   * import, so a 200-row catalogue is never rejected wholesale for a typo. An
-   * existing SKU is skipped rather than overwritten — silently replacing a
-   * product the admin already priced would be worse than telling them.
-   *
-   * Sub-categories are matched by name (case-insensitive), optionally narrowed
-   * by category name, because a CSV from a supplier has names, not our ids.
-   */
   async importProducts(
     userId: string,
     rows: {
@@ -385,8 +568,6 @@ export class ProductsService {
           subCategoryId = sub.id;
         }
 
-        // Reuse create() so imports obey exactly the same rules as the form —
-        // service defaults, cost handling, initial price history.
         await this.create(userId, {
           sku,
           name,
@@ -414,21 +595,8 @@ export class ProductsService {
     return { created, skipped, failed, results };
   }
 
-  /**
-   * Alphabet for generated SKUs: digits and capitals minus the pairs that get
-   * misread off a printed label or dictated over the phone — 0/O, 1/I/L.
-   */
   private static readonly SKU_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
-  /**
-   * A short, unique, random SKU — six characters, e.g. `K7F3MQ`.
-   *
-   * Generated server-side rather than in the browser so it can be checked
-   * against the unique index before being handed out; a client-side guess
-   * would only surface a collision as a failed save. Soft-deleted products
-   * still occupy their SKU, so the lookup covers them too. SKUs are unique per
-   * store, so two tenants may independently land on the same code.
-   */
   async generateSku(length = 6): Promise<{ sku: string }> {
     const alphabet = ProductsService.SKU_ALPHABET;
     for (let attempt = 0; attempt < 10; attempt++) {
@@ -436,25 +604,9 @@ export class ProductsService {
       const taken = await this.prisma.product.findFirst({ where: { sku }, select: { id: true } });
       if (!taken) return { sku };
     }
-    // 31^6 ≈ 887M combinations, so ten collisions in a row means something is
-    // wrong rather than unlucky.
     throw new BadRequestException('Could not generate a unique SKU, please try again');
   }
 
-  /**
-   * Count the references that mean a product has actually been used.
-   *
-   * Deliberately excluded: `priceHistory` (one row is written by `create`),
-   * `stockLevels` at zero quantity, `supplierProducts` and `compatibilityLinks`
-   * — all bookkeeping a product can have without ever being traded, and all
-   * cascade-deleted with it. A stock level holding real quantity does count:
-   * physical stock exists even if no movement was recorded.
-   */
-  /**
-   * Whether this record can be deleted outright, for the confirm dialog to ask
-   * the right question before anything is destroyed. `remove()` re-checks this
-   * server-side, so a stale answer here can never cause a wrongful delete.
-   */
   async usage(id: string): Promise<UsageReport> {
     const counts = await this.productUsage(id);
     return { used: !isUnused(counts), usedBy: usedBy(counts) };
@@ -481,11 +633,6 @@ export class ProductsService {
     };
   }
 
-  /**
-   * Bring an archived product back into active use. Archiving only sets
-   * `deletedAt` and clears `isActive`, so restoring is the exact inverse:
-   * nothing was destroyed, and every document that referenced it still does.
-   */
   async restore(userId: string, id: string) {
     const row = await this.prisma.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Product not found');
@@ -495,10 +642,6 @@ export class ProductsService {
     return { success: true, alreadyActive: false };
   }
 
-  /**
-   * Delete a product: permanently when it was never used, otherwise archived so
-   * existing documents keep resolving. See `common/safe-delete.ts`.
-   */
   async remove(userId: string, id: string): Promise<SafeDeleteResult> {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Product not found');
@@ -522,20 +665,11 @@ export class ProductsService {
       );
     }
 
-    // Cascades take priceHistory, stockLevels, supplierProducts and
-    // compatibility links with it.
     await this.prisma.product.delete({ where: { id } });
     await this.audit.log(userId, 'PURGE', 'Product', id);
     return { success: true, mode: 'PURGED', usedBy: {} };
   }
 
-  /**
-   * Who bought this product — one row per sales-order line, newest first, with
-   * the serial numbers that went out on it where the product is tracked.
-   *
-   * Cancelled orders are excluded: they represent a sale that never happened,
-   * so listing that client as a buyer would be wrong.
-   */
   async buyers(productId: string, query: { page?: number; pageSize?: number; search?: string }) {
     const where: Prisma.SalesOrderItemWhereInput = {
       productId,
@@ -552,7 +686,6 @@ export class ProductsService {
     const totalPromise = this.prisma.salesOrderItem.count({ where });
 
     const items = await this.prisma.salesOrderItem.findMany({
-      relationLoadStrategy: 'join',
       where,
       include: {
         salesOrder: {
@@ -570,8 +703,6 @@ export class ProductsService {
       take: pageSize,
     });
 
-    // Serials are attached to the order, not the line, so they are fetched once
-    // for the page's orders rather than per row.
     const orderIds = items.map((i) => i.salesOrder.id);
     const units = orderIds.length
       ? await this.prisma.productUnit.findMany({
@@ -602,7 +733,7 @@ export class ProductsService {
   }
 
   priceHistory(productId: string) {
-    return this.prisma.priceHistory.findMany({ relationLoadStrategy: 'join',
+    return this.prisma.priceHistory.findMany({
       where: { productId },
       orderBy: { createdAt: 'desc' },
       include: { changedBy: { select: { name: true } } },

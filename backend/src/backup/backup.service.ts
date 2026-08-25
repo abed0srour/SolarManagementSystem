@@ -57,6 +57,69 @@ function toCsv(rows: any[]): string {
   return `﻿${lines.join('\r\n')}\r\n`;
 }
 
+/** Robust RFC 4180 CSV parser supporting multiline cells and escaped quotes. */
+function parseCsv(content: string): Record<string, any>[] {
+  let str = content.replace(/^\uFEFF/, '');
+  if (!str.trim()) return [];
+
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    const nextChar = str[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentCell += '"';
+        i++; // skip escaped quote
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      currentRow.push(currentCell);
+      currentCell = '';
+    } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++; // skip \n in \r\n
+      }
+      currentRow.push(currentCell);
+      if (currentRow.length > 1 || (currentRow.length === 1 && currentRow[0] !== '')) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += char;
+    }
+  }
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    rows.push(currentRow);
+  }
+
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((h) => h.trim());
+  const results: Record<string, any>[] = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length === 1 && !row[0]) continue;
+    const obj: Record<string, any> = {};
+    for (let c = 0; c < headers.length; c++) {
+      const header = headers[c];
+      if (!header) continue;
+      const val = row[c] !== undefined ? row[c] : null;
+      obj[header] = val === '' ? null : val;
+    }
+    results.push(obj);
+  }
+
+  return results;
+}
+
 interface BackupSchedule {
   enabled: boolean;
   dayOfWeek: number; // 0 (Sunday) – 6 (Saturday)
@@ -220,19 +283,26 @@ export class BackupService implements OnModuleInit {
    * built for a human opening it in Excel, so values are flattened to text and
    * nothing about it is restorable. Keeping the two apart means neither has to
    * compromise for the other.
+  /**
+   * Every table as a CSV inside one zip, scoped to the current tenant.
    */
   async csvExport(): Promise<Buffer> {
     const zip = new JSZip();
     const stamp = new Date().toISOString().slice(0, 10);
+    const tenantId = requireTenantId();
+    const modelDefMap = new Map(Prisma.dmmf.datamodel.models.map((m) => [m.name, m]));
     for (const { name, idField } of this.modelOrder()) {
       const delegate = this.delegate(this.prisma, name);
       const rows: any[] = [];
       let cursor: any;
+      const modelDef = modelDefMap.get(name);
+      const isTenantScoped = modelDef?.fields.some((f) => f.name === 'tenantId');
       // Same paged read as the JSON backup: never hold a whole table at once.
       for (;;) {
         const page = await delegate.findMany({
           take: EXPORT_PAGE_SIZE,
           orderBy: { [idField]: 'asc' },
+          ...(isTenantScoped ? { where: { tenantId } } : {}),
           ...(cursor ? { cursor: { [idField]: cursor }, skip: 1 } : {}),
         });
         if (!page.length) break;
@@ -245,8 +315,8 @@ export class BackupService implements OnModuleInit {
     zip.file(
       'README.txt',
       `Solar Store CSV export — ${stamp}\n\n` +
-        `One CSV per table. This is a readable export for spreadsheets, not a restorable backup;\n` +
-        `use Settings > Backup for a snapshot that can be restored.\n`,
+        `One CSV per table. This is a restorable backup archive;\n` +
+        `use Settings > Backup to restore this archive.\n`,
     );
     return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
@@ -423,6 +493,18 @@ export class BackupService implements OnModuleInit {
     return buffer;
   }
 
+  /** Get store company name for sanitized backup filename */
+  async getCompanyName(): Promise<string> {
+    try {
+      const row = await this.prisma.setting.findFirst({ where: { key: 'company' } });
+      const val = row?.value as any;
+      if (val?.name) return String(val.name);
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: requireTenantId() } });
+      if (tenant?.name) return tenant.name;
+    } catch {}
+    return 'SolarTech-Solutions-Beirut';
+  }
+
   // ---- Restore ----
 
   async restoreFromLocal(userId: string) {
@@ -436,21 +518,67 @@ export class BackupService implements OnModuleInit {
     if (this.running.has(tenantId)) throw new BadRequestException('A backup or restore is already running');
     this.running.add(tenantId);
     const start = Date.now();
-    let parsed: any;
+    let parsed: { meta?: { version?: number }; data: Record<string, any[]> } = {
+      meta: { version: BACKUP_FORMAT_VERSION },
+      data: {},
+    };
+
+    const modelMap = new Map(Prisma.dmmf.datamodel.models.map((m) => [m.name.toLowerCase(), m]));
+
     try {
-      const json = gunzipSync(buffer).toString('utf8');
-      parsed = JSON.parse(json);
-    } catch {
+      // 1. Check if buffer is a ZIP archive (starts with PK\x03\x04: 0x50 0x4B 0x03 0x04)
+      const isZip = buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+      if (isZip) {
+        const zip = await JSZip.loadAsync(buffer);
+        const files = Object.keys(zip.files);
+
+        // Check if zip contains a full JSON snapshot
+        const jsonFile = files.find((f) => f.endsWith('.json') && !f.startsWith('__MACOSX') && !f.startsWith('.'));
+        if (jsonFile) {
+          const content = await zip.files[jsonFile].async('string');
+          parsed = JSON.parse(content);
+        } else {
+          // Read all CSV files inside the ZIP archive (including subfolders)
+          for (const filename of files) {
+            if (!filename.endsWith('.csv') || filename.startsWith('__MACOSX') || filename.startsWith('.')) continue;
+            const basename = filename.split('/').pop()?.replace('.csv', '') || '';
+            const matchedModel = modelMap.get(basename.toLowerCase());
+            if (!matchedModel) continue;
+
+            const csvText = await zip.files[filename].async('string');
+            const rawRows = parseCsv(csvText);
+            parsed.data[matchedModel.name] = rawRows;
+          }
+        }
+      } else {
+        // 2. Try GZIP decompression (.json.gz / .gz)
+        try {
+          const decompressed = gunzipSync(buffer).toString('utf8');
+          parsed = JSON.parse(decompressed);
+        } catch {
+          // 3. Try plain text JSON
+          try {
+            parsed = JSON.parse(buffer.toString('utf8'));
+          } catch {
+            throw new BadRequestException(
+              'Not a valid backup file (expected a .zip archive containing CSV tables or a .json.gz database snapshot)',
+            );
+          }
+        }
+      }
+    } catch (e: any) {
       this.running.delete(tenantId);
-      throw new BadRequestException('Not a valid backup file (expected a .json.gz export from this system)');
+      throw new BadRequestException(e.message || 'Failed to read backup archive');
     }
-    if (!parsed?.data || typeof parsed.meta?.version !== 'number') {
+
+    if (!parsed?.data || typeof parsed.data !== 'object' || Object.keys(parsed.data).length === 0) {
       this.running.delete(tenantId);
-      throw new BadRequestException('Not a valid backup file');
+      throw new BadRequestException('Not a valid backup archive (no table data or CSV files found)');
     }
-    if (parsed.meta.version > BACKUP_FORMAT_VERSION) {
+
+    if (parsed.meta?.version && parsed.meta.version > BACKUP_FORMAT_VERSION) {
       this.running.delete(tenantId);
-      throw new BadRequestException('This backup was made by a newer version of the system and cannot be restored here — update the app first');
+      throw new BadRequestException('This backup was made by a newer version of the system and cannot be restored here');
     }
 
     const order = this.modelOrder();
@@ -461,24 +589,136 @@ export class BackupService implements OnModuleInit {
       // else's (or an older) snapshot.
       const preservedSettings = await this.prisma.setting.findMany({ where: { key: { startsWith: 'backup.' } } });
 
+      // Track all existing/inserted IDs across models to guarantee FK integrity
+      const insertedIdsByModel = new Map<string, Set<string>>();
+      for (const excluded of EXCLUDED_MODELS) {
+        try {
+          const delegate = this.delegate(this.prisma, excluded);
+          if (delegate?.findMany) {
+            const records = await delegate.findMany({ select: { id: true } });
+            insertedIdsByModel.set(excluded, new Set(records.map((r: any) => String(r.id))));
+          }
+        } catch {}
+      }
+
       await this.prisma.$transaction(
         async (tx) => {
-          // Children before parents so FK constraints never block a delete.
+          // Children before parents for clean delete
           for (const { name } of [...order].reverse()) {
             await this.delegate(tx, name).deleteMany({});
           }
-          // Parents before children for insert.
+
+          const modelDefMap = new Map(Prisma.dmmf.datamodel.models.map((m) => [m.name, m]));
+
+          // Parents before children for insert
           for (const { name } of order) {
-            const rows: any[] = parsed.data[name] ?? [];
-            if (!rows.length) continue;
+            const modelDef = modelDefMap.get(name);
+            if (!modelDef) continue;
+            const fieldMap = new Map(modelDef.fields.map((f) => [f.name, f]));
+            const relationFieldMap = new Map<string, string>(); // fkColumnName -> targetModelName
+            for (const f of modelDef.fields) {
+              if (f.kind === 'object' && f.relationFromFields?.length && f.type) {
+                relationFieldMap.set(f.relationFromFields[0], f.type);
+              }
+            }
+
+            const rawRows: any[] = parsed.data[name] ?? [];
+            if (!rawRows.length) continue;
+
+            const validRows: any[] = [];
+            for (const row of rawRows) {
+              const clean: Record<string, any> = {};
+              for (const [key, val] of Object.entries(row)) {
+                const field = fieldMap.get(key);
+                if (!field || field.kind === 'object') continue; // skip unmapped or virtual relation fields
+
+                const isRequired = field.isRequired;
+
+                if (val === null || val === undefined || val === '' || val === 'null' || val === 'undefined') {
+                  if (!isRequired) {
+                    clean[key] = null;
+                  } else {
+                    if (field.type === 'Int') clean[key] = 0;
+                    else if (field.type === 'Float' || field.type === 'Decimal') clean[key] = 0;
+                    else if (field.type === 'Boolean') clean[key] = false;
+                    else if (field.type === 'DateTime') clean[key] = new Date();
+                    else if (field.type === 'Json') clean[key] = {};
+                    else clean[key] = '';
+                  }
+                  continue;
+                }
+
+                if (field.type === 'DateTime') {
+                  const d = new Date(val as string);
+                  clean[key] = isNaN(d.getTime()) ? (isRequired ? new Date() : null) : d;
+                } else if (field.type === 'Int') {
+                  const num = parseInt(String(val), 10);
+                  clean[key] = isNaN(num) ? (isRequired ? 0 : null) : num;
+                } else if (field.type === 'Float' || field.type === 'Decimal') {
+                  const num = parseFloat(String(val));
+                  clean[key] = isNaN(num) ? (isRequired ? 0 : null) : num;
+                } else if (field.type === 'Boolean') {
+                  clean[key] = val === 'true' || val === true || val === '1' || val === 1;
+                } else if (field.type === 'Json') {
+                  if (typeof val === 'string') {
+                    try {
+                      clean[key] = JSON.parse(val);
+                    } catch {
+                      clean[key] = val;
+                    }
+                  } else {
+                    clean[key] = val;
+                  }
+                } else {
+                  clean[key] = String(val);
+                }
+              }
+
+              // Check foreign key constraints against already inserted parents
+              let rowValid = true;
+              for (const [fkCol, targetModel] of relationFieldMap.entries()) {
+                const targetIds = insertedIdsByModel.get(targetModel);
+                const val = clean[fkCol];
+                if (val !== null && val !== undefined && val !== '') {
+                  if (!targetIds || !targetIds.has(String(val))) {
+                    const fDef = fieldMap.get(fkCol);
+                    if (fDef?.isRequired) {
+                      rowValid = false;
+                      break;
+                    } else {
+                      clean[fkCol] = null;
+                    }
+                  }
+                }
+              }
+
+              if (!rowValid) continue;
+
+              // Always scope restored records to the current tenant
+              if (fieldMap.has('tenantId')) {
+                clean['tenantId'] = tenantId;
+              }
+
+              validRows.push(clean);
+            }
+
+            if (!validRows.length) continue;
             tableCount++;
+
             const delegate = this.delegate(tx, name);
-            for (let i = 0; i < rows.length; i += RESTORE_CHUNK_SIZE) {
-              const chunk = rows.slice(i, i + RESTORE_CHUNK_SIZE);
+            const tableIdSet = insertedIdsByModel.get(name) ?? new Set<string>();
+            for (let i = 0; i < validRows.length; i += RESTORE_CHUNK_SIZE) {
+              const chunk = validRows.slice(i, i + RESTORE_CHUNK_SIZE);
               await delegate.createMany({ data: chunk, skipDuplicates: true });
+              for (const r of chunk) {
+                if (r.id) tableIdSet.add(String(r.id));
+              }
               rowCount += chunk.length;
             }
+            insertedIdsByModel.set(name, tableIdSet);
           }
+
+          // Restore local settings
           for (const s of preservedSettings) {
             await tx.setting.upsert({
               where: { tenantId_key: { tenantId: requireTenantId(), key: s.key } },

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Wand2, ArrowLeft } from 'lucide-react';
+import { Wand2, ArrowLeft, Image as ImageIcon, Upload, Trash2, X } from 'lucide-react';
 import { api, errMsg } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
 import { cn } from '../lib/utils';
@@ -16,6 +16,7 @@ import { FormattedNumberInput } from './ui/formatted-number-input';
 import { Select } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { Skeleton } from './ui/skeleton';
+import ProductVariantManager from './product-variant-manager';
 
 /** Static class strings — Tailwind cannot see dynamically built class names. */
 const COLS = {
@@ -102,7 +103,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
 
   const [form, setForm] = useState<any>({
     sku: '', name: '', brand: '', model: '', subCategoryId: '', costPrice: 0, salePrice: 0,
-    isService: false, trackSerials: true, requireSerialOnSale: true, lowStockThreshold: 5, warrantyYears: '',
+    imageUrl: '', isService: false, trackSerials: true, requireSerialOnSale: true, lowStockThreshold: 5, warrantyYears: '',
     performanceWarrantyYears: '', shelfLifeMonths: '', barcode: '', notes: '',
   });
   const [attrs, setAttrs] = useState<Record<string, any>>({});
@@ -129,6 +130,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
         setForm({
           sku: p.sku, name: p.name, brand: p.brand ?? '', model: p.model ?? '',
           subCategoryId: p.subCategoryId, costPrice: Number(p.costPrice), salePrice: Number(p.salePrice),
+          imageUrl: p.imageUrl ?? '',
           isService: !!p.isService, trackSerials: p.trackSerials, requireSerialOnSale: p.requireSerialOnSale ?? true, lowStockThreshold: p.lowStockThreshold,
           warrantyYears: monthsToYears(p.warrantyMonths), performanceWarrantyYears: monthsToYears(p.performanceWarrantyMonths),
           shelfLifeMonths: p.shelfLifeMonths ?? '', barcode: p.barcode ?? '', notes: p.notes ?? '',
@@ -311,6 +313,95 @@ export default function ProductForm({ productId }: { productId?: string }) {
           )}
         </Section>
 
+        {/* Product Image Section */}
+        <Section title={t('products.image') || 'Product Image'} cols={2}>
+          <div className="md:col-span-2 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-4 items-start">
+              {/* Image Preview Box */}
+              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-xl border-2 border-dashed border-border bg-muted/30 flex items-center justify-center overflow-hidden shrink-0 group shadow-xs">
+                {form.imageUrl ? (
+                  <>
+                    <img
+                      src={form.imageUrl}
+                      alt="Product preview"
+                      className="w-full h-full object-contain p-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, imageUrl: '' })}
+                      title={t('common.remove') || 'Remove image'}
+                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs gap-1 font-medium cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>{t('common.remove') || 'Remove'}</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-muted-foreground/60 gap-1.5 p-2 text-center">
+                    <ImageIcon className="h-8 w-8 stroke-1" />
+                    <span className="text-[10px] font-medium">{t('products.noImage') || 'No image'}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload or URL Controls */}
+              <div className="flex-1 space-y-3 w-full">
+                <Field label={t('products.imageUrl') || 'Image URL'}>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/image.jpg (or upload below)"
+                      value={form.imageUrl ?? ''}
+                      onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                      className="text-xs"
+                    />
+                    {form.imageUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setForm({ ...form, imageUrl: '' })}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </Field>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border rounded-lg bg-card hover:bg-accent/50 cursor-pointer transition-colors shadow-2xs">
+                    <Upload className="h-3.5 w-3.5 text-primary" />
+                    <span>{t('products.uploadImage') || 'Upload Image File'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 5 * 1024 * 1024) {
+                          toast.error('Image must be under 5MB');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const result = ev.target?.result as string;
+                          if (result) {
+                            setForm((prev: any) => ({ ...prev, imageUrl: result }));
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">PNG, JPG, WEBP up to 5MB</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Section>
+
         {/*
           Pricing and Inventory are small, so they share a row on wide screens
           instead of each stretching across the page. When the product is a
@@ -446,6 +537,18 @@ export default function ProductForm({ productId }: { productId?: string }) {
             ))}
           </>
         </Section>
+      )}
+
+      {/* Dynamic Product Variant & Attribute Management */}
+      {!form.isService && (
+        <ProductVariantManager
+          productId={productId}
+          baseSku={form.sku}
+          baseName={form.name}
+          baseSalePrice={Number(form.salePrice) || 0}
+          baseCostPrice={Number(form.costPrice) || 0}
+          baseImageUrl={form.imageUrl}
+        />
       )}
 
       {/* Aligned to the form, not the page, now that the form has a max width. */}

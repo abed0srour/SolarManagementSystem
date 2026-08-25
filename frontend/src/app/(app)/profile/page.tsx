@@ -33,13 +33,21 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default function ProfilePage() {
   const t = useTranslations();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [companyName, setCompanyName] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  const load = () =>
+  const load = () => {
     api
       .get('/auth/profile')
       .then((r) => setProfile(r.data))
       .catch((e) => setError(errMsg(e)));
+    api
+      .get('/settings')
+      .then((r) => {
+        if (r.data?.company?.name) setCompanyName(r.data.company.name);
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     load();
@@ -99,7 +107,7 @@ export default function ProfilePage() {
               <Skeleton className="h-6 w-full" />
             ) : profile.tenant ? (
               <>
-                <Row label={t('superadmin.storeName')} value={profile.tenant.name} />
+                <Row label={t('superadmin.storeName')} value={companyName || profile.tenant.name} />
                 <Row label={t('superadmin.statusLabel')} value={t(`superadmin.status.${profile.tenant.status}`)} />
                 <Row
                   label={t('auth.lastSignIn')}

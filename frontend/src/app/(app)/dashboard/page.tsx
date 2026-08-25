@@ -2,7 +2,7 @@
 import {
   ChevronLeft, ChevronRight, CalendarDays, ArrowUp, ArrowDown, Minus,
   Sparkles, Layers, TrendingUp, Package, Clock, ArrowRight, ShieldCheck, Zap,
-  Sun, HandCoins, CreditCard, BarChart3, Table2, RefreshCw,
+  Sun, HandCoins, CreditCard, BarChart3, Table2, RefreshCw, LayoutDashboard,
 } from 'lucide-react';
 import { ElementType, ReactNode, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -634,7 +634,7 @@ function TablePagination({
   );
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 export default function DashboardPage() {
   const t = useTranslations();
@@ -645,6 +645,8 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'classic' | 'pro'>('pro');
   const [productsPage, setProductsPage] = useState(1);
   const [clientsPage, setClientsPage] = useState(1);
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [trendPage, setTrendPage] = useState(1);
   const [trendView, setTrendView] = useState<'chart' | 'table'>('chart');
   const [user, setUserState] = useState<any>(null);
 
@@ -695,7 +697,7 @@ export default function DashboardPage() {
   const orderStatus = (data?.orderStatus ?? []).filter((s: any) => s.count > 0);
   const collectionMix = (data?.collectionMix ?? []).filter((s: any) => s.value > 0);
 
-  // Pagination calculations
+  // Pagination calculations (Top 5 items per page)
   const allTopProducts = data?.topProducts ?? [];
   const totalProductsPages = Math.max(1, Math.ceil(allTopProducts.length / PAGE_SIZE));
   const pagedProducts = allTopProducts.slice((productsPage - 1) * PAGE_SIZE, productsPage * PAGE_SIZE);
@@ -703,6 +705,10 @@ export default function DashboardPage() {
   const allTopClients = data?.topClients ?? [];
   const totalClientsPages = Math.max(1, Math.ceil(allTopClients.length / PAGE_SIZE));
   const pagedClients = allTopClients.slice((clientsPage - 1) * PAGE_SIZE, clientsPage * PAGE_SIZE);
+
+  const allTransactions = data?.recentTransactions ?? [];
+  const totalTransactionsPages = Math.max(1, Math.ceil(allTransactions.length / PAGE_SIZE));
+  const pagedTransactions = allTransactions.slice((transactionsPage - 1) * PAGE_SIZE, transactionsPage * PAGE_SIZE);
 
   const sparkRevenue = (data?.salesByDay ?? []).map((d: any) => d.total);
   const sparkCollected = (data?.salesByDay ?? []).map((d: any) => d.collected ?? d.total * 0.8);
@@ -713,6 +719,10 @@ export default function DashboardPage() {
   const prevLabel = useMemo(() => periodRange(gran, shift(gran, anchor, -1)).label, [gran, anchor]);
 
   const trend = useMemo(() => buildTrend(data?.salesByDay ?? [], gran, from, to), [data, gran, from, to]);
+
+  const activeTrend = useMemo(() => trend.filter((p) => p.count > 0), [trend]);
+  const totalTrendPages = Math.max(1, Math.ceil(activeTrend.length / PAGE_SIZE));
+  const pagedTrend = activeTrend.slice((trendPage - 1) * PAGE_SIZE, trendPage * PAGE_SIZE);
 
   /** Both series share one axis, so the ceiling is the taller of the two. */
   const trendTicks = useMemo(() => niceTicks(Math.max(0, ...trend.map((p) => p.total))), [trend]);
@@ -804,8 +814,6 @@ export default function DashboardPage() {
       tone: (data?.kpis?.openClaims ?? 0) > 0 ? 'warning' : 'good',
       href: '/warranty',
     },
-    { key: 'activeSystems', icon: Sun, label: t('dashboard.activeSystems'), value: String(data?.kpis?.activeInstallations ?? 0), href: '/installations' },
-    { key: 'energy', icon: Zap, label: t('dashboard.energyProduced'), value: `${compact(data?.kpis?.energyKwh ?? 0)} kWh`, href: '/monitoring' },
   ];
 
   return (
@@ -813,20 +821,24 @@ export default function DashboardPage() {
       {/* The one filter row, above everything it scopes: change the period here
        * and every tile, chart and table below re-renders against the same
        * slice. No card carries a filter of its own. */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-              {t('dashboard.welcomeBack')}, <span className="text-primary">{userName}</span>
-            </h1>
-            <Badge variant="default" className="gap-1.5">
-              {viewMode === 'pro' ? <Sparkles className="h-3 w-3" /> : <Layers className="h-3 w-3" />}
-              {viewMode === 'pro' ? t('dashboard.proView') : t('dashboard.classicView')}
-            </Badge>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-2xs border border-primary/20">
+            <LayoutDashboard className="h-5 w-5" />
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t('dashboard.showingPeriod')}: <span className="font-medium text-foreground">{label}</span>
-          </p>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">
+                {t('dashboard.title')}
+              </h1>
+              <Badge variant="outline" className="text-[11px] font-medium bg-muted/40 text-muted-foreground border-border/60">
+                {label}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t('subtitles.dashboard')}
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -861,12 +873,12 @@ export default function DashboardPage() {
           >
             {viewMode === 'pro' ? (
               <>
-                <Layers className="h-4 w-4" />
+                <Layers className="h-4 w-4 text-muted-foreground" />
                 <span>{t('dashboard.classicView')}</span>
               </>
             ) : (
               <>
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-4 w-4 text-primary" />
                 <span>{t('dashboard.proView')}</span>
               </>
             )}
@@ -1024,7 +1036,7 @@ export default function DashboardPage() {
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="max-h-[268px] overflow-y-auto">
+                  <div>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -1035,28 +1047,33 @@ export default function DashboardPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {trend.filter((p) => p.count > 0).length === 0 ? (
+                        {pagedTrend.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
                               {t('dashboard.noSales')}
                             </TableCell>
                           </TableRow>
                         ) : (
-                          trend
-                            .filter((p) => p.count > 0)
-                            .map((p) => (
-                              <TableRow key={p.key}>
-                                <TableCell className="text-xs tabular-nums text-muted-foreground">{p.full}</TableCell>
-                                <TableCell className="text-end text-sm font-semibold tabular-nums">
-                                  {fmtMoney(p.total)}
-                                </TableCell>
-                                <TableCell className="text-end text-sm tabular-nums">{fmtMoney(p.collected)}</TableCell>
-                                <TableCell className="text-end text-sm tabular-nums">{p.count}</TableCell>
-                              </TableRow>
-                            ))
+                          pagedTrend.map((p) => (
+                            <TableRow key={p.key}>
+                              <TableCell className="text-xs tabular-nums text-muted-foreground">{p.full}</TableCell>
+                              <TableCell className="text-end text-sm font-semibold tabular-nums">
+                                {fmtMoney(p.total)}
+                              </TableCell>
+                              <TableCell className="text-end text-sm tabular-nums">{fmtMoney(p.collected)}</TableCell>
+                              <TableCell className="text-end text-sm tabular-nums">{p.count}</TableCell>
+                            </TableRow>
+                          ))
                         )}
                       </TableBody>
                     </Table>
+                    <TablePagination
+                      page={trendPage}
+                      totalPages={totalTrendPages}
+                      totalItems={activeTrend.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setTrendPage}
+                    />
                   </div>
                 )}
               </div>
@@ -1212,7 +1229,7 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.recentTransactions.slice(0, 8).map((tx: any) => {
+                    {pagedTransactions.map((tx: any) => {
                       const paidShare = tx.total > 0 ? Math.min(1, Math.max(0, tx.paidAmount / tx.total)) : 0;
                       return (
                         <TableRow
@@ -1256,6 +1273,13 @@ export default function DashboardPage() {
                   </TableBody>
                 </Table>
               </CardContent>
+              <TablePagination
+                page={transactionsPage}
+                totalPages={totalTransactionsPages}
+                totalItems={allTransactions.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setTransactionsPage}
+              />
             </Card>
           )}
 

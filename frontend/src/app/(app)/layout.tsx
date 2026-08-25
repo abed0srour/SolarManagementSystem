@@ -70,14 +70,6 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
     ],
   },
   {
-    group: 'solar',
-    items: [
-      { key: 'installations', href: '/installations', icon: Sun },
-      { key: 'monitoring', href: '/monitoring', icon: Activity },
-      { key: 'calculator', href: '/calculator', icon: Calculator },
-    ],
-  },
-  {
     group: 'system',
     items: [
       { key: 'workers', href: '/workers', icon: HardHat },
@@ -140,8 +132,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         router.replace('/superadmin/dashboard');
         return;
       }
-      setUserName(claims.email ?? '');
+      setUserName(claims.fullName || claims.email || '');
       setReady(true);
+      // Fetch full profile to display Full Name in top navbar
+      api
+        .get('/profile')
+        .then((res) => {
+          if (res.data?.fullName) {
+            setUserName(res.data.fullName);
+          }
+        })
+        .catch(() => {});
     });
     // Branding (store name, tagline, logo) comes from the admin settings.
     // Painted from cache first so the header never flashes empty, then
@@ -193,6 +194,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Auto-expand the section containing the active route
   useEffect(() => {
+    if (
+      pathname === '/installations' ||
+      pathname.startsWith('/installations/') ||
+      pathname === '/monitoring' ||
+      pathname.startsWith('/monitoring/') ||
+      pathname === '/calculator' ||
+      pathname.startsWith('/calculator/')
+    ) {
+      router.replace('/dashboard');
+      return;
+    }
+
     if (!activeHref) return;
     const activeSection = NAV.find((s) => s.items.some((i) => i.href === activeHref));
     if (!activeSection) return;
@@ -204,7 +217,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, [activeHref]);
+  }, [activeHref, pathname, router]);
 
   if (!ready)
     return (

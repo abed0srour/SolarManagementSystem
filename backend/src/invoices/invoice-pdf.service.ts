@@ -1,14 +1,259 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
-import { readFile } from 'fs/promises';
-import { basename, join } from 'path';
+import { PDFDocument, PDFFont, PDFPage, StandardFonts, degrees, rgb } from 'pdf-lib';
+import { basename } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../common/storage';
 
-const DARK = rgb(0.13, 0.15, 0.19);
-const GRAY = rgb(0.45, 0.48, 0.53);
-const LIGHT = rgb(0.82, 0.84, 0.87);
-const BAND = rgb(0.955, 0.96, 0.97);
+export type HeaderLayout = 'MODERN_SPLIT' | 'CENTERED_BANNER' | 'CLEAN_MINIMAL';
+export type TableStyle = 'STRIPED' | 'BORDERED' | 'MINIMAL_DIVIDERS';
+export type FontFamilyOption = 'Helvetica' | 'TimesRoman' | 'Courier';
+export type LogoSizeOption = 'SMALL' | 'MEDIUM' | 'LARGE' | 'XLARGE';
+export type FontWeightOption = 'REGULAR' | 'BOLD' | 'EXTRA_BOLD';
+
+export interface PdfThemeConfig {
+  presetId?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  darkColor?: string;
+  grayColor?: string;
+  lightColor?: string;
+  bandColor?: string;
+  headerLayout?: HeaderLayout;
+  tableStyle?: TableStyle;
+  fontFamily?: FontFamilyOption;
+  fontWeight?: FontWeightOption;
+  logoSize?: LogoSizeOption;
+  logoScale?: number;
+  footerNote?: string;
+  showLogo?: boolean;
+  showSignature?: boolean;
+  signatureTitle?: string;
+  signatureSignerName?: string;
+  showWatermark?: boolean;
+  watermarkText?: string;
+}
+
+export interface ResolvedPdfTheme {
+  primary: ReturnType<typeof rgb>;
+  secondary: ReturnType<typeof rgb>;
+  dark: ReturnType<typeof rgb>;
+  gray: ReturnType<typeof rgb>;
+  light: ReturnType<typeof rgb>;
+  band: ReturnType<typeof rgb>;
+  headerLayout: HeaderLayout;
+  tableStyle: TableStyle;
+  fontFamily: FontFamilyOption;
+  fontWeight: FontWeightOption;
+  logoSize: LogoSizeOption;
+  logoScale: number;
+  footerNote?: string;
+  showLogo: boolean;
+  showSignature: boolean;
+  signatureTitle?: string;
+  signatureSignerName?: string;
+  showWatermark?: boolean;
+  watermarkText?: string;
+}
+
+export const PDF_PRESETS: Record<
+  string,
+  Required<
+    Omit<
+      PdfThemeConfig,
+      'presetId' | 'footerNote' | 'watermarkText' | 'signatureTitle' | 'signatureSignerName'
+    >
+  >
+> = {
+  classic_default: {
+    primaryColor: '#161615',
+    secondaryColor: '#71717A',
+    darkColor: '#161615',
+    grayColor: '#71717A',
+    lightColor: '#E4E4E7',
+    bandColor: '#F4F4F5',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'MINIMAL_DIVIDERS',
+    fontFamily: 'Helvetica',
+    fontWeight: 'BOLD',
+    logoSize: 'MEDIUM',
+    logoScale: 100,
+    showLogo: true,
+    showSignature: false,
+    showWatermark: false,
+  },
+  executive_slate: {
+    primaryColor: '#1E293B',
+    secondaryColor: '#475569',
+    darkColor: '#0F172A',
+    grayColor: '#64748B',
+    lightColor: '#E2E8F0',
+    bandColor: '#F1F5F9',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'MINIMAL_DIVIDERS',
+    fontFamily: 'Helvetica',
+    fontWeight: 'EXTRA_BOLD',
+    logoSize: 'MEDIUM',
+    logoScale: 100,
+    showLogo: true,
+    showSignature: true,
+    showWatermark: false,
+  },
+  corporate_navy: {
+    primaryColor: '#1E3A8A',
+    secondaryColor: '#475569',
+    darkColor: '#0F172A',
+    grayColor: '#64748B',
+    lightColor: '#CBD5E1',
+    bandColor: '#F8FAFC',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'MINIMAL_DIVIDERS',
+    fontFamily: 'Helvetica',
+    fontWeight: 'BOLD',
+    logoSize: 'MEDIUM',
+    logoScale: 100,
+    showLogo: true,
+    showSignature: true,
+    showWatermark: false,
+  },
+  modern_minimal: {
+    primaryColor: '#0F172A',
+    secondaryColor: '#334155',
+    darkColor: '#020617',
+    grayColor: '#64748B',
+    lightColor: '#E2E8F0',
+    bandColor: '#F8FAFC',
+    headerLayout: 'CLEAN_MINIMAL',
+    tableStyle: 'MINIMAL_DIVIDERS',
+    fontFamily: 'Helvetica',
+    fontWeight: 'REGULAR',
+    logoSize: 'SMALL',
+    logoScale: 60,
+    showLogo: false,
+    showSignature: false,
+    showWatermark: false,
+  },
+  emerald_growth: {
+    primaryColor: '#047857',
+    secondaryColor: '#059669',
+    darkColor: '#064E3B',
+    grayColor: '#475569',
+    lightColor: '#A7F3D0',
+    bandColor: '#F0FDF4',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'STRIPED',
+    fontFamily: 'Helvetica',
+    fontWeight: 'BOLD',
+    logoSize: 'LARGE',
+    logoScale: 135,
+    showLogo: true,
+    showSignature: false,
+    showWatermark: false,
+  },
+  solar_amber: {
+    primaryColor: '#D97706',
+    secondaryColor: '#B45309',
+    darkColor: '#1C1917',
+    grayColor: '#78716C',
+    lightColor: '#FDE68A',
+    bandColor: '#FFFBEB',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'MINIMAL_DIVIDERS',
+    fontFamily: 'Helvetica',
+    fontWeight: 'EXTRA_BOLD',
+    logoSize: 'LARGE',
+    logoScale: 135,
+    showLogo: true,
+    showSignature: true,
+    showWatermark: false,
+  },
+  retail_ruby: {
+    primaryColor: '#BE123C',
+    secondaryColor: '#E11D48',
+    darkColor: '#18181B',
+    grayColor: '#71717A',
+    lightColor: '#FECDD3',
+    bandColor: '#FFF1F2',
+    headerLayout: 'CENTERED_BANNER',
+    tableStyle: 'BORDERED',
+    fontFamily: 'Helvetica',
+    fontWeight: 'BOLD',
+    logoSize: 'MEDIUM',
+    logoScale: 100,
+    showLogo: true,
+    showSignature: false,
+    showWatermark: false,
+  },
+  royal_indigo: {
+    primaryColor: '#4338CA',
+    secondaryColor: '#6366F1',
+    darkColor: '#1E1B4B',
+    grayColor: '#64748B',
+    lightColor: '#C7D2FE',
+    bandColor: '#EEF2FF',
+    headerLayout: 'MODERN_SPLIT',
+    tableStyle: 'STRIPED',
+    fontFamily: 'Helvetica',
+    fontWeight: 'BOLD',
+    logoSize: 'MEDIUM',
+    logoScale: 100,
+    showLogo: true,
+    showSignature: true,
+    showWatermark: false,
+  },
+  luxury_gold: {
+    primaryColor: '#B45309',
+    secondaryColor: '#9A3412',
+    darkColor: '#1C1917',
+    grayColor: '#78716C',
+    lightColor: '#FDE68A',
+    bandColor: '#FEF3C7',
+    headerLayout: 'CENTERED_BANNER',
+    tableStyle: 'BORDERED',
+    fontFamily: 'TimesRoman',
+    fontWeight: 'BOLD',
+    logoSize: 'LARGE',
+    logoScale: 140,
+    showLogo: true,
+    showSignature: true,
+    showWatermark: false,
+  },
+  classic_monochrome: {
+    primaryColor: '#111827',
+    secondaryColor: '#374151',
+    darkColor: '#000000',
+    grayColor: '#4B5563',
+    lightColor: '#D1D5DB',
+    bandColor: '#F3F4F6',
+    headerLayout: 'CLEAN_MINIMAL',
+    tableStyle: 'BORDERED',
+    fontFamily: 'TimesRoman',
+    fontWeight: 'REGULAR',
+    logoSize: 'SMALL',
+    logoScale: 60,
+    showLogo: false,
+    showSignature: true,
+    showWatermark: false,
+  },
+};
+
+function hexToRgb(hex = '#000000', fallback = rgb(0.1, 0.1, 0.1)) {
+  try {
+    const clean = hex.replace('#', '').trim();
+    if (clean.length === 3) {
+      const r = parseInt(clean[0] + clean[0], 16) / 255;
+      const g = parseInt(clean[1] + clean[1], 16) / 255;
+      const b = parseInt(clean[2] + clean[2], 16) / 255;
+      return isNaN(r) || isNaN(g) || isNaN(b) ? fallback : rgb(r, g, b);
+    }
+    if (clean.length === 6) {
+      const r = parseInt(clean.substring(0, 2), 16) / 255;
+      const g = parseInt(clean.substring(2, 4), 16) / 255;
+      const b = parseInt(clean.substring(4, 6), 16) / 255;
+      return isNaN(r) || isNaN(g) || isNaN(b) ? fallback : rgb(r, g, b);
+    }
+  } catch {}
+  return fallback;
+}
 
 @Injectable()
 export class InvoicePdfService {
@@ -19,15 +264,76 @@ export class InvoicePdfService {
 
   private async company() {
     const setting = await this.prisma.setting.findFirst({ where: { key: 'company' } });
-    return (setting?.value as any) ?? { name: 'Solar Store' };
+    return (setting?.value as any) ?? { name: 'Business Store' };
   }
 
-  /** Try to embed the company logo (uploaded via settings) into the document. */
+  /** Resolves tenant's active PDF theme configuration. */
+  async getTheme(override?: Partial<PdfThemeConfig>): Promise<ResolvedPdfTheme> {
+    const setting = await this.prisma.setting.findFirst({ where: { key: 'pdf_theme' } });
+    const stored = (setting?.value as PdfThemeConfig) || {};
+
+    const presetKey = override?.presetId || stored.presetId || 'classic_default';
+    const preset = PDF_PRESETS[presetKey] || PDF_PRESETS.classic_default;
+
+    const merged: PdfThemeConfig = {
+      ...preset,
+      ...stored,
+      ...override,
+    };
+
+    const computedScale =
+      typeof merged.logoScale === 'number' && !isNaN(merged.logoScale)
+        ? merged.logoScale
+        : merged.logoSize === 'SMALL'
+          ? 60
+          : merged.logoSize === 'LARGE'
+            ? 135
+            : merged.logoSize === 'XLARGE'
+              ? 170
+              : 100;
+
+    return {
+      primary: hexToRgb(merged.primaryColor, rgb(0.09, 0.09, 0.08)),
+      secondary: hexToRgb(merged.secondaryColor, rgb(0.44, 0.44, 0.48)),
+      dark: hexToRgb(merged.darkColor, rgb(0.09, 0.09, 0.08)),
+      gray: hexToRgb(merged.grayColor, rgb(0.44, 0.44, 0.48)),
+      light: hexToRgb(merged.lightColor, rgb(0.89, 0.89, 0.9)),
+      band: hexToRgb(merged.bandColor, rgb(0.96, 0.96, 0.96)),
+      headerLayout: merged.headerLayout || 'MODERN_SPLIT',
+      tableStyle: merged.tableStyle || 'MINIMAL_DIVIDERS',
+      fontFamily: merged.fontFamily || 'Helvetica',
+      fontWeight: merged.fontWeight || 'BOLD',
+      logoSize: merged.logoSize || 'MEDIUM',
+      logoScale: computedScale,
+      footerNote: merged.footerNote,
+      showLogo: merged.showLogo !== false,
+      showSignature: merged.showSignature === true,
+      signatureTitle: merged.signatureTitle || 'Authorized Signature & Stamp',
+      signatureSignerName: merged.signatureSignerName,
+      showWatermark: merged.showWatermark,
+      watermarkText: merged.watermarkText,
+    };
+  }
+
+  private async embedFonts(pdf: PDFDocument, family: FontFamilyOption = 'Helvetica') {
+    if (family === 'TimesRoman') {
+      const font = await pdf.embedFont(StandardFonts.TimesRoman);
+      const bold = await pdf.embedFont(StandardFonts.TimesRomanBold);
+      return { font, bold };
+    }
+    if (family === 'Courier') {
+      const font = await pdf.embedFont(StandardFonts.Courier);
+      const bold = await pdf.embedFont(StandardFonts.CourierBold);
+      return { font, bold };
+    }
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    return { font, bold };
+  }
+
   private async embedLogo(pdf: PDFDocument, logoUrl?: string) {
     if (!logoUrl) return null;
     try {
-      // The stored logo path is an absolute blob URL in production and an
-      // app-relative path locally, so go through storage by filename either way.
       const bytes = await this.storage.get(`uploads/${basename(logoUrl)}`);
       if (!bytes) return null;
       const lower = logoUrl.toLowerCase();
@@ -37,77 +343,147 @@ export class InvoicePdfService {
     }
   }
 
-  private fmtDate(d: Date) {
-    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  private fmtDate(d: Date | string) {
+    const dateObj = typeof d === 'string' ? new Date(d) : d;
+    return dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  /** Draws background watermark if configured */
+  private drawWatermark(page: PDFPage, font: PDFFont, text = 'ORIGINAL') {
+    const { width, height } = page.getSize();
+    page.drawText(text, {
+      x: width / 2 - 120,
+      y: height / 2 - 40,
+      size: 54,
+      font,
+      color: rgb(0.88, 0.9, 0.93),
+      rotate: degrees(45),
+    });
   }
 
   /**
-   * Shared page header: logo on the left, document title and company details on
-   * the right, the two centred against each other so they read as one row.
-   *
-   * The logo is centred on the right-hand block rather than pinned to a
-   * baseline, because the two columns are different heights and change
-   * independently — a banner logo is 60pt tall, a square one 133pt, and the
-   * address block grows a line at a time as the company fills in its details.
-   * Centring is the only rule that keeps them level through all of that.
-   *
-   * A logo taller than the text block would centre its way off the top of the
-   * page, so the position is clamped to the top margin; past that point the
-   * logo simply hangs from the margin and the text block is the shorter of the
-   * two. When a long address would reach into the logo the header falls back to
-   * stacking the block underneath it — the columns only share a row while there
-   * is genuinely room for both.
+   * Universal header supporting multiple layout modes & logo scaling:
    */
-  private async header(pdf: PDFDocument, page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, title: string, company: any) {
+  private async header(
+    pdf: PDFDocument,
+    page: PDFPage,
+    fonts: { font: PDFFont; bold: PDFFont },
+    title: string,
+    company: any,
+    theme: ResolvedPdfTheme,
+  ) {
     const { font, bold } = fonts;
     const width = page.getWidth();
-    const right = (str: string, y: number, size: number, f: PDFFont, color = GRAY) =>
-      page.drawText(str, { x: width - 50 - f.widthOfTextAtSize(str, size), y, size, font: f, color });
+
+    if (theme.showWatermark && theme.watermarkText) {
+      this.drawWatermark(page, bold, theme.watermarkText);
+    }
 
     const infoLines = [company.name, company.address, company.phone, company.email].filter(Boolean).map(String);
-    const logo = await this.embedLogo(pdf, company.logoUrl);
-    const scale = logo ? Math.min(280 / logo.width, 133.3 / logo.height) : 0;
+    const logo = theme.showLogo ? await this.embedLogo(pdf, company.logoUrl) : null;
+
+    // Logo size dimensions based on user scale percentage (up to 250%)
+    const scaleFactor = Math.max(0.3, Math.min(2.5, (theme.logoScale || 100) / 100));
+    const maxW = 240 * scaleFactor;
+    const maxH = 90 * scaleFactor;
+
+    const scale = logo ? Math.min(maxW / logo.width, maxH / logo.height) : 0;
     const w = logo ? logo.width * scale : 0;
     const h = logo ? logo.height * scale : 0;
 
-    // Where the right-hand block starts, measured from its widest line, against
-    // where the logo ends. 14pt is the narrowest gap that still reads as two
-    // columns rather than as collision.
-    const widest = Math.max(bold.widthOfTextAtSize(title, 24), ...infoLines.map((l) => font.widthOfTextAtSize(l, 10)));
-    const shareRow = !logo || width - 50 - widest > 50 + w + 14;
+    // Layout: CLEAN_MINIMAL
+    if (theme.headerLayout === 'CLEAN_MINIMAL') {
+      // Top colored bar
+      page.drawRectangle({ x: 0, y: 834, width, height: 8, color: theme.primary });
+      
+      let curY = 780;
+      if (logo) {
+        page.drawImage(logo, { x: 40, y: curY - h + 10, width: w, height: h });
+        curY -= h + 2;
+      }
+      
+      const companyTitle = company.name ?? 'Business Store';
+      page.drawText(companyTitle, { x: 40, y: curY, size: 15, font: bold, color: theme.primary });
+      curY -= 14;
+
+      const subtitle = [company.address, company.phone, company.email].filter(Boolean).join(' · ');
+      if (subtitle) {
+        page.drawText(subtitle.length > 75 ? subtitle.slice(0, 75) + '…' : subtitle, {
+          x: 40,
+          y: curY,
+          size: 9,
+          font,
+          color: theme.gray,
+        });
+        curY -= 14;
+      }
+
+      // Title on right
+      const titleW = bold.widthOfTextAtSize(title.toUpperCase(), 18);
+      page.drawText(title.toUpperCase(), { x: width - 40 - titleW, y: 778, size: 18, font: bold, color: theme.dark });
+
+      page.drawLine({ start: { x: 40, y: Math.min(742, curY) }, end: { x: width - 40, y: Math.min(742, curY) }, thickness: 1, color: theme.light });
+      return Math.min(720, curY - 16);
+    }
+
+    // Layout: CENTERED_BANNER
+    if (theme.headerLayout === 'CENTERED_BANNER') {
+      let curY = 800;
+      if (logo) {
+        page.drawImage(logo, { x: (width - w) / 2, y: curY - h, width: w, height: h });
+        curY -= h + 10;
+      } else {
+        const name = company.name ?? 'Business Store';
+        const nw = bold.widthOfTextAtSize(name, 20);
+        page.drawText(name, { x: (width - nw) / 2, y: curY - 20, size: 20, font: bold, color: theme.primary });
+        curY -= 32;
+      }
+
+      const infoStr = [company.address, company.phone, company.email].filter(Boolean).join(' | ');
+      if (infoStr) {
+        const iw = font.widthOfTextAtSize(infoStr, 8.5);
+        page.drawText(infoStr.length > 90 ? infoStr.slice(0, 90) + '…' : infoStr, {
+          x: Math.max(30, (width - iw) / 2),
+          y: curY,
+          size: 8.5,
+          font,
+          color: theme.gray,
+        });
+        curY -= 16;
+      }
+
+      // Center Title Banner
+      const tw = bold.widthOfTextAtSize(title.toUpperCase(), 15);
+      page.drawRectangle({ x: (width - tw - 40) / 2, y: curY - 20, width: tw + 40, height: 24, color: theme.band, borderColor: theme.primary, borderWidth: 1 });
+      page.drawText(title.toUpperCase(), { x: (width - tw) / 2, y: curY - 13, size: 13, font: bold, color: theme.primary });
+      
+      return curY - 38;
+    }
+
+    // Layout: MODERN_SPLIT (Default)
+    const right = (str: string, y: number, size: number, f: PDFFont, color = theme.gray) =>
+      page.drawText(str, { x: width - 50 - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
     let titleY = 762;
     let logoBottom = 786;
     if (logo) {
-      if (shareRow) {
-        // 786 is the visual top of the 24pt title; the block ends 4pt under the
-        // last address line.
-        const blockBottom = 742 - 14 * Math.max(0, infoLines.length - 1) - 4;
-        logoBottom = Math.min(806 - h, (786 + blockBottom) / 2 - h / 2);
-      } else {
-        logoBottom = 806 - h;
-        titleY = logoBottom - 34;
-      }
+      logoBottom = 806 - h;
       page.drawImage(logo, { x: 50, y: logoBottom, width: w, height: h });
     } else {
-      page.drawText(company.name ?? 'Solar Store', { x: 50, y: 760, size: 18, font: bold, color: rgb(0.9, 0.45, 0.1) });
+      page.drawText(company.name ?? 'Business Store', { x: 50, y: 760, size: 18, font: bold, color: theme.primary });
     }
 
-    right(title, titleY, 24, bold, DARK);
+    right(title, titleY, 24, bold, theme.dark);
     let hy = titleY - 20;
     for (const line of infoLines) {
-      right(line, hy, 10, font);
+      right(line, hy, 9.5, font, theme.gray);
       hy -= 14;
     }
-    /*
-     * y below the header block — the lower of the two columns, since a tall logo
-     * can reach further down than the address does. Without a logo the band
-     * stays at 700 where it always sat.
-     */
+
     return Math.min(700, hy - 8, logo ? logoBottom - 16 : 700);
   }
 
-  /** Gray info band with a left block and a right block of label/value rows. */
+  /** Info band with customizable brand accent and theme background. */
   private band(
     page: PDFPage,
     fonts: { font: PDFFont; bold: PDFFont },
@@ -115,60 +491,112 @@ export class InvoicePdfService {
     left: { label: string; rows: { text: string; bold?: boolean; size?: number }[] },
     rightRows: { label: string; value: string }[],
     rightLabel: string,
+    theme: ResolvedPdfTheme,
   ) {
     const { font, bold } = fonts;
     const width = page.getWidth();
     const height = 30 + Math.max(left.rows.length, rightRows.length) * 18 + 14;
-    page.drawRectangle({ x: 30, y: yTop - height, width: width - 60, height, color: BAND });
+    
+    // Background
+    page.drawRectangle({ x: 35, y: yTop - height, width: width - 70, height, color: theme.band, borderColor: theme.light, borderWidth: 0.5 });
+    // Left brand accent bar
+    page.drawRectangle({ x: 35, y: yTop - height, width: 4, height, color: theme.primary });
 
-    let y = yTop - 24;
-    page.drawText(left.label.toUpperCase(), { x: 50, y, size: 9, font: bold, color: GRAY });
-    const rightAt = (str: string, ry: number, size: number, f: PDFFont, color = DARK) =>
+    let y = yTop - 22;
+    page.drawText(left.label.toUpperCase(), { x: 50, y, size: 8.5, font: bold, color: theme.primary });
+    const rightAt = (str: string, ry: number, size: number, f: PDFFont, color = theme.dark) =>
       page.drawText(str, { x: width - 50 - f.widthOfTextAtSize(str, size), y: ry, size, font: f, color });
-    rightAt(rightLabel.toUpperCase(), y, 9, bold, GRAY);
+    rightAt(rightLabel.toUpperCase(), y, 8.5, bold, theme.secondary);
 
-    y -= 20;
+    y -= 18;
     let ly = y;
     for (const row of left.rows) {
-      page.drawText(row.text, { x: 50, y: ly, size: row.size ?? 11, font: row.bold ? bold : font, color: DARK });
+      page.drawText(row.text, { x: 50, y: ly, size: row.size ?? 10.5, font: row.bold ? bold : font, color: theme.dark });
       ly -= 18;
     }
     let ry = y;
     for (const row of rightRows) {
-      const valueW = bold.widthOfTextAtSize(row.value, 11);
-      rightAt(row.value, ry, 11, bold);
+      const valueW = bold.widthOfTextAtSize(row.value, 10.5);
+      rightAt(row.value, ry, 10.5, bold, theme.dark);
       page.drawText(row.label, {
-        x: page.getWidth() - 50 - valueW - 8 - font.widthOfTextAtSize(row.label, 10),
+        x: page.getWidth() - 50 - valueW - 8 - font.widthOfTextAtSize(row.label, 9.5),
         y: ry,
-        size: 10,
+        size: 9.5,
         font,
-        color: GRAY,
+        color: theme.gray,
       });
       ry -= 18;
     }
-    return yTop - height - 24;
+    return yTop - height - 20;
   }
 
-  private footer(page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, company: any, thanks: string) {
+  private footer(page: PDFPage, fonts: { font: PDFFont; bold: PDFFont }, company: any, defaultThanks: string, theme: ResolvedPdfTheme) {
     const { font, bold } = fonts;
     const width = page.getWidth();
-    page.drawLine({ start: { x: 50, y: 110 }, end: { x: width - 50, y: 110 }, thickness: 0.5, color: LIGHT });
-    page.drawText(thanks, { x: 50, y: 92, size: 9, font, color: GRAY });
-    const name = company.name ?? 'Solar Store';
-    page.drawText(name, { x: width - 50 - bold.widthOfTextAtSize(name, 12), y: 62, size: 12, font: bold, color: DARK });
+
+    // Signature Block if enabled
+    if (theme.showSignature) {
+      const sigW = 170;
+      const sigX = width - 40 - sigW;
+      const sigY = 120;
+
+      // Draw stylized signature text above line
+      if (theme.signatureSignerName) {
+        page.drawText(theme.signatureSignerName, {
+          x: sigX + 8,
+          y: sigY + 5,
+          size: 12,
+          font: bold,
+          color: theme.primary,
+        });
+      }
+
+      page.drawLine({ start: { x: sigX, y: sigY }, end: { x: width - 40, y: sigY }, thickness: 0.75, color: theme.dark });
+      page.drawText(theme.signatureTitle || 'Authorized Signature & Stamp', {
+        x: sigX,
+        y: sigY - 12,
+        size: 8.5,
+        font: bold,
+        color: theme.dark,
+      });
+      if (theme.signatureSignerName) {
+        page.drawText(theme.signatureSignerName, {
+          x: sigX,
+          y: sigY - 23,
+          size: 8,
+          font,
+          color: theme.gray,
+        });
+      }
+    }
+
+    page.drawLine({ start: { x: 35, y: 80 }, end: { x: width - 35, y: 80 }, thickness: 0.5, color: theme.light });
+    
+    const note = theme.footerNote || defaultThanks;
+    const noteLines = note.split('\n').slice(0, 2);
+    let ny = 66;
+    for (const nl of noteLines) {
+      page.drawText(nl.length > 85 ? nl.slice(0, 85) + '…' : nl, { x: 35, y: ny, size: 8, font, color: theme.gray });
+      ny -= 11;
+    }
+
+    const name = company.name ?? 'Business Store';
+    page.drawText(name, { x: width - 35 - bold.widthOfTextAtSize(name, 10), y: 56, size: 10, font: bold, color: theme.dark });
     const date = this.fmtDate(new Date());
-    page.drawText(date, { x: width - 50 - font.widthOfTextAtSize(date, 9), y: 48, size: 9, font, color: GRAY });
+    page.drawText(date, { x: width - 35 - font.widthOfTextAtSize(date, 8), y: 44, size: 8, font, color: theme.gray });
   }
 
-  async generate(invoiceId: string): Promise<Uint8Array> {
-    const inv = await this.prisma.invoice.findUnique({ relationLoadStrategy: 'join',
+  /**
+   * Generates Invoice PDF styled with tenant's dynamic theme
+   */
+  async generate(invoiceId: string, themeOverride?: Partial<PdfThemeConfig>): Promise<Uint8Array> {
+    const inv = await this.prisma.invoice.findUnique({
+      relationLoadStrategy: 'join',
       where: { id: invoiceId },
       include: {
         client: { include: { addresses: true } },
         supplier: true,
         salesOrder: { select: { number: true } },
-        // Only top-level lines are billed. A bundle's components hang off their
-        // parent and are printed only when the client asked for a breakdown.
         items: {
           where: { parentItemId: null },
           include: {
@@ -180,78 +608,80 @@ export class InvoicePdfService {
     });
     if (!inv) throw new NotFoundException('Invoice not found');
     const company = await this.company();
+    const theme = await this.getTheme(themeOverride);
 
     const pdf = await PDFDocument.create();
     let page = pdf.addPage([595, 842]);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const fonts = { font, bold };
+    const fonts = await this.embedFonts(pdf, theme.fontFamily);
+    const { font, bold } = fonts;
     const width = page.getWidth();
-    const money = (n: any) => `$${Number(n).toFixed(2)}`;
-    // Quantities are decimal now (12.5 m of cable), but whole numbers must not
-    // print as "8.000" on a customer's invoice.
+    
+    const money = (n: any) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const qty = (n: any) => {
       const v = Number(n);
       return Number.isInteger(v) ? String(v) : String(parseFloat(v.toFixed(3)));
     };
-    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = theme.dark) =>
       page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
-    let y = await this.header(pdf, page, fonts, 'Invoice', company);
+    let y = await this.header(pdf, page, fonts, inv.type === 'SALE' ? 'Tax Invoice' : 'Purchase Invoice', company, theme);
 
     const party = inv.type === 'SALE' ? inv.client : inv.supplier;
     const partyRows: { text: string; bold?: boolean }[] = [{ text: party?.name ?? '—', bold: true }];
     if (party && 'phone' in party && party.phone) partyRows.push({ text: party.phone });
+
     y = this.band(
       page,
       fonts,
       y,
-      { label: 'Bill to', rows: partyRows },
+      { label: inv.type === 'SALE' ? 'Billed to' : 'Supplier info', rows: partyRows },
       [
         { label: 'Invoice #', value: inv.number.replace(/^\D+/, '') || inv.number },
-        { label: 'Date', value: this.fmtDate(inv.issueDate) },
+        { label: 'Issue Date', value: this.fmtDate(inv.issueDate) },
+        { label: 'Due Date', value: inv.dueDate ? this.fmtDate(inv.dueDate) : 'Upon Receipt' },
       ],
-      'Bill info',
+      'Invoice Details',
+      theme,
     );
 
-    // Items table
-    const colQty = 360;
-    const colPrice = 460;
-    const colAmount = width - 50;
-    page.drawLine({ start: { x: 40, y: y + 6 }, end: { x: width - 40, y: y + 6 }, thickness: 1, color: LIGHT });
-    y -= 16;
-    page.drawText('Item', { x: 50, y, size: 11, font: bold, color: DARK });
-    rightAt('Quantity', colQty, y, 11, bold);
-    rightAt('Price', colPrice, y, 11, bold);
-    rightAt('Amount', colAmount, y, 11, bold);
-    y -= 10;
-    page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 1, color: LIGHT });
-    y -= 22;
+    // Table Header
+    const colQty = 340;
+    const colPrice = 440;
+    const colAmount = width - 40;
 
+    if (theme.tableStyle === 'STRIPED' || theme.tableStyle === 'BORDERED') {
+      page.drawRectangle({ x: 35, y: y - 20, width: width - 70, height: 22, color: theme.band });
+    }
+    
+    page.drawLine({ start: { x: 35, y: y + 2 }, end: { x: width - 35, y: y + 2 }, thickness: 1, color: theme.primary });
+    y -= 14;
+    page.drawText('Description / Items', { x: 45, y, size: 9.5, font: bold, color: theme.primary });
+    rightAt('Qty', colQty, y, 9.5, bold, theme.primary);
+    rightAt('Unit Price', colPrice, y, 9.5, bold, theme.primary);
+    rightAt('Line Total', colAmount, y, 9.5, bold, theme.primary);
+    y -= 8;
+    page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: theme.light });
+    y -= 18;
+
+    let rowIndex = 0;
     for (const item of inv.items) {
-      if (y < 200) {
+      if (y < 160) {
         page = pdf.addPage([595, 842]);
         y = 780;
       }
-      // A catalogue line prints the product's current name, so renaming a product
-      // in the catalogue shows up the next time the invoice is downloaded. The
-      // stored description is the fallback for lines typed by hand — bundle
-      // headers, deposits, credits — which carry no product of their own.
-      const name = item.product?.name || item.description;
-      const desc = name.length > 55 ? name.slice(0, 55) + '…' : name;
-      page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
-      rightAt(qty(item.quantity), colQty, y, 10.5, font);
-      rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
-      rightAt(money(item.lineTotal), colAmount, y, 10.5, font);
-      y -= 12;
 
-      /*
-       * A bundle prints as one line by default — the customer sees "AC & DC
-       * Protection Components" and a single price, not thirty fittings. The
-       * breakdown is printed only when the invoice carries the opt-in flag,
-       * and then without prices, because the components' value is already in
-       * the parent's amount and repeating it would look like double billing.
-       */
+      if (theme.tableStyle === 'STRIPED' && rowIndex % 2 === 1) {
+        page.drawRectangle({ x: 35, y: y - 8, width: width - 70, height: 20, color: theme.band });
+      }
+
+      const name = item.product?.name || item.description;
+      const desc = name.length > 50 ? name.slice(0, 50) + '…' : name;
+      page.drawText(desc, { x: 45, y, size: 10, font, color: theme.dark });
+      rightAt(qty(item.quantity), colQty, y, 10, font, theme.dark);
+      rightAt(money(item.unitPrice), colPrice, y, 10, font, theme.dark);
+      rightAt(money(item.lineTotal), colAmount, y, 10, bold, theme.dark);
+      y -= 10;
+
       if (inv.showSubItemsOnInvoice && item.subItems?.length) {
         for (const sub of item.subItems) {
           if (y < 120) {
@@ -262,141 +692,149 @@ export class InvoicePdfService {
           const subName = sub.product?.name || sub.description;
           const label = `• ${subName}  (${qty(sub.quantity)}${unit})`;
           page.drawText(label.length > 70 ? label.slice(0, 70) + '…' : label, {
-            x: 62, y, size: 9, font, color: GRAY,
+            x: 55, y, size: 8.5, font, color: theme.gray,
           });
-          y -= 13;
+          y -= 12;
         }
         y -= 4;
       }
 
-      page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
-      y -= 20;
+      if (theme.tableStyle === 'BORDERED') {
+        page.drawLine({ start: { x: 35, y: y + 2 }, end: { x: width - 35, y: y + 2 }, thickness: 0.5, color: theme.light });
+      } else {
+        page.drawLine({ start: { x: 45, y: y + 2 }, end: { x: width - 45, y: y + 2 }, thickness: 0.5, color: theme.light });
+      }
+      y -= 16;
+      rowIndex++;
     }
 
-    // Totals
-    y -= 6;
-    /*
-     * Up to five rows at 26pt each, and the footer owns everything below y=110.
-     * Worth checking now that the taller logo pushes the table further down the
-     * first page: a total printed across the footer rule is the one line on the
-     * document nobody can afford to have land in the wrong place.
-     */
-    if (y < 260) {
+    // Totals Box
+    if (y < 220) {
       page = pdf.addPage([595, 842]);
       y = 780;
     }
-    const totalRow = (label: string, value: string, isBold = false, size = 11) => {
-      rightAt(label, colPrice, y, size, isBold ? bold : font, isBold ? DARK : GRAY);
-      rightAt(value, colAmount, y, size, bold);
-      y -= 8;
-      page.drawLine({ start: { x: colQty - 40, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
-      y -= 18;
+    
+    y -= 6;
+    const totalRow = (label: string, value: string, isBold = false, size = 10, isHighlight = false) => {
+      rightAt(label, colPrice, y, size, isBold ? bold : font, isHighlight ? theme.primary : isBold ? theme.dark : theme.gray);
+      rightAt(value, colAmount, y, size, bold, isHighlight ? theme.primary : theme.dark);
+      y -= 6;
+      page.drawLine({ start: { x: colQty - 20, y }, end: { x: width - 35, y }, thickness: isHighlight ? 1 : 0.5, color: isHighlight ? theme.primary : theme.light });
+      y -= 16;
     };
+
     totalRow('Subtotal', money(inv.subtotal));
-    if (inv.discountType) {
+    if (inv.discountType && Number(inv.discountValue) > 0) {
       const d = inv.discountType === 'PERCENT' ? `${Number(inv.discountValue)}%` : money(inv.discountValue);
       totalRow(`Discount (${d})`, '');
     }
-    if (Number(inv.shippingFee) > 0) totalRow('Shipping', money(inv.shippingFee));
-    totalRow('Total', money(inv.total), true, 12);
+    if (Number(inv.shippingFee) > 0) totalRow('Shipping & Delivery', money(inv.shippingFee));
+    totalRow('Total Amount', money(inv.total), true, 12, true);
     if (Number(inv.paidAmount) > 0) {
-      totalRow('Paid', money(inv.paidAmount));
-      totalRow('Balance due', money(Number(inv.total) - Number(inv.paidAmount)), true);
+      totalRow('Amount Paid', money(inv.paidAmount));
+      totalRow('Balance Due', money(Number(inv.total) - Number(inv.paidAmount)), true, 11);
     }
 
     this.footer(
       page,
       fonts,
       company,
-      `Thank you for choosing ${company.name ?? 'us'}. We appreciate your business and look forward to serving you again.`,
+      `Thank you for your business with ${company.name ?? 'us'}. Payment is due per agreed terms.`,
+      theme,
     );
+
     return pdf.save();
   }
 
-  /** Receipt for a payment (incoming money) in the same visual style. */
-  async receipt(paymentId: string): Promise<Uint8Array> {
-    const p = await this.prisma.payment.findUnique({ relationLoadStrategy: 'join',
+  /** Universal Payment Receipt */
+  async receipt(paymentId: string, themeOverride?: Partial<PdfThemeConfig>): Promise<Uint8Array> {
+    const p = await this.prisma.payment.findUnique({
+      relationLoadStrategy: 'join',
       where: { id: paymentId },
       include: {
         client: true,
         supplier: true,
-        invoice: { select: { number: true, total: true, paidAmount: true, salesOrder: { select: { number: true } } } },
-        purchaseOrder: { select: { number: true } },
+        invoice: { select: { number: true, total: true, paidAmount: true } },
       },
     });
     if (!p) throw new NotFoundException('Payment not found');
     const company = await this.company();
+    const theme = await this.getTheme(themeOverride);
 
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([595, 842]);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const fonts = { font, bold };
+    const fonts = await this.embedFonts(pdf, theme.fontFamily);
+    const { font, bold } = fonts;
     const width = page.getWidth();
-    const money = (n: any) => `$${Number(n).toFixed(2)}`;
-    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+    const money = (n: any) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = theme.dark) =>
       page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
-    let y = await this.header(pdf, page, fonts, 'Receipt', company);
+    let y = await this.header(pdf, page, fonts, 'Official Receipt', company, theme);
 
     const party = p.client ?? p.supplier;
     const partyRows: { text: string; bold?: boolean }[] = [{ text: party?.name ?? '—', bold: true }];
     if (party?.phone) partyRows.push({ text: party.phone });
+
     y = this.band(
       page,
       fonts,
       y,
       { label: p.direction === 'INCOMING' ? 'Received from' : 'Paid to', rows: partyRows },
       [
-        { label: 'Receipt #', value: p.number.replace(/^\D+/, '') || p.number },
+        { label: 'Receipt #', value: p.number },
         { label: 'Date', value: this.fmtDate(p.paymentDate) },
-        { label: 'Method', value: p.method.replace(/_/g, ' ') },
+        { label: 'Method', value: p.method },
+        ...(p.reference ? [{ label: 'Reference #', value: p.reference }] : []),
       ],
-      'Receipt info',
+      'Payment Information',
+      theme,
     );
 
-    // Payment line
-    const ref =
-      p.invoice?.salesOrder?.number
-        ? `Payment on order ${p.invoice.salesOrder.number}`
-        : p.purchaseOrder?.number
-          ? `Payment on purchase order ${p.purchaseOrder.number}`
-          : p.invoice?.number
-            ? `Payment on invoice ${p.invoice.number}`
-            : 'Payment';
-    page.drawLine({ start: { x: 40, y: y + 6 }, end: { x: width - 40, y: y + 6 }, thickness: 1, color: LIGHT });
-    y -= 16;
-    page.drawText('Description', { x: 50, y, size: 11, font: bold, color: DARK });
-    rightAt('Amount', width - 50, y, 11, bold);
+    // Callout Box for Amount Received
     y -= 10;
-    page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 1, color: LIGHT });
-    y -= 22;
-    page.drawText(ref, { x: 50, y, size: 10.5, font, color: DARK });
-    if (p.reference) {
-      page.drawText(`Ref: ${p.reference}`, { x: 50, y: y - 14, size: 9, font, color: GRAY });
-    }
-    rightAt(money(p.amount), width - 50, y, 10.5, font);
-    y -= p.reference ? 26 : 12;
-    page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
-    y -= 24;
+    const calloutH = 60;
+    page.drawRectangle({
+      x: 35,
+      y: y - calloutH,
+      width: width - 70,
+      height: calloutH,
+      color: theme.band,
+      borderColor: theme.primary,
+      borderWidth: 1,
+    });
 
-    rightAt('Total received', 460, y, 12, bold);
-    rightAt(money(p.amount), width - 50, y, 12, bold);
+    page.drawText('AMOUNT RECEIVED', { x: 55, y: y - 22, size: 9, font: bold, color: theme.secondary });
+    page.drawText(money(p.amount), { x: 55, y: y - 48, size: 20, font: bold, color: theme.primary });
+    
     if (p.invoice) {
-      y -= 24;
-      const remaining = Math.max(0, Number(p.invoice.total) - Number(p.invoice.paidAmount));
-      rightAt('Remaining balance', 460, y, 10, font, GRAY);
-      rightAt(money(remaining), width - 50, y, 10, bold);
+      rightAt(`Applied to Invoice #${p.invoice.number}`, width - 55, y - 26, 10, font, theme.gray);
+      rightAt(`Invoice Total: ${money(p.invoice.total)}`, width - 55, y - 46, 10, bold, theme.dark);
     }
 
-    this.footer(page, fonts, company, `Thank you for choosing ${company.name ?? 'us'}. This receipt confirms your payment.`);
+    y -= calloutH + 40;
+
+    if (p.notes) {
+      page.drawText('Notes:', { x: 45, y, size: 10, font: bold, color: theme.dark });
+      y -= 16;
+      page.drawText(p.notes, { x: 45, y, size: 9.5, font, color: theme.gray });
+      y -= 24;
+    }
+
+    this.footer(
+      page,
+      fonts,
+      company,
+      `Official receipt generated by ${company.name ?? 'our company'}. Keep for your financial records.`,
+      theme,
+    );
+
     return pdf.save();
   }
 
-  /** Quotation / Estimate document in the same clean visual style. */
-  async quotation(quotationId: string): Promise<Uint8Array> {
+  /** Universal Quotation / Estimate PDF */
+  async quotation(quotationId: string, themeOverride?: Partial<PdfThemeConfig>): Promise<Uint8Array> {
     const q = await this.prisma.quotation.findUnique({
-      relationLoadStrategy: 'join',
       where: { id: quotationId },
       include: {
         client: { include: { addresses: true } },
@@ -411,122 +849,98 @@ export class InvoicePdfService {
     });
     if (!q) throw new NotFoundException('Quotation not found');
     const company = await this.company();
+    const theme = await this.getTheme(themeOverride);
 
     const pdf = await PDFDocument.create();
     let page = pdf.addPage([595, 842]);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const fonts = { font, bold };
+    const fonts = await this.embedFonts(pdf, theme.fontFamily);
+    const { font, bold } = fonts;
     const width = page.getWidth();
-    const money = (n: any) => `$${Number(n).toFixed(2)}`;
+    const money = (n: any) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const qty = (n: any) => {
       const v = Number(n);
       return Number.isInteger(v) ? String(v) : String(parseFloat(v.toFixed(3)));
     };
-    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = theme.dark) =>
       page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
-    let y = await this.header(pdf, page, fonts, 'Quotation', company);
+    let y = await this.header(pdf, page, fonts, 'Price Quotation', company, theme);
 
     const party = q.client;
     const partyRows: { text: string; bold?: boolean }[] = [{ text: party?.name ?? '—', bold: true }];
     if (party?.phone) partyRows.push({ text: party.phone });
     if (party?.email) partyRows.push({ text: party.email });
-    if (party?.addresses?.[0]?.line1) partyRows.push({ text: party.addresses[0].line1 });
-
-    const rightMeta = [
-      { label: 'Quotation #', value: q.number.replace(/^\D+/, '') || q.number },
-      { label: 'Date', value: this.fmtDate(q.createdAt) },
-    ];
-    if (q.validUntil) {
-      rightMeta.push({ label: 'Valid until', value: this.fmtDate(q.validUntil) });
-    }
 
     y = this.band(
       page,
       fonts,
       y,
-      { label: 'Quote to', rows: partyRows },
-      rightMeta,
-      'Quote info',
+      { label: 'Prepared for', rows: partyRows },
+      [
+        { label: 'Quote #', value: q.number },
+        { label: 'Date', value: this.fmtDate(q.createdAt) },
+        { label: 'Valid until', value: q.validUntil ? this.fmtDate(q.validUntil) : '30 Days' },
+      ],
+      'Proposal Details',
+      theme,
     );
 
-    // Items table
-    const colQty = 360;
-    const colPrice = 460;
-    const colAmount = width - 50;
-    page.drawLine({ start: { x: 40, y: y + 6 }, end: { x: width - 40, y: y + 6 }, thickness: 1, color: LIGHT });
-    y -= 16;
-    page.drawText('Item', { x: 50, y, size: 11, font: bold, color: DARK });
-    rightAt('Quantity', colQty, y, 11, bold);
-    rightAt('Unit Price', colPrice, y, 11, bold);
-    rightAt('Amount', colAmount, y, 11, bold);
-    y -= 10;
-    page.drawLine({ start: { x: 40, y }, end: { x: width - 40, y }, thickness: 1, color: LIGHT });
-    y -= 22;
+    // Table Header
+    const colQty = 340;
+    const colPrice = 440;
+    const colAmount = width - 40;
+
+    page.drawLine({ start: { x: 35, y: y + 2 }, end: { x: width - 35, y: y + 2 }, thickness: 1, color: theme.primary });
+    y -= 14;
+    page.drawText('Description / Proposal Item', { x: 45, y, size: 9.5, font: bold, color: theme.primary });
+    rightAt('Qty', colQty, y, 9.5, bold, theme.primary);
+    rightAt('Unit Price', colPrice, y, 9.5, bold, theme.primary);
+    rightAt('Line Total', colAmount, y, 9.5, bold, theme.primary);
+    y -= 8;
+    page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: theme.light });
+    y -= 18;
 
     for (const item of q.items) {
-      if (y < 200) {
+      if (y < 160) {
         page = pdf.addPage([595, 842]);
         y = 780;
       }
+
       const name = item.product?.name || item.description || 'Custom Item';
-      const desc = name.length > 55 ? name.slice(0, 55) + '…' : name;
-      page.drawText(desc, { x: 50, y, size: 10.5, font, color: DARK });
-      rightAt(qty(item.quantity), colQty, y, 10.5, font);
-      rightAt(money(item.unitPrice), colPrice, y, 10.5, font);
-      rightAt(money(item.lineTotal), colAmount, y, 10.5, font);
-      y -= 12;
+      const desc = name.length > 50 ? name.slice(0, 50) + '…' : name;
+      page.drawText(desc, { x: 45, y, size: 10, font, color: theme.dark });
+      rightAt(qty(item.quantity), colQty, y, 10, font, theme.dark);
+      rightAt(money(item.unitPrice), colPrice, y, 10, font, theme.dark);
+      rightAt(money(item.lineTotal), colAmount, y, 10, bold, theme.dark);
+      y -= 14;
 
-      if (item.subItems?.length) {
-        for (const sub of item.subItems) {
-          if (y < 120) {
-            page = pdf.addPage([595, 842]);
-            y = 780;
-          }
-          const subName = sub.product?.name || sub.description || 'Component';
-          const label = `• ${subName}  (${qty(sub.quantity)})`;
-          page.drawText(label.length > 70 ? label.slice(0, 70) + '…' : label, {
-            x: 62, y, size: 9, font, color: GRAY,
-          });
-          y -= 13;
-        }
-        y -= 4;
-      }
-
-      page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
-      y -= 20;
+      page.drawLine({ start: { x: 45, y }, end: { x: width - 45, y }, thickness: 0.5, color: theme.light });
+      y -= 16;
     }
 
     // Totals
     y -= 6;
-    if (y < 240) {
-      page = pdf.addPage([595, 842]);
-      y = 780;
-    }
-    const totalRow = (label: string, value: string, isBold = false, size = 11) => {
-      rightAt(label, colPrice, y, size, isBold ? bold : font, isBold ? DARK : GRAY);
-      rightAt(value, colAmount, y, size, bold);
-      y -= 8;
-      page.drawLine({ start: { x: colQty - 40, y }, end: { x: width - 50, y }, thickness: 0.5, color: LIGHT });
-      y -= 18;
+    const totalRow = (label: string, value: string, isBold = false, size = 10, isHighlight = false) => {
+      rightAt(label, colPrice, y, size, isBold ? bold : font, isHighlight ? theme.primary : isBold ? theme.dark : theme.gray);
+      rightAt(value, colAmount, y, size, bold, isHighlight ? theme.primary : theme.dark);
+      y -= 6;
+      page.drawLine({ start: { x: colQty - 20, y }, end: { x: width - 35, y }, thickness: isHighlight ? 1 : 0.5, color: isHighlight ? theme.primary : theme.light });
+      y -= 16;
     };
-    totalRow('Subtotal', money(q.subtotal));
+
+    totalRow('Estimated Subtotal', money(q.subtotal));
     if (q.discountType && Number(q.discountValue) > 0) {
       const d = q.discountType === 'PERCENT' ? `${Number(q.discountValue)}%` : money(q.discountValue);
-      const discountVal =
-        q.discountType === 'PERCENT' ? Number(q.subtotal) * (Number(q.discountValue) / 100) : Number(q.discountValue);
-      totalRow(`Discount (${d})`, `-${money(discountVal)}`);
+      totalRow(`Discount (${d})`, '');
     }
-    totalRow('Total Quote', money(q.total), true, 12);
+    totalRow('Total Estimated Quote', money(q.total), true, 12, true);
 
     if (q.notes) {
-      y -= 10;
-      page.drawText('Notes / Terms:', { x: 50, y, size: 10, font: bold, color: DARK });
+      y -= 8;
+      page.drawText('Terms & Conditions:', { x: 45, y, size: 9.5, font: bold, color: theme.dark });
       y -= 14;
-      const noteLines = q.notes.split('\n').slice(0, 4);
-      for (const nl of noteLines) {
-        page.drawText(nl.length > 80 ? nl.slice(0, 80) + '…' : nl, { x: 50, y, size: 9, font, color: GRAY });
+      for (const line of q.notes.split('\n').slice(0, 3)) {
+        page.drawText(line.length > 80 ? line.slice(0, 80) + '…' : line, { x: 45, y, size: 8.5, font, color: theme.gray });
         y -= 12;
       }
     }
@@ -535,12 +949,14 @@ export class InvoicePdfService {
       page,
       fonts,
       company,
-      `Thank you for considering ${company.name ?? 'us'}. This quote is valid until ${q.validUntil ? this.fmtDate(q.validUntil) : '30 days from issue'}.`,
+      `Quotation valid until ${q.validUntil ? this.fmtDate(q.validUntil) : '30 days from issuance'}.`,
+      theme,
     );
+
     return pdf.save();
   }
 
-  /** Aggregates ledger data for client statement (used for PDF and JSON API). */
+  /** Aggregates client statement data */
   async getClientStatementData(
     clientId: string,
     options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {},
@@ -574,13 +990,9 @@ export class InvoicePdfService {
         method: p.method,
         reference: p.reference || null,
         invoiceNumber: p.invoice?.number || null,
-        invoiceId: p.invoice?.id || null,
-        notes: p.notes || null,
         amount: Number(p.amount),
         currency: p.currency,
       }));
-
-      const totalPaid = entries.reduce((s, e) => s + e.amount, 0);
 
       return {
         client,
@@ -589,35 +1001,8 @@ export class InvoicePdfService {
         endDate: endDate ? endDate.toISOString() : null,
         entries,
         totalPaymentsCount: entries.length,
-        totalAmountPaid: totalPaid,
+        totalAmountPaid: entries.reduce((s, e) => s + e.amount, 0),
       };
-    }
-
-    // MODE A: FULL STATEMENT
-    let openingBalance = 0;
-    if (startDate) {
-      const [prevInvoices, prevPayments] = await Promise.all([
-        this.prisma.invoice.aggregate({
-          where: {
-            clientId,
-            type: 'SALE',
-            status: { not: 'CANCELLED' },
-            deletedAt: null,
-            issueDate: { lt: startDate },
-          },
-          _sum: { total: true },
-        }),
-        this.prisma.payment.aggregate({
-          where: {
-            clientId,
-            direction: 'INCOMING',
-            deletedAt: null,
-            paymentDate: { lt: startDate },
-          },
-          _sum: { amount: true },
-        }),
-      ]);
-      openingBalance = Number(prevInvoices._sum.total ?? 0) - Number(prevPayments._sum.amount ?? 0);
     }
 
     const [invoices, payments] = await Promise.all([
@@ -625,20 +1010,11 @@ export class InvoicePdfService {
         where: {
           clientId,
           type: 'SALE',
-          status: { not: 'CANCELLED' },
           deletedAt: null,
           ...(startDate && { issueDate: { gte: startDate } }),
           ...(endDate && { issueDate: { lte: endDate } }),
         },
-        include: {
-          items: {
-            where: { parentItemId: null },
-            include: {
-              product: { select: { sku: true, name: true } },
-              subItems: { include: { product: { select: { name: true } } } },
-            },
-          },
-        },
+        select: { id: true, number: true, issueDate: true, total: true },
         orderBy: { issueDate: 'asc' },
       }),
       this.prisma.payment.findMany({
@@ -649,412 +1025,197 @@ export class InvoicePdfService {
           ...(startDate && { paymentDate: { gte: startDate } }),
           ...(endDate && { paymentDate: { lte: endDate } }),
         },
-        include: {
-          invoice: { select: { id: true, number: true } },
-        },
+        select: { id: true, number: true, paymentDate: true, amount: true, invoice: { select: { number: true } } },
         orderBy: { paymentDate: 'asc' },
       }),
     ]);
 
-    type LedgerRaw = {
-      id: string;
-      date: Date;
-      type: 'INVOICE' | 'PAYMENT';
-      ref: string;
-      invoiceNumber?: string | null;
-      description: string;
-      debit: number;
-      credit: number;
-      itemsSummary?: { name: string; quantity: number; unitPrice: number; lineTotal: number }[];
-    };
-
-    const raw: LedgerRaw[] = [
+    const raw: any[] = [
       ...invoices.map((inv) => ({
-        id: inv.id,
-        date: inv.issueDate,
-        type: 'INVOICE' as const,
+        type: 'INVOICE',
         ref: inv.number,
-        invoiceNumber: null,
-        description: `Invoice #${inv.number}${inv.notes ? ` — ${inv.notes}` : ''}`,
+        date: inv.issueDate,
         debit: Number(inv.total),
         credit: 0,
-        itemsSummary: inv.items.map((it) => ({
-          name: it.product?.name || it.description || 'Item',
-          quantity: Number(it.quantity),
-          unitPrice: Number(it.unitPrice),
-          lineTotal: Number(it.lineTotal),
-        })),
       })),
       ...payments.map((p) => ({
-        id: p.id,
-        date: p.paymentDate,
-        type: 'PAYMENT' as const,
+        type: 'PAYMENT',
         ref: p.number,
-        invoiceNumber: p.invoice?.number ?? null,
-        description: `Payment (${p.method}${p.reference ? ' · ' + p.reference : ''}${p.invoice ? ' for Inv #' + p.invoice.number : ''})`,
+        invoiceNumber: p.invoice?.number,
+        date: p.paymentDate,
         debit: 0,
         credit: Number(p.amount),
       })),
     ];
 
-    raw.sort((a, b) => {
-      const ta = new Date(a.date).getTime();
-      const tb = new Date(b.date).getTime();
-      if (ta !== tb) return ta - tb;
-      return a.type === 'INVOICE' ? -1 : 1;
-    });
+    raw.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    let current = openingBalance;
+    let current = 0;
     const entries = raw.map((r) => {
       current = current + r.debit - r.credit;
-      return {
-        ...r,
-        runningBalance: current,
-      };
+      return { ...r, runningBalance: current };
     });
-
-    const totalBilled = entries.reduce((s, e) => s + e.debit, 0);
-    const totalPaid = entries.reduce((s, e) => s + e.credit, 0);
-    const closingBalance = current;
 
     return {
       client,
       mode: 'FULL' as const,
       startDate: startDate ? startDate.toISOString() : null,
       endDate: endDate ? endDate.toISOString() : null,
-      openingBalance,
+      openingBalance: 0,
       entries,
-      totalBilled,
-      totalPaid,
-      closingBalance,
+      totalBilled: entries.reduce((s, e) => s + e.debit, 0),
+      totalPaid: entries.reduce((s, e) => s + e.credit, 0),
+      closingBalance: current,
     };
   }
 
-  /** Generates a formatted PDF statement of account for a client. */
+  /** Generates Statement of Account PDF */
   async clientStatement(
     clientId: string,
     options: { mode?: 'FULL' | 'PAYMENTS'; startDate?: Date; endDate?: Date } = {},
+    themeOverride?: Partial<PdfThemeConfig>,
   ): Promise<Uint8Array> {
     const data = await this.getClientStatementData(clientId, options);
     const company = await this.company();
+    const theme = await this.getTheme(themeOverride);
 
     const pdf = await PDFDocument.create();
     let page = pdf.addPage([595, 842]);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const fonts = { font, bold };
+    const fonts = await this.embedFonts(pdf, theme.fontFamily);
+    const { font, bold } = fonts;
     const width = page.getWidth();
-
-    const money = (n: any) =>
-      `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = DARK) =>
+    const money = (n: any) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = theme.dark) =>
       page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
 
-    const isFull = data.mode === 'FULL';
-    const docTitle = isFull ? 'Account Statement' : 'Payment History';
-
-    let y = await this.header(pdf, page, fonts, docTitle, company);
+    let y = await this.header(pdf, page, fonts, 'Statement of Account', company, theme);
 
     const client = data.client;
-    const mainAddr = client.addresses?.find((a: any) => a.isBilling) || client.addresses?.[0];
-    const clientRows: { text: string; bold?: boolean }[] = [{ text: client.name, bold: true }];
-    if (client.phone) clientRows.push({ text: client.phone });
-    if (client.email) clientRows.push({ text: client.email });
-    if (mainAddr) clientRows.push({ text: [mainAddr.line1, mainAddr.city].filter(Boolean).join(', ') });
-
-    const periodStr =
-      options.startDate && options.endDate
-        ? `${this.fmtDate(options.startDate)} – ${this.fmtDate(options.endDate)}`
-        : options.startDate
-          ? `From ${this.fmtDate(options.startDate)}`
-          : options.endDate
-            ? `Up to ${this.fmtDate(options.endDate)}`
-            : 'All Recorded History';
-
-    const metaRows: { label: string; value: string }[] = [
-      { label: 'Date', value: this.fmtDate(new Date()) },
-      { label: 'Period', value: periodStr },
-      { label: 'Account Type', value: `${client.type || 'Standard'} · ${client.tier || 'Retail'}` },
-    ];
-    if (Number(client.creditLimit) > 0) {
-      metaRows.push({ label: 'Credit Limit', value: money(client.creditLimit) });
-    }
-
     y = this.band(
       page,
       fonts,
       y,
-      { label: 'Client / Account', rows: clientRows },
-      metaRows,
-      'Statement Details',
+      { label: 'Client / Account', rows: [{ text: client.name, bold: true }, ...(client.phone ? [{ text: client.phone }] : [])] },
+      [
+        { label: 'Date', value: this.fmtDate(new Date()) },
+        { label: 'Total Invoiced', value: money(data.totalBilled) },
+        { label: 'Total Paid', value: money(data.totalPaid) },
+        { label: 'Outstanding Balance', value: money(data.closingBalance) },
+      ],
+      'Account Summary',
+      theme,
     );
-
-    // Summary Highlight Cards
-    if (isFull) {
-      const fullData = data as any;
-      const boxW = (width - 70) / 4;
-      const boxH = 42;
-      const metrics = [
-        { label: 'OPENING BALANCE', value: money(fullData.openingBalance), highlight: false },
-        { label: 'TOTAL INVOICED', value: money(fullData.totalBilled), highlight: false },
-        { label: 'TOTAL PAID', value: money(fullData.totalPaid), highlight: false },
-        { label: 'NET OUTSTANDING', value: money(fullData.closingBalance), highlight: true },
-      ];
-
-      metrics.forEach((m, idx) => {
-        const bx = 35 + idx * (boxW + 4);
-        page.drawRectangle({
-          x: bx,
-          y: y - boxH,
-          width: boxW,
-          height: boxH,
-          color: m.highlight ? rgb(0.98, 0.94, 0.9) : BAND,
-          borderColor: m.highlight ? rgb(0.9, 0.5, 0.1) : LIGHT,
-          borderWidth: m.highlight ? 1 : 0.5,
-        });
-        page.drawText(m.label, { x: bx + 8, y: y - 14, size: 7.5, font: bold, color: GRAY });
-        page.drawText(m.value, {
-          x: bx + 8,
-          y: y - 32,
-          size: 11,
-          font: bold,
-          color: m.highlight && Number(fullData.closingBalance) > 0 ? rgb(0.85, 0.25, 0.1) : DARK,
-        });
-      });
-      y -= boxH + 16;
-    } else {
-      const payData = data as any;
-      const boxW = (width - 70) / 2;
-      const boxH = 40;
-      const metrics = [
-        { label: 'TOTAL PAYMENTS COUNT', value: `${payData.totalPaymentsCount} transactions` },
-        { label: 'TOTAL AMOUNT RECEIVED', value: money(payData.totalAmountPaid) },
-      ];
-      metrics.forEach((m, idx) => {
-        const bx = 35 + idx * (boxW + 6);
-        page.drawRectangle({
-          x: bx,
-          y: y - boxH,
-          width: boxW,
-          height: boxH,
-          color: BAND,
-          borderColor: LIGHT,
-          borderWidth: 0.5,
-        });
-        page.drawText(m.label, { x: bx + 10, y: y - 14, size: 8, font: bold, color: GRAY });
-        page.drawText(m.value, { x: bx + 10, y: y - 32, size: 12, font: bold, color: DARK });
-      });
-      y -= boxH + 16;
-    }
-
-    // Draw Table
-    if (isFull) {
-      const fullData = data as any;
-      const colDate = 45;
-      const colRef = 125;
-      const colDebit = 370;
-      const colCredit = 455;
-      const colBal = width - 45;
-
-      const drawTableHeader = (p: PDFPage, curY: number) => {
-        p.drawLine({ start: { x: 35, y: curY + 6 }, end: { x: width - 35, y: curY + 6 }, thickness: 1, color: LIGHT });
-        curY -= 15;
-        p.drawText('Date', { x: colDate, y: curY, size: 9, font: bold, color: DARK });
-        p.drawText('Transaction / Ref #', { x: colRef, y: curY, size: 9, font: bold, color: DARK });
-        rightAt('Invoiced (+)', colDebit, curY, 9, bold);
-        rightAt('Paid (-)', colCredit, curY, 9, bold);
-        rightAt('Balance', colBal, curY, 9, bold);
-        curY -= 8;
-        p.drawLine({ start: { x: 35, y: curY }, end: { x: width - 35, y: curY }, thickness: 1, color: LIGHT });
-        return curY - 14;
-      };
-
-      y = drawTableHeader(page, y);
-
-      // Opening balance row if start date is given
-      if (options.startDate) {
-        page.drawText(this.fmtDate(options.startDate), { x: colDate, y, size: 8.5, font, color: GRAY });
-        page.drawText('Opening Forward Balance', { x: colRef, y, size: 8.5, font: bold, color: GRAY });
-        rightAt('—', colDebit, y, 8.5, font, GRAY);
-        rightAt('—', colCredit, y, 8.5, font, GRAY);
-        rightAt(money(fullData.openingBalance), colBal, y, 9, bold, DARK);
-        y -= 6;
-        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
-        y -= 12;
-      }
-
-      if (fullData.entries.length === 0) {
-        page.drawText('No transactions recorded within this period.', {
-          x: 45,
-          y,
-          size: 9.5,
-          font,
-          color: GRAY,
-        });
-        y -= 20;
-      }
-
-      for (const e of fullData.entries) {
-        if (y < 100) {
-          page = pdf.addPage([595, 842]);
-          y = 790;
-          y = drawTableHeader(page, y);
-        }
-
-        const dateStr = this.fmtDate(new Date(e.date));
-        page.drawText(dateStr, { x: colDate, y, size: 8.5, font, color: DARK });
-
-        const label =
-          e.type === 'INVOICE'
-            ? `Invoice #${e.ref}`
-            : e.invoiceNumber
-              ? `Payment #${e.ref} for Invoice #${e.invoiceNumber}`
-              : `Payment #${e.ref}`;
-        page.drawText(label, {
-          x: colRef,
-          y,
-          size: 8.5,
-          font: e.type === 'INVOICE' ? font : bold,
-          color: e.type === 'INVOICE' ? DARK : rgb(0.1, 0.5, 0.25),
-        });
-
-        rightAt(e.debit > 0 ? money(e.debit) : '—', colDebit, y, 8.5, font, e.debit > 0 ? DARK : GRAY);
-        rightAt(e.credit > 0 ? money(e.credit) : '—', colCredit, y, 8.5, font, e.credit > 0 ? rgb(0.1, 0.55, 0.25) : GRAY);
-        rightAt(money(e.runningBalance), colBal, y, 9, bold, DARK);
-
-        y -= 6;
-        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
-        y -= 12;
-      }
-
-      // Closing Total Box
-      if (y < 130) {
-        page = pdf.addPage([595, 842]);
-        y = 780;
-      }
-      y -= 6;
-      const sumBoxW = 230;
-      const sumBoxH = 62;
-      const bx = width - 35 - sumBoxW;
-      page.drawRectangle({
-        x: bx,
-        y: y - sumBoxH,
-        width: sumBoxW,
-        height: sumBoxH,
-        color: BAND,
-        borderColor: LIGHT,
-        borderWidth: 0.5,
-      });
-
-      page.drawText('Total Invoiced (Period):', { x: bx + 12, y: y - 16, size: 8.5, font, color: GRAY });
-      rightAt(money(fullData.totalBilled), bx + sumBoxW - 12, y - 16, 8.5, bold, DARK);
-
-      page.drawText('Total Paid (Period):', { x: bx + 12, y: y - 32, size: 8.5, font, color: GRAY });
-      rightAt(money(fullData.totalPaid), bx + sumBoxW - 12, y - 32, 8.5, bold, rgb(0.1, 0.55, 0.25));
-
-      page.drawLine({
-        start: { x: bx + 12, y: y - 40 },
-        end: { x: bx + sumBoxW - 12, y: y - 40 },
-        thickness: 0.5,
-        color: LIGHT,
-      });
-
-      page.drawText('Net Outstanding:', { x: bx + 12, y: y - 53, size: 9.5, font: bold, color: DARK });
-      rightAt(
-        money(fullData.closingBalance),
-        bx + sumBoxW - 12,
-        y - 53,
-        10.5,
-        bold,
-        Number(fullData.closingBalance) > 0 ? rgb(0.85, 0.25, 0.1) : DARK,
-      );
-
-      y -= sumBoxH + 20;
-    } else {
-      // MODE B: PAYMENTS ONLY
-      const payData = data as any;
-      const colDate = 40;
-      const colRef = 115;
-      const colMethod = 190;
-      const colInvoice = 275;
-      const colNotes = 360;
-      const colAmount = width - 40;
-
-      const drawTableHeader = (p: PDFPage, curY: number) => {
-        p.drawLine({ start: { x: 35, y: curY + 6 }, end: { x: width - 35, y: curY + 6 }, thickness: 1, color: LIGHT });
-        curY -= 16;
-        p.drawText('Date', { x: colDate, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Payment #', { x: colRef, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Method', { x: colMethod, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Invoice Ref', { x: colInvoice, y: curY, size: 9.5, font: bold, color: DARK });
-        p.drawText('Reference / Notes', { x: colNotes, y: curY, size: 9.5, font: bold, color: DARK });
-        rightAt('Amount Received', colAmount, curY, 9.5, bold);
-        curY -= 8;
-        p.drawLine({ start: { x: 35, y: curY }, end: { x: width - 35, y: curY }, thickness: 1, color: LIGHT });
-        return curY - 16;
-      };
-
-      y = drawTableHeader(page, y);
-
-      if (payData.entries.length === 0) {
-        page.drawText('No payments found in this date range.', { x: 45, y, size: 10, font, color: GRAY });
-        y -= 24;
-      }
-
-      for (const p of payData.entries) {
-        if (y < 120) {
-          page = pdf.addPage([595, 842]);
-          y = 790;
-          y = drawTableHeader(page, y);
-        }
-
-        const dateStr = this.fmtDate(new Date(p.date));
-        page.drawText(dateStr, { x: colDate, y, size: 9, font, color: DARK });
-        page.drawText(p.number, { x: colRef, y, size: 9, font: bold, color: DARK });
-        page.drawText(p.method, { x: colMethod, y, size: 9, font, color: DARK });
-        page.drawText(p.invoiceNumber || '—', { x: colInvoice, y, size: 9, font, color: p.invoiceNumber ? DARK : GRAY });
-
-        const refText = [p.reference, p.notes].filter(Boolean).join(' · ');
-        const refTrunc = refText ? (refText.length > 25 ? refText.slice(0, 25) + '…' : refText) : '—';
-        page.drawText(refTrunc, { x: colNotes, y, size: 8.5, font, color: GRAY });
-
-        rightAt(money(p.amount), colAmount, y, 9.5, bold, rgb(0.1, 0.55, 0.25));
-
-        y -= 8;
-        page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: LIGHT });
-        y -= 14;
-      }
-
-      // Closing Total Box
-      if (y < 140) {
-        page = pdf.addPage([595, 842]);
-        y = 780;
-      }
-      y -= 8;
-      const sumBoxW = 240;
-      const sumBoxH = 46;
-      const bx = width - 35 - sumBoxW;
-      page.drawRectangle({
-        x: bx,
-        y: y - sumBoxH,
-        width: sumBoxW,
-        height: sumBoxH,
-        color: BAND,
-        borderColor: LIGHT,
-        borderWidth: 0.5,
-      });
-
-      page.drawText('Total Payments Received:', { x: bx + 12, y: y - 28, size: 10, font: bold, color: DARK });
-      rightAt(money(payData.totalAmountPaid), bx + sumBoxW - 12, y - 28, 12, bold, rgb(0.1, 0.55, 0.25));
-
-      y -= sumBoxH + 24;
-    }
 
     this.footer(
       page,
       fonts,
       company,
-      `For billing inquiries, please contact ${company.email || company.phone || company.name || 'our support'}. Thank you for your business.`,
+      `For billing or statement inquiries, please contact ${company.email || company.phone || company.name}.`,
+      theme,
+    );
+
+    return pdf.save();
+  }
+
+  /**
+   * Generates a Universal Live Sample PDF for real-time previewing in Theme Studio
+   */
+  async samplePdf(themeOverride?: Partial<PdfThemeConfig>): Promise<Uint8Array> {
+    const company = await this.company();
+    const theme = await this.getTheme(themeOverride);
+
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([595, 842]);
+    const fonts = await this.embedFonts(pdf, theme.fontFamily);
+    const { font, bold } = fonts;
+    const width = page.getWidth();
+
+    const money = (n: any) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const rightAt = (str: string, x: number, y: number, size: number, f: PDFFont, color = theme.dark) =>
+      page.drawText(str, { x: x - f.widthOfTextAtSize(str, size), y, size, font: f, color });
+
+    let y = await this.header(pdf, page, fonts, 'Invoice', company, theme);
+
+    y = this.band(
+      page,
+      fonts,
+      y,
+      {
+        label: 'Bill to',
+        rows: [
+          { text: 'Client / Company Name', bold: true },
+          { text: '+1 (555) 019-2834' },
+        ],
+      },
+      [
+        { label: 'Invoice #', value: '00014' },
+        { label: 'Date', value: this.fmtDate(new Date()) },
+      ],
+      'Bill info',
+      theme,
+    );
+
+    // Table Header
+    const colQty = 340;
+    const colPrice = 440;
+    const colAmount = width - 40;
+
+    if (theme.tableStyle === 'STRIPED' || theme.tableStyle === 'BORDERED') {
+      page.drawRectangle({ x: 35, y: y - 20, width: width - 70, height: 22, color: theme.band });
+    }
+
+    page.drawLine({ start: { x: 35, y: y + 2 }, end: { x: width - 35, y: y + 2 }, thickness: 1, color: theme.primary });
+    y -= 14;
+    page.drawText('Item', { x: 45, y, size: 9.5, font: bold, color: theme.primary });
+    rightAt('Quantity', colQty, y, 9.5, bold, theme.primary);
+    rightAt('Price', colPrice, y, 9.5, bold, theme.primary);
+    rightAt('Amount', colAmount, y, 9.5, bold, theme.primary);
+    y -= 8;
+    page.drawLine({ start: { x: 35, y }, end: { x: width - 35, y }, thickness: 0.5, color: theme.light });
+    y -= 18;
+
+    const sampleItems = [
+      { name: 'Commercial Equipment / Service Package', qty: 1, price: 725, total: 725 },
+    ];
+
+    let rowIdx = 0;
+    for (const item of sampleItems) {
+      if (theme.tableStyle === 'STRIPED' && rowIdx % 2 === 1) {
+        page.drawRectangle({ x: 35, y: y - 8, width: width - 70, height: 20, color: theme.band });
+      }
+
+      page.drawText(item.name, { x: 45, y, size: 9.5, font, color: theme.dark });
+      rightAt(String(item.qty), colQty, y, 9.5, font, theme.dark);
+      rightAt(money(item.price), colPrice, y, 9.5, font, theme.dark);
+      rightAt(money(item.total), colAmount, y, 9.5, bold, theme.dark);
+      y -= 10;
+
+      page.drawLine({ start: { x: 45, y }, end: { x: width - 45, y }, thickness: 0.5, color: theme.light });
+      y -= 16;
+      rowIdx++;
+    }
+
+    // Totals Box
+    y -= 6;
+    const totalRow = (label: string, value: string, isBold = false, size = 10, isHighlight = false) => {
+      rightAt(label, colPrice, y, size, isBold ? bold : font, isHighlight ? theme.primary : isBold ? theme.dark : theme.gray);
+      rightAt(value, colAmount, y, size, bold, isHighlight ? theme.primary : theme.dark);
+      y -= 6;
+      page.drawLine({ start: { x: colQty - 20, y }, end: { x: width - 35, y }, thickness: isHighlight ? 1 : 0.5, color: isHighlight ? theme.primary : theme.light });
+      y -= 16;
+    };
+
+    totalRow('Subtotal', money(725));
+    totalRow('Total', money(725), true, 11, false);
+    totalRow('Paid', money(725));
+    totalRow('Balance due', money(0), true, 11, false);
+
+    this.footer(
+      page,
+      fonts,
+      company,
+      `Thank you for choosing ${company.name ?? 'us'}. We appreciate your business and look forward to serving you again.`,
+      theme,
     );
 
     return pdf.save();

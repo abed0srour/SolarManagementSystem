@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -45,6 +45,7 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
         }
       : { supplier: null, warehouse: null, expectedDelivery: '', currency: 'USD', exchangeRate: '1', notes: '', hasDeliveryCost: false, deliveryCost: '0' },
   );
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [lines, setLines] = useState<PoLine[]>(() =>
     editing
       ? (editing.items ?? []).map((i: any) => ({
@@ -57,6 +58,25 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
   const [saving, setSaving] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Load warehouses. If exactly 1 exists, auto-assign it on new purchase orders.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/inventory/warehouses')
+      .then((r) => {
+        if (cancelled) return;
+        const list: any[] = Array.isArray(r.data) ? r.data : (r.data.items ?? []);
+        setWarehouses(list);
+        if (list.length === 1 && !editing) {
+          setForm((f: any) => ({ ...f, warehouse: list[0] }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [editing]);
 
   const setLine = (idx: number, patch: Partial<PoLine>) => setLines(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
 
@@ -71,7 +91,8 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
       toast.error(t('orders.selectSupplier') || 'Please select a supplier');
       return false;
     }
-    if (!form.warehouse) {
+    const effectiveWarehouse = form.warehouse || (warehouses.length === 1 ? warehouses[0] : null);
+    if (!effectiveWarehouse) {
       toast.error(t('orders.selectWarehouse') || 'Please select a warehouse');
       return false;
     }
@@ -97,9 +118,10 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
     if (!validate()) return;
     setSaving(true);
     try {
+      const effectiveWarehouse = form.warehouse || (warehouses.length === 1 ? warehouses[0] : null);
       const payload = {
         supplierId: form.supplier?.id,
-        warehouseId: form.warehouse?.id,
+        warehouseId: effectiveWarehouse?.id,
         expectedDelivery: form.expectedDelivery || undefined,
         currency: form.currency || 'USD',
         exchangeRate: form.exchangeRate === '' ? 1 : Number(form.exchangeRate) || 1,
@@ -140,7 +162,15 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
             <SupplierPicker value={form.supplier} onChange={(s) => setForm({ ...form, supplier: s })} />
           </Field>
           <Field label={t('common.warehouse')} className="sm:col-span-2">
-            <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} />
+            {warehouses.length === 1 && !editing ? (
+              <Input
+                value={form.warehouse?.name || warehouses[0]?.name || ''}
+                disabled
+                className="bg-muted/40 font-medium cursor-not-allowed"
+              />
+            ) : (
+              <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} />
+            )}
           </Field>
           <Field label={t('orders.expectedDelivery')}>
             <Input type="date" disabled={!editable} value={form.expectedDelivery ?? ''} onChange={(e) => setForm({ ...form, expectedDelivery: e.target.value })} />

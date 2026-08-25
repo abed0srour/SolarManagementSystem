@@ -132,6 +132,14 @@ export class InvoicesController {
     res.send(Buffer.from(bytes));
   }
 
+  @Post('pdf/preview-sample')
+  @Header('Content-Type', 'application/pdf')
+  async previewSample(@Body() body: any, @Res() res: Response) {
+    const bytes = await this.pdfService.samplePdf(body);
+    res.setHeader('Content-Disposition', 'inline; filename=sample-preview.pdf');
+    res.send(Buffer.from(bytes));
+  }
+
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: InvoiceDto) {
     return this.service.create(user.id, dto);

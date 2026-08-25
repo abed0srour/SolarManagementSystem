@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   IsArray,
   IsBoolean,
@@ -88,6 +88,10 @@ class CreateProductDto {
   @IsOptional()
   @IsString()
   barcode?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 
   @IsOptional()
   @IsString()
@@ -184,6 +188,81 @@ class CompatibilityDto {
   note?: string;
 }
 
+export class ProductAttributeDto {
+  @IsString()
+  @MinLength(1)
+  name: string;
+
+  @IsString()
+  type: 'STRING' | 'INTEGER' | 'DECIMAL' | 'FLOAT' | 'BOOLEAN';
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isFreeForm?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  permittedValues?: any[];
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+}
+
+export class SetProductAttributesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductAttributeDto)
+  attributes: ProductAttributeDto[];
+}
+
+export class GenerateVariantItemDto {
+  @IsString()
+  @MinLength(1)
+  sku: string;
+
+  @IsString()
+  @MinLength(1)
+  name: string;
+
+  @IsNumber()
+  @Min(0)
+  salePrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  costPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsObject()
+  variantAttributes: Record<string, any>;
+}
+
+export class GenerateVariantsDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductAttributeDto)
+  attributes?: ProductAttributeDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GenerateVariantItemDto)
+  variants: GenerateVariantItemDto[];
+}
+
 @Controller('products')
 export class ProductsController {
   constructor(private service: ProductsService) {}
@@ -224,6 +303,39 @@ export class ProductsController {
   @Get(':id/buyers')
   buyers(@Param('id') id: string, @Query() query: any) {
     return this.service.buyers(id, query);
+  }
+
+  /** Dynamic Attributes & Variants */
+  @Get(':id/variants')
+  getVariants(@Param('id') id: string) {
+    return this.service.getVariants(id);
+  }
+
+  @Post(':id/attributes')
+  setAttributes(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SetProductAttributesDto,
+  ) {
+    return this.service.setAttributes(user.id, id, dto.attributes);
+  }
+
+  @Post(':id/generate-variants')
+  generateVariants(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: GenerateVariantsDto,
+  ) {
+    return this.service.generateVariants(user.id, id, dto);
+  }
+
+  @Delete(':id/variants/:variantId')
+  deleteVariant(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('variantId') variantId: string,
+  ) {
+    return this.service.deleteVariant(user.id, id, variantId);
   }
 
   @Post()

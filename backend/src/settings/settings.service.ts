@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { requireTenantId } from '../common/tenant-context';
@@ -23,6 +23,14 @@ export class SettingsService {
       update: { value },
       create: { key, value },
     });
+    if (key === 'company' && value && typeof value === 'object' && value.name) {
+      await this.prisma.tenant
+        .update({
+          where: { id: requireTenantId() },
+          data: { name: String(value.name) },
+        })
+        .catch(() => {});
+    }
     await this.audit.log(userId, 'UPDATE', 'Setting', key, value);
     return setting;
   }

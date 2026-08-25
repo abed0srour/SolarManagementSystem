@@ -66,10 +66,30 @@ export default function SalesOrderForm({
     !orderId && initialLines?.length ? initialLines : [emptyLine()],
   );
   const [existing, setExisting] = useState<any>(null);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(Boolean(orderId || lockedClientId));
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lossConfirmOpen, setLossConfirmOpen] = useState(false);
+
+  // Load warehouses. If exactly 1 exists, auto-assign it on new orders.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/inventory/warehouses')
+      .then((r) => {
+        if (cancelled) return;
+        const list: any[] = Array.isArray(r.data) ? r.data : (r.data.items ?? []);
+        setWarehouses(list);
+        if (list.length === 1 && !orderId) {
+          setForm((f: any) => ({ ...f, warehouse: list[0] }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
 
   // Pre-fill the client when creating from a client's page.
   useEffect(() => {
@@ -125,7 +145,8 @@ export default function SalesOrderForm({
       toast.error(t('orders.selectClient') || 'Please select a client');
       return;
     }
-    if (!form.warehouse) {
+    const effectiveWarehouse = form.warehouse || (warehouses.length === 1 ? warehouses[0] : null);
+    if (!effectiveWarehouse) {
       toast.error(t('orders.selectWarehouse') || 'Please select a warehouse');
       return;
     }
@@ -145,9 +166,10 @@ export default function SalesOrderForm({
   const save = async () => {
     setSaving(true);
     try {
+      const effectiveWarehouse = form.warehouse || (warehouses.length === 1 ? warehouses[0] : null);
       const payload = {
         clientId: form.client?.id,
-        warehouseId: form.warehouse?.id,
+        warehouseId: effectiveWarehouse?.id,
         discountType: form.discountType || undefined,
         discountValue: form.discountType ? (Number(form.discountValue) || 0) : undefined,
         shippingFee: Number(form.shippingFee) || 0,
@@ -204,7 +226,19 @@ export default function SalesOrderForm({
             )}
           </Field>
           <Field label={t('common.warehouse')} className="md:col-span-2">
-            <WarehousePicker value={form.warehouse} onChange={(w) => setForm({ ...form, warehouse: w })} placeholder={t('inventory.selectWarehouse') || 'Select a warehouse...'} />
+            {warehouses.length === 1 && !editing ? (
+              <Input
+                value={form.warehouse?.name || warehouses[0]?.name || ''}
+                disabled
+                className="bg-muted/40 font-medium cursor-not-allowed"
+              />
+            ) : (
+              <WarehousePicker
+                value={form.warehouse}
+                onChange={(w) => setForm({ ...form, warehouse: w })}
+                placeholder={t('inventory.selectWarehouse') || 'Select a warehouse...'}
+              />
+            )}
           </Field>
           <Field label={`${t('common.discount')} (${t('common.total')})`}>
             <Select value={form.discountType ?? ''} onChange={(e) => setForm({ ...form, discountType: e.target.value })}>

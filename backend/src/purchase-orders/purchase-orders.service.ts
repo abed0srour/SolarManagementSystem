@@ -166,6 +166,16 @@ export class PurchaseOrdersService {
   }
 
   async create(userId: string, dto: any) {
+    let warehouseId = dto.warehouseId;
+    if (!warehouseId) {
+      const warehouses = await this.prisma.warehouse.findMany({ select: { id: true } });
+      if (warehouses.length === 1) {
+        warehouseId = warehouses[0].id;
+      } else if (warehouses.length > 1) {
+        throw new BadRequestException('Please select a warehouse');
+      }
+    }
+
     const items = dto.items.map((i: any) => ({
       productId: i.productId,
       quantity: i.quantity,
@@ -181,7 +191,7 @@ export class PurchaseOrdersService {
       data: {
         number,
         supplierId: dto.supplierId,
-        warehouseId: dto.warehouseId,
+        warehouseId,
         status: dto.status ?? 'DRAFT',
         expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
         currency: dto.currency ?? 'USD',

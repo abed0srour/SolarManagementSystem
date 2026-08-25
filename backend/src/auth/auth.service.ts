@@ -68,17 +68,26 @@ export class AuthService {
         select: { createdAt: true, ip: true, userAgent: true },
       });
 
+      let storeName = profile.tenant?.name;
+      try {
+        const companySetting = await this.prisma.setting.findFirst({ where: { key: 'company' } });
+        if (companySetting?.value && typeof companySetting.value === 'object' && (companySetting.value as any).name) {
+          storeName = String((companySetting.value as any).name);
+        }
+      } catch {}
+
       return {
         id: profile.id,
         email: profile.email,
         name: profile.fullName,
+        fullName: profile.fullName,
         phone: profile.phone,
         avatarUrl: profile.avatarUrl,
         role: profile.appRole,
         profileRole: profile.role,
         isActive: profile.isActive,
         createdAt: profile.createdAt,
-        tenant: profile.tenant,
+        tenant: profile.tenant ? { ...profile.tenant, name: storeName || profile.tenant.name } : null,
         lastLogin,
       };
     };

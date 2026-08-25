@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <AccentProvider>
             <NextIntlClientProvider messages={messages}>
               {children}
-              <Toaster richColors position={dir === 'rtl' ? 'bottom-left' : 'bottom-right'} />
+              <Toaster richColors closeButton position={dir === 'rtl' ? 'bottom-left' : 'bottom-right'} />
             </NextIntlClientProvider>
           </AccentProvider>
         </ThemeProvider>

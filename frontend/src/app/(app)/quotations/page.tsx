@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import Field from '../../../components/form-field';
 import EntityLink, { linkTo } from '../../../components/entity-link';
 import { WarehousePicker } from '../../../components/entity-picker';
 import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 import QuotationForm from '../../../components/quotation-form';
@@ -25,13 +26,33 @@ export default function QuotationsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [convertFor, setConvertFor] = useState<any>(null);
   const [convertWh, setConvertWh] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [archived, setArchived] = useState(false);
 
+  useEffect(() => {
+    api
+      .get('/inventory/warehouses')
+      .then((r) => {
+        const list: any[] = Array.isArray(r.data) ? r.data : (r.data.items ?? []);
+        setWarehouses(list);
+      })
+      .catch(() => {});
+  }, []);
+
   const openCreate = () => {
     router.push('/quotations/new');
+  };
+
+  const openConvertDialog = (row: any) => {
+    setConvertFor(row);
+    if (warehouses.length === 1) {
+      setConvertWh(warehouses[0]);
+    } else {
+      setConvertWh(null);
+    }
   };
 
   const openEdit = (row: any) => {
@@ -137,7 +158,7 @@ export default function QuotationsPage() {
                       <MessageCircle />
                     </Button>
                     {['DRAFT', 'SENT', 'ACCEPTED'].includes(r.status) && r.salesOrders?.length === 0 && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('quotations.convert')} onClick={(e) => { e.stopPropagation(); setConvertFor(r); }}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title={t('quotations.convert')} onClick={(e) => { e.stopPropagation(); openConvertDialog(r); }}>
                         <ArrowRightCircle />
                       </Button>
                     )}
@@ -174,11 +195,19 @@ export default function QuotationsPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>{t('quotations.convert')} — {convertFor?.number}</DialogTitle></DialogHeader>
           <Field label={t('common.warehouse')}>
-            <WarehousePicker value={convertWh} onChange={setConvertWh} />
+            {warehouses.length === 1 ? (
+              <Input
+                value={convertWh?.name || warehouses[0]?.name || ''}
+                disabled
+                className="bg-muted/40 font-medium cursor-not-allowed"
+              />
+            ) : (
+              <WarehousePicker value={convertWh} onChange={setConvertWh} />
+            )}
           </Field>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConvertFor(null)}>{t('common.cancel')}</Button>
-            <Button onClick={convert} disabled={!convertWh}>{t('common.confirm')}</Button>
+            <Button onClick={convert} disabled={!convertWh && warehouses.length !== 1}>{t('common.confirm')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
