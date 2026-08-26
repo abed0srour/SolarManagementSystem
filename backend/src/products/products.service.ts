@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { isUnused, SafeDeleteResult, UsageReport, usedBy } from '../common/safe-delete';
 import { requireTenantId } from '../common/tenant-context';
+import { buildSkuPrefix, formatSku, nextSkuSequence } from './sku';
 
 @Injectable()
 export class ProductsService {
@@ -597,7 +598,50 @@ export class ProductsService {
 
   private static readonly SKU_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
-  async generateSku(length = 6): Promise<{ sku: string }> {
+  /**
+   * A SKU that says what the product is.
+   *
+   * Built from whatever the form has filled in so far -- category, brand, model
+   * -- and closed with a number that counts within that combination, so the
+   * third Jinko panel is PAN-JIN-JKM550-0003 rather than an unrelated code.
+   *
+   * Falls back to the old random form when there is nothing to build from: a
+   * brand-new product with no category chosen yet, or one described only in
+   * Arabic, which leaves no Latin characters to abbreviate. The button then
+   * still works, it just cannot be meaningful.
+   */
+  async generateSku(input: { subCategoryId?: string; brand?: string; model?: string } = {}): Promise<{ sku: string }> {
+    let category: string | undefined;
+    if (input.subCategoryId) {
+      const sub = await this.prisma.subCategory.findFirst({
+        where: { id: input.subCategoryId },
+        select: { name: true },
+      });
+      category = sub?.name;
+    }
+
+    const prefix = buildSkuPrefix({ category, brand: input.brand, model: input.model });
+    if (!prefix) return this.randomSku();
+
+    const siblings = await this.prisma.product.findMany({
+      where: { sku: { startsWith: `${prefix}-` } },
+      select: { sku: true },
+    });
+
+    // The counter is derived from SKUs already using this prefix, so it is
+    // normally free on the first try. The loop covers a hand-typed SKU sitting
+    // on the number that would come next.
+    let sequence = nextSkuSequence(siblings.map((p) => p.sku), prefix);
+    for (let attempt = 0; attempt < 50; attempt++, sequence++) {
+      const sku = formatSku(prefix, sequence);
+      const taken = await this.prisma.product.findFirst({ where: { sku }, select: { id: true } });
+      if (!taken) return { sku };
+    }
+    return this.randomSku();
+  }
+
+  /** The original unambiguous-alphabet code, kept for products with nothing to describe them. */
+  private async randomSku(length = 6): Promise<{ sku: string }> {
     const alphabet = ProductsService.SKU_ALPHABET;
     for (let attempt = 0; attempt < 10; attempt++) {
       const sku = Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');

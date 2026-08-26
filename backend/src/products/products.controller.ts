@@ -278,9 +278,16 @@ export class ProductsController {
   }
 
   // Must stay above `@Get(':id')`, or 'generate-sku' is read as an id.
+  //
+  // Takes what the form has so far so the code can describe the product. All
+  // optional: with none of it the service falls back to a random SKU.
   @Get('generate-sku')
-  generateSku() {
-    return this.service.generateSku();
+  generateSku(
+    @Query('subCategoryId') subCategoryId?: string,
+    @Query('brand') brand?: string,
+    @Query('model') model?: string,
+  ) {
+    return this.service.generateSku({ subCategoryId, brand, model });
   }
 
   /** Tells the confirm dialog whether Delete or Archive applies. */

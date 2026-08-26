@@ -151,7 +151,16 @@ export default function ProductForm({ productId }: { productId?: string }) {
   const generateSku = async () => {
     setSkuLoading(true);
     try {
-      const { data } = await api.get('/products/generate-sku');
+      // Whatever is filled in so far shapes the code — a SKU generated before
+      // picking a category is just a random one, so it is worth pressing this
+      // after the rest of the form rather than before.
+      const { data } = await api.get('/products/generate-sku', {
+        params: {
+          subCategoryId: form.subCategoryId || undefined,
+          brand: String(form.brand ?? '').trim() || undefined,
+          model: String(form.model ?? '').trim() || undefined,
+        },
+      });
       setForm((f: any) => ({ ...f, sku: data.sku }));
       setErrors((e) => ({ ...e, sku: undefined }));
     } catch (e) {
