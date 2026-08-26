@@ -56,15 +56,24 @@ export default function ClientsPage() {
     setOpen(true);
   };
 
+  /**
+   * An emptied field means "remove this", so it has to be sent as null.
+   *
+   * `undefined` is dropped from the JSON body entirely, which leaves Prisma's
+   * update with no key for the field and therefore nothing to change — the save
+   * reports success while the old value stays exactly where it was.
+   */
+  const clearable = (value: unknown) => String(value ?? '').trim() || null;
+
   const save = async () => {
     try {
       const { address, ...rest } = form;
       const payload = {
         ...rest,
         creditLimit: Number(form.creditLimit) || 0,
-        email: form.email || undefined,
-        phone: form.phone || undefined,
-        notes: form.notes || undefined,
+        email: clearable(form.email),
+        phone: clearable(form.phone),
+        notes: clearable(form.notes),
         addresses: address?.trim() ? [{ label: 'Main', line1: address.trim(), isBilling: true, isInstallation: true }] : [],
       };
       if (editing) await api.patch(`/clients/${editing.id}`, payload);
