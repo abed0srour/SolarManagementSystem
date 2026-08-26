@@ -149,6 +149,8 @@
   },
   "common": {
     "actions": "Actions",
+    "columns": "Columns",
+    "showAllColumns": "Show all columns",
     "active": "Active",
     "add": "Add",
     "addLine": "Add line",

@@ -149,6 +149,8 @@
   },
   "common": {
     "actions": "إجراءات",
+    "columns": "الأعمدة",
+    "showAllColumns": "إظهار كل الأعمدة",
     "active": "النشط",
     "add": "إضافة",
     "addLine": "إضافة سطر",

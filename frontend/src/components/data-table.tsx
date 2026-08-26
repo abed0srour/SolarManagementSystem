@@ -1,7 +1,7 @@
 'use client';
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronLeft, ChevronRight, Inbox, Trash2, TriangleAlert } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Check, ChevronLeft, ChevronRight, Columns3, Inbox, Search, Trash2, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, errMsg } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
@@ -12,6 +12,14 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Select } from './ui/select';
 import { Skeleton } from './ui/skeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export interface Column<T = any> {
@@ -26,6 +34,43 @@ export interface Column<T = any> {
    * the first column becomes the heading and the rest render as label/value.
    */
   mobile?: 'primary' | 'hide';
+  /**
+   * Keep this column out of the show/hide menu and always render it. Set it on
+   * a column the row cannot be read without — an identifier, or the one the
+   * row's actions hang off.
+   */
+  alwaysVisible?: boolean;
+}
+
+/**
+ * A column with no label is a layout column — the row's action buttons, a
+ * checkbox — rather than a piece of data. It has no name to list in the
+ * show/hide menu, so it is never offered there and never hidden.
+ */
+const isBlankLabel = (label: ReactNode) => label === '' || label === null || label === undefined;
+
+/** Where one table's hidden columns are remembered, per resource. */
+const hiddenColumnsKey = (resource: string) => `table-hidden-columns:${resource}`;
+
+function readHiddenColumns(resource: string): string[] {
+  try {
+    const raw = localStorage.getItem(hiddenColumnsKey(resource));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : [];
+  } catch {
+    // Private browsing and blocked site data both throw here. A table that
+    // shows every column is a fine outcome; a table that crashes is not.
+    return [];
+  }
+}
+
+function writeHiddenColumns(resource: string, keys: string[]): void {
+  try {
+    if (keys.length) localStorage.setItem(hiddenColumnsKey(resource), JSON.stringify(keys));
+    else localStorage.removeItem(hiddenColumnsKey(resource));
+  } catch {
+    /* The choice simply does not persist. */
+  }
 }
 
 interface Props {
@@ -109,6 +154,37 @@ export default function DataTable({
   const { data, error, loading, validating, refresh } = useLocalStorageCache(cacheKey, fetcher);
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
+
+  // Read on the client only: localStorage does not exist during the server
+  // render, and seeding state from it directly would mismatch on hydration.
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
+  useEffect(() => {
+    setHiddenColumns(readHiddenColumns(resource));
+  }, [resource]);
+
+  /** Columns a person is allowed to turn off — everything with a name. */
+  const hideableColumns = useMemo(
+    () => columns.filter((c) => !c.alwaysVisible && !isBlankLabel(c.label)),
+    [columns],
+  );
+
+  const visibleColumns = useMemo(
+    () => columns.filter((c) => c.alwaysVisible || isBlankLabel(c.label) || !hiddenColumns.includes(c.key)),
+    [columns, hiddenColumns],
+  );
+
+  const toggleColumn = (key: string) => {
+    setHiddenColumns((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      writeHiddenColumns(resource, next);
+      return next;
+    });
+  };
+
+  const showAllColumns = () => {
+    setHiddenColumns([]);
+    writeHiddenColumns(resource, []);
+  };
 
   // Pages bump `refreshKey` after a create/update/delete. Treat that as the
   // write signal: drop every cached query for this resource and refetch. The
@@ -228,8 +304,8 @@ export default function DataTable({
    * buttons) are pulled out and pinned to the card's footer, where they stay
    * reachable with a thumb.
    */
-  const isBlank = (l: ReactNode) => l === '' || l === null || l === undefined;
-  const shown = columns.filter((c) => c.mobile !== 'hide');
+  const isBlank = isBlankLabel;
+  const shown = visibleColumns.filter((c) => c.mobile !== 'hide');
   const actionCols = shown.filter((c) => isBlank(c.label));
   const dataCols = shown.filter((c) => !isBlank(c.label));
   const headingCol =
@@ -356,6 +432,50 @@ export default function DataTable({
             </div>
           )}
           {filters && <div className="flex flex-wrap items-center gap-2 shrink-0 [&_select]:h-9 [&_input]:h-9 [&_button]:h-9">{filters}</div>}
+          {hideableColumns.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 shrink-0" title={t('common.columns')}>
+                  <Columns3 className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('common.columns')}</span>
+                  {hiddenColumns.length > 0 && (
+                    <span className="ms-1 rounded-full bg-primary/15 px-1.5 text-[11px] font-medium text-primary">
+                      {visibleColumns.filter((c) => !isBlankLabel(c.label)).length}/{hideableColumns.length}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+                <DropdownMenuLabel>{t('common.columns')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {hideableColumns.map((c) => {
+                  const visible = !hiddenColumns.includes(c.key);
+                  return (
+                    <DropdownMenuItem
+                      key={c.key}
+                      // Radix closes on select by default; a column menu is used
+                      // several toggles at a time, so it is kept open.
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        toggleColumn(c.key);
+                      }}
+                    >
+                      <Check className={cn('h-4 w-4 shrink-0', !visible && 'opacity-0')} />
+                      <span className={cn('truncate', !visible && 'text-muted-foreground')}>{c.label}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                {hiddenColumns.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); showAllColumns(); }}>
+                      <span className="text-muted-foreground">{t('common.showAllColumns')}</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {onArchivedChange && (
             <div className="inline-flex h-9 items-center rounded-md border p-0.5 shrink-0" role="group">
               {[false, true].map((mode) => (
@@ -465,7 +585,7 @@ export default function DataTable({
                 />
               </TableHead>
             )}
-            {columns.map((c) => (
+            {visibleColumns.map((c) => (
               <TableHead key={c.key} className={c.className}>
                 {c.sortable ? (
                   <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort(c.key)}>
@@ -492,7 +612,7 @@ export default function DataTable({
                     <Skeleton className="h-4 w-4 rounded" />
                   </TableCell>
                 )}
-                {columns.map((c) => (
+                {visibleColumns.map((c) => (
                   <TableCell key={c.key}>
                     <Skeleton className="h-4 w-full max-w-32" />
                   </TableCell>
@@ -501,7 +621,7 @@ export default function DataTable({
             ))
           ) : rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length + (selectionMode ? 1 : 0)}>
+              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0)}>
                 <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
                   <Inbox className="h-8 w-8 opacity-50" />
                   <span className="text-sm">{t('common.noRecords')}</span>
@@ -541,7 +661,7 @@ export default function DataTable({
                     ) : null}
                   </TableCell>
                 )}
-                {columns.map((c) => (
+                {visibleColumns.map((c) => (
                   <TableCell key={c.key} className={c.className}>
                     {c.render ? c.render(row) : (row[c.key] ?? '—')}
                   </TableCell>
