@@ -1,5 +1,5 @@
 ﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, MinLength, NotEquals } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, MinLength, NotEquals } from 'class-validator';
 import { StockService } from './stock.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -86,6 +86,17 @@ class UnitUpdateDto {
   warehouseId?: string;
 }
 
+class SerialContainerAddDto {
+  @IsString()
+  warehouseId: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @MaxLength(18, { each: true })
+  serialNumbers: string[];
+}
+
 @Controller('inventory')
 export class InventoryController {
   constructor(private stock: StockService) {}
@@ -148,6 +159,32 @@ export class InventoryController {
   @Get('units/serial/:serial')
   lookupSerial(@Param('serial') serial: string) {
     return this.stock.lookupSerial(serial);
+  }
+
+  /** Products whose recorded serials do not match their stock quantity. */
+  @Get('serial-drift')
+  serialDrift(@Query() query: any) {
+    return this.stock.serialDrift(query);
+  }
+
+  /** The serial container for one product, one group per warehouse. */
+  @Get('products/:productId/serials')
+  serialContainer(@Param('productId') productId: string) {
+    return this.stock.serialContainer(productId);
+  }
+
+  @Post('products/:productId/serials')
+  addSerials(
+    @CurrentUser() user: AuthUser,
+    @Param('productId') productId: string,
+    @Body() dto: SerialContainerAddDto,
+  ) {
+    return this.stock.addSerials(user.id, { ...dto, productId });
+  }
+
+  @Delete('units/:id')
+  removeSerial(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.stock.removeSerial(user.id, id);
   }
 
   @Patch('units/:id')

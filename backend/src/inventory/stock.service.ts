@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { applyWeightedAverageCost } from '../common/costing';
 import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
+import { fitsContainer, normaliseSerial, normaliseSerials, repeatedSerials, serialRoom } from './serial-container';
 
 @Injectable()
 export class StockService {
@@ -365,13 +366,11 @@ export class StockService {
       manufactureDate?: Date;
     },
   ) {
-    const tooLong = params.serialNumbers.filter((s) => s.length > 18);
-    if (tooLong.length)
-      throw new BadRequestException(`Serial numbers must be 18 characters or less: ${tooLong.join(', ')}`);
+    const serialNumbers = normaliseSerials(params.serialNumbers);
     // One batched insert — inserting row by row over a remote pooler is slow
     // enough to blow the transaction timeout on large receipts.
     await tx.productUnit.createMany({
-      data: params.serialNumbers.map((serialNumber) => ({
+      data: serialNumbers.map((serialNumber) => ({
         productId: params.productId,
         warehouseId: params.warehouseId,
         serialNumber,
@@ -395,9 +394,7 @@ export class StockService {
     // captured at goods receipt, and stay unique across every unit.
     let serialNumber: string | undefined;
     if (data.serialNumber !== undefined) {
-      serialNumber = data.serialNumber.trim();
-      if (!serialNumber) throw new BadRequestException('Serial number cannot be empty');
-      if (serialNumber.length > 18) throw new BadRequestException('Serial numbers must be 18 characters or less');
+      serialNumber = normaliseSerial(data.serialNumber);
       if (serialNumber !== existing.serialNumber) {
         const clash = await this.prisma.productUnit.findFirst({ where: { serialNumber } });
         if (clash) throw new BadRequestException(`Serial number "${serialNumber}" is already used by another unit`);
@@ -418,5 +415,295 @@ export class StockService {
       ...(serialNumber && serialNumber !== existing.serialNumber ? { previousSerialNumber: existing.serialNumber } : {}),
     });
     return unit;
+  }
+
+  // ---- Serial containers ----
+  //
+  // A container is the set of serials held for one product in one warehouse.
+  // It has exactly as many slots as that warehouse has stock, because a serial
+  // is a physical unit sitting on a shelf and the quantity is a count of those
+  // same units -- two records of one fact, which is why they are kept equal.
+  //
+  // Quantity is deliberately not editable from here. It moves when goods are
+  // received, sold, returned or adjusted, and those flows already maintain it.
+  // What a container edits is *which* serials fill the slots it has.
+
+  /**
+   * Every serial held for one product, grouped into one container per warehouse.
+   *
+   * `missing` is the slots with no serial recorded against them. That is not
+   * automatically a fault -- stock added by a manual adjustment arrives with no
+   * serials to capture, and someone has to type them in afterwards -- but a
+   * container that stays short is what `serialDrift()` reports on.
+   *
+   * `overfilled` should always be zero. It is surfaced rather than assumed away
+   * because the flows that predate this invariant could leave it non-zero, and
+   * a reconciliation view that hides the discrepancy it exists to show would be
+   * worse than useless.
+   */
+  async serialContainer(productId: string) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId },
+      select: { id: true, sku: true, name: true, trackSerials: true, requireSerialOnSale: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const [levels, units] = await Promise.all([
+      this.prisma.stockLevel.findMany({
+        where: { productId },
+        include: { warehouse: { select: { id: true, name: true } } },
+      }),
+      this.prisma.productUnit.findMany({
+        where: { productId, status: 'IN_STOCK' },
+        select: {
+          id: true,
+          serialNumber: true,
+          warehouseId: true,
+          manufactureDate: true,
+          purchaseOrderId: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const held = new Map<string, typeof units>();
+    for (const unit of units) {
+      const key = unit.warehouseId ?? '';
+      held.set(key, [...(held.get(key) ?? []), unit]);
+    }
+
+    const containers = levels.map((level) => {
+      const serials = held.get(level.warehouseId) ?? [];
+      held.delete(level.warehouseId);
+      const capacity = Number(level.quantity);
+      return {
+        warehouseId: level.warehouseId,
+        warehouseName: level.warehouse.name,
+        capacity,
+        filled: serials.length,
+        missing: Math.max(0, capacity - serials.length),
+        overfilled: Math.max(0, serials.length - capacity),
+        balanced: serials.length === capacity,
+        serials,
+      };
+    });
+
+    // Units in a warehouse this product has no stock level for. Their slots do
+    // not exist, so they are pure drift -- and leaving them out of the view
+    // would make them invisible to the only screen that could fix them.
+    for (const [warehouseId, serials] of held) {
+      const warehouse = warehouseId
+        ? await this.prisma.warehouse.findFirst({ where: { id: warehouseId }, select: { name: true } })
+        : null;
+      containers.push({
+        warehouseId,
+        warehouseName: warehouse?.name ?? 'Unassigned',
+        capacity: 0,
+        filled: serials.length,
+        missing: 0,
+        overfilled: serials.length,
+        balanced: false,
+        serials,
+      });
+    }
+
+    return {
+      product,
+      containers,
+      totals: {
+        capacity: containers.reduce((s, c) => s + c.capacity, 0),
+        filled: containers.reduce((s, c) => s + c.filled, 0),
+        balanced: containers.every((c) => c.balanced),
+      },
+    };
+  }
+
+  /**
+   * Record serials into the empty slots of one container.
+   *
+   * Rejected rather than silently truncated when there is not enough room: an
+   * add that would push the container past the stock on hand means either the
+   * goods were never received in the system or someone is entering a serial
+   * twice, and both want a human, not a quietly dropped row.
+   */
+  async addSerials(userId: string, dto: { productId: string; warehouseId: string; serialNumbers: string[] }) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId },
+      select: { id: true, name: true, trackSerials: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    if (!product.trackSerials)
+      throw new BadRequestException(
+        `"${product.name}" is not tracked by serial number. Turn on serial tracking for it first.`,
+      );
+
+    const serials = normaliseSerials(dto.serialNumbers);
+    if (!serials.length) throw new BadRequestException('No serial numbers supplied');
+
+    const repeated = repeatedSerials(serials);
+    if (repeated.length)
+      throw new BadRequestException(`The same serial appears more than once in this batch: ${repeated.join(', ')}`);
+
+    const [level, filled] = await Promise.all([
+      this.prisma.stockLevel.findFirst({
+        where: { productId: dto.productId, warehouseId: dto.warehouseId },
+        include: { warehouse: { select: { name: true } } },
+      }),
+      this.prisma.productUnit.count({
+        where: { productId: dto.productId, warehouseId: dto.warehouseId, status: 'IN_STOCK' },
+      }),
+    ]);
+    const capacity = Number(level?.quantity ?? 0);
+    const room = serialRoom(capacity, filled);
+    if (!fitsContainer(capacity, filled, serials.length)) {
+      const where = level ? `warehouse "${level.warehouse.name}"` : 'that warehouse';
+      throw new BadRequestException(
+        `"${product.name}" has ${capacity} in stock in ${where} with ${filled} serial${filled === 1 ? '' : 's'} already recorded, ` +
+          `so there is room for ${room} more — but ${serials.length} were supplied. ` +
+          `If the units have physically arrived, receive them on a purchase order or add them with a stock adjustment first.`,
+      );
+    }
+
+    const clashes = await this.prisma.productUnit.findMany({
+      where: { serialNumber: { in: serials } },
+      select: { serialNumber: true },
+    });
+    if (clashes.length)
+      throw new BadRequestException(
+        `Already recorded against another unit: ${clashes.map((c) => c.serialNumber).join(', ')}`,
+      );
+
+    await this.prisma.productUnit.createMany({
+      data: serials.map((serialNumber) => ({
+        productId: dto.productId,
+        warehouseId: dto.warehouseId,
+        serialNumber,
+        status: 'IN_STOCK' as const,
+      })),
+    });
+    await this.audit.log(userId, 'CREATE', 'ProductUnit', dto.productId, {
+      warehouseId: dto.warehouseId,
+      serialNumbers: serials,
+    });
+    return this.serialContainer(dto.productId);
+  }
+
+  /**
+   * Take one serial back out of its container, leaving the slot empty.
+   *
+   * Only a unit still IN_STOCK can go. Once a serial has been sold, returned or
+   * sent back to a supplier it is the record of what physically left, and the
+   * invoice and warranty history hang off it -- deleting it would erase the
+   * answer to "which unit did this customer get". Stock quantity is untouched:
+   * removing a mistyped serial does not make a unit vanish off the shelf.
+   */
+  async removeSerial(userId: string, id: string) {
+    const unit = await this.prisma.productUnit.findFirst({
+      where: { id },
+      select: {
+        id: true,
+        serialNumber: true,
+        status: true,
+        productId: true,
+        warehouseId: true,
+        _count: { select: { warrantyClaims: true } },
+      },
+    });
+    if (!unit) throw new NotFoundException('Unit not found');
+    if (unit.status !== 'IN_STOCK')
+      throw new BadRequestException(
+        `Serial "${unit.serialNumber}" is ${unit.status.toLowerCase().replace(/_/g, ' ')} and is part of that history now, ` +
+          `so it cannot be removed. Correct the serial instead if it was mistyped.`,
+      );
+    if (unit._count.warrantyClaims)
+      throw new BadRequestException(
+        `Serial "${unit.serialNumber}" has warranty claims recorded against it and cannot be removed.`,
+      );
+
+    await this.prisma.productUnit.delete({ where: { id } });
+    await this.audit.log(userId, 'DELETE', 'ProductUnit', id, {
+      serialNumber: unit.serialNumber,
+      productId: unit.productId,
+      warehouseId: unit.warehouseId,
+    });
+    return this.serialContainer(unit.productId);
+  }
+
+  /**
+   * Every container whose serial count does not match its stock quantity.
+   *
+   * The flows that maintain stock have not always maintained serials alongside
+   * it -- a manual adjustment moves quantity and nothing else, and a transfer
+   * only relocates serials when it is handed them -- so existing data drifts.
+   * This reports the damage without touching it, so the mismatches can be seen
+   * and fixed before anything starts rejecting writes over them.
+   */
+  async serialDrift(query: { warehouseId?: string } = {}) {
+    const levels = await this.prisma.stockLevel.findMany({
+      where: {
+        ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
+        product: { trackSerials: true, isActive: true, deletedAt: null },
+      },
+      include: {
+        product: { select: { id: true, sku: true, name: true } },
+        warehouse: { select: { id: true, name: true } },
+      },
+    });
+    const counts = await this.prisma.productUnit.groupBy({
+      by: ['productId', 'warehouseId'],
+      where: {
+        status: 'IN_STOCK',
+        ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
+        product: { trackSerials: true, isActive: true, deletedAt: null },
+      },
+      _count: { _all: true },
+    });
+    const counted = new Map(counts.map((c) => [`${c.productId}:${c.warehouseId ?? ''}`, c._count._all]));
+
+    const rows = levels
+      .map((level) => {
+        const capacity = Number(level.quantity);
+        const filled = counted.get(`${level.productId}:${level.warehouseId}`) ?? 0;
+        counted.delete(`${level.productId}:${level.warehouseId}`);
+        return {
+          productId: level.productId,
+          sku: level.product.sku,
+          productName: level.product.name,
+          warehouseId: level.warehouseId,
+          warehouseName: level.warehouse.name,
+          capacity,
+          filled,
+          difference: filled - capacity,
+        };
+      })
+      .filter((r) => r.difference !== 0);
+
+    // Serials parked where the product has no stock level at all: counted, but
+    // with no quantity to compare against, so the loop above never sees them.
+    for (const [key, filled] of counted) {
+      const [productId, warehouseId] = key.split(':');
+      const [product, warehouse] = await Promise.all([
+        this.prisma.product.findFirst({ where: { id: productId }, select: { sku: true, name: true } }),
+        warehouseId
+          ? this.prisma.warehouse.findFirst({ where: { id: warehouseId }, select: { name: true } })
+          : Promise.resolve(null),
+      ]);
+      rows.push({
+        productId,
+        sku: product?.sku ?? '—',
+        productName: product?.name ?? 'Unknown product',
+        warehouseId,
+        warehouseName: warehouse?.name ?? 'Unassigned',
+        capacity: 0,
+        filled,
+        difference: filled,
+      });
+    }
+
+    return {
+      items: rows.sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference)),
+      total: rows.length,
+    };
   }
 }

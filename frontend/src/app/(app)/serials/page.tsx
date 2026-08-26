@@ -11,10 +11,12 @@ import StatusChip from '../../../components/status-chip';
 import EntityLink from '../../../components/entity-link';
 import Field from '../../../components/form-field';
 import { ProductPicker } from '../../../components/entity-picker';
+import SerialContainer from '../../../components/serial-container';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 
 const STATUSES = ['IN_STOCK', 'RESERVED', 'SOLD', 'RETURNED', 'DAMAGED', 'RETURNED_TO_SUPPLIER'];
 
@@ -25,6 +27,7 @@ export default function SerialsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [product, setProduct] = useState<any>(null);
+  const [containerProduct, setContainerProduct] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [busy, setBusy] = useState(false);
@@ -68,6 +71,36 @@ export default function SerialsPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={PageIcon} title={t('serials.title')} subtitle={t('subtitles.serials')} />
+      <Tabs defaultValue="units">
+        <TabsList className="w-full sm:w-auto flex flex-wrap h-auto p-1 gap-1">
+          <TabsTrigger value="units">{t('serials.allUnits')}</TabsTrigger>
+          <TabsTrigger value="containers">{t('serials.containers')}</TabsTrigger>
+          <TabsTrigger value="mismatches">{t('serials.mismatches')}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="containers" className="space-y-4">
+          <div className="w-full sm:w-72">
+            <ProductPicker value={containerProduct} onChange={setContainerProduct} />
+          </div>
+          {containerProduct ? (
+            <SerialContainer productId={containerProduct.id} onChanged={() => setRefreshKey((k) => k + 1)} />
+          ) : (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              {t('serials.pickProduct')}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="mismatches">
+          <SerialDrift
+            refreshKey={refreshKey}
+            onPick={(row) => {
+              setContainerProduct({ id: row.productId, name: row.productName, sku: row.sku });
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="units">
       <DataTable
         endpoint="/inventory/units"
         refreshKey={refreshKey}
@@ -182,6 +215,8 @@ export default function SerialsPage() {
           },
         ]}
       />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent>
@@ -265,6 +300,76 @@ export default function SerialsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Containers whose serial count does not match the stock quantity behind them.
+ *
+ * Read-only on purpose. The flows that move stock have not always moved serials
+ * with it, so existing data drifts; this shows where, and hands the operator to
+ * the container that can fix it, without rewriting anything on their behalf.
+ */
+function SerialDrift({ refreshKey, onPick }: { refreshKey: number; onPick: (row: any) => void }) {
+  const t = useTranslations();
+  const [rows, setRows] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    api
+      .get('/inventory/serial-drift')
+      .then((r) => setRows(r.data.items))
+      .catch((e) => {
+        toast.error(errMsg(e));
+        setRows([]);
+      });
+  }, [refreshKey]);
+
+  if (rows === null) return <div className="p-8 text-center text-sm text-muted-foreground">{t('common.loading')}</div>;
+  if (!rows.length)
+    return (
+      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        {t('serials.driftEmpty')}
+      </div>
+    );
+
+  return (
+    <div className="overflow-x-auto rounded-lg border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/40 text-xs text-muted-foreground">
+          <tr>
+            <th className="px-4 py-2 text-start font-medium">{t('common.product')}</th>
+            <th className="px-4 py-2 text-start font-medium">{t('inventory.warehouses')}</th>
+            <th className="px-4 py-2 text-end font-medium">{t('serials.inStockQty')}</th>
+            <th className="px-4 py-2 text-end font-medium">{t('serials.recorded')}</th>
+            <th className="px-4 py-2 text-end font-medium">{t('serials.difference')}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map((r) => (
+            <tr
+              key={`${r.productId}:${r.warehouseId}`}
+              className="cursor-pointer hover:bg-muted/40"
+              onClick={() => onPick(r)}
+            >
+              <td className="px-4 py-2">
+                <div className="font-medium">{r.productName}</div>
+                <div className="font-mono text-xs text-muted-foreground">{r.sku}</div>
+              </td>
+              <td className="px-4 py-2">{r.warehouseName}</td>
+              <td className="px-4 py-2 text-end tabular-nums">{r.capacity}</td>
+              <td className="px-4 py-2 text-end tabular-nums">{r.filled}</td>
+              <td
+                className={`px-4 py-2 text-end font-medium tabular-nums ${
+                  r.difference > 0 ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                {r.difference > 0 ? `+${r.difference}` : r.difference}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
