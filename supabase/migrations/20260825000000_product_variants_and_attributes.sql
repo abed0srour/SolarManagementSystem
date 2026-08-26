@@ -25,10 +25,22 @@ CREATE TABLE IF NOT EXISTS "ProductAttribute" (
 CREATE INDEX IF NOT EXISTS "ProductAttribute_tenantId_idx" ON "ProductAttribute"("tenantId");
 CREATE INDEX IF NOT EXISTS "ProductAttribute_productId_idx" ON "ProductAttribute"("productId");
 
+-- Backs `@@unique([productId, name])` in schema.prisma. Without it a product
+-- can hold two attributes of the same name, and any upsert keyed on that pair
+-- fails against the database while succeeding locally.
+CREATE UNIQUE INDEX IF NOT EXISTS "ProductAttribute_productId_name_key"
+  ON "ProductAttribute"("productId", "name");
+
 ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "parentProductId" TEXT;
 ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isVariant" BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "hasVariants" BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "variantAttributes" JSONB;
+-- Must match `variantAttributes Json @default("{}")` in schema.prisma, which is
+-- NOT NULL. Added nullable and without a default, every pre-existing row keeps
+-- a NULL that the generated client refuses to read back, and every query
+-- touching Product fails -- which is exactly what happened in production.
+ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "variantAttributes" JSONB DEFAULT '{}'::jsonb;
+UPDATE "Product" SET "variantAttributes" = '{}'::jsonb WHERE "variantAttributes" IS NULL;
+ALTER TABLE "Product" ALTER COLUMN "variantAttributes" SET NOT NULL;
 
 DO $$ BEGIN
   ALTER TABLE "Product" ADD CONSTRAINT "Product_parentProductId_fkey" FOREIGN KEY ("parentProductId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
