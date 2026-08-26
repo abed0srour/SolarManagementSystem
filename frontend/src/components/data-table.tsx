@@ -432,89 +432,94 @@ export default function DataTable({
             </div>
           )}
           {filters && <div className="flex flex-wrap items-center gap-2 shrink-0 [&_select]:h-9 [&_input]:h-9 [&_button]:h-9">{filters}</div>}
-          {hideableColumns.length > 1 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 shrink-0" title={t('common.columns')}>
-                  <Columns3 className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t('common.columns')}</span>
+          {/* The view controls — which rows, which columns, and picking rows to
+              delete — travel as one unit. Left to wrap individually they split
+              across lines and read as unrelated buttons. */}
+          <div className="flex items-center gap-2 shrink-0">
+            {hideableColumns.length > 1 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9 shrink-0" title={t('common.columns')}>
+                    <Columns3 className="h-4 w-4" />
+                    <span className="hidden sm:inline">{t('common.columns')}</span>
+                    {hiddenColumns.length > 0 && (
+                      <span className="ms-1 rounded-full bg-primary/15 px-1.5 text-[11px] font-medium text-primary">
+                        {visibleColumns.filter((c) => !isBlankLabel(c.label)).length}/{hideableColumns.length}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+                  <DropdownMenuLabel>{t('common.columns')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {hideableColumns.map((c) => {
+                    const visible = !hiddenColumns.includes(c.key);
+                    return (
+                      <DropdownMenuItem
+                        key={c.key}
+                        // Radix closes on select by default; a column menu is used
+                        // several toggles at a time, so it is kept open.
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          toggleColumn(c.key);
+                        }}
+                      >
+                        <Check className={cn('h-4 w-4 shrink-0', !visible && 'opacity-0')} />
+                        <span className={cn('truncate', !visible && 'text-muted-foreground')}>{c.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
                   {hiddenColumns.length > 0 && (
-                    <span className="ms-1 rounded-full bg-primary/15 px-1.5 text-[11px] font-medium text-primary">
-                      {visibleColumns.filter((c) => !isBlankLabel(c.label)).length}/{hideableColumns.length}
-                    </span>
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); showAllColumns(); }}>
+                        <span className="text-muted-foreground">{t('common.showAllColumns')}</span>
+                      </DropdownMenuItem>
+                    </>
                   )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
-                <DropdownMenuLabel>{t('common.columns')}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {hideableColumns.map((c) => {
-                  const visible = !hiddenColumns.includes(c.key);
-                  return (
-                    <DropdownMenuItem
-                      key={c.key}
-                      // Radix closes on select by default; a column menu is used
-                      // several toggles at a time, so it is kept open.
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        toggleColumn(c.key);
-                      }}
-                    >
-                      <Check className={cn('h-4 w-4 shrink-0', !visible && 'opacity-0')} />
-                      <span className={cn('truncate', !visible && 'text-muted-foreground')}>{c.label}</span>
-                    </DropdownMenuItem>
-                  );
-                })}
-                {hiddenColumns.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); showAllColumns(); }}>
-                      <span className="text-muted-foreground">{t('common.showAllColumns')}</span>
-                    </DropdownMenuItem>
-                  </>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {onArchivedChange && (
+              <div className="inline-flex h-9 items-center rounded-md border p-0.5 shrink-0" role="group">
+                {[false, true].map((mode) => (
+                  <button
+                    key={String(mode)}
+                    type="button"
+                    onClick={() => onArchivedChange(mode)}
+                    className={cn(
+                      'flex h-full items-center rounded px-2.5 text-xs font-medium transition-colors',
+                      archived === mode
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {mode ? t('common.archived') : t('common.active')}
+                  </button>
+                ))}
+              </div>
+            )}
+            {canBatchDelete && (
+              <Button
+                type="button"
+                variant={selectionMode ? 'destructive' : 'outline'}
+                size="icon"
+                className={cn(
+                  'h-9 w-9 shrink-0 transition-colors',
+                  selectionMode
+                    ? 'bg-destructive text-destructive-foreground'
+                    : 'text-muted-foreground hover:text-destructive hover:border-destructive/40'
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {onArchivedChange && (
-            <div className="inline-flex h-9 items-center rounded-md border p-0.5 shrink-0" role="group">
-              {[false, true].map((mode) => (
-                <button
-                  key={String(mode)}
-                  type="button"
-                  onClick={() => onArchivedChange(mode)}
-                  className={cn(
-                    'flex h-full items-center rounded px-2.5 text-xs font-medium transition-colors',
-                    archived === mode
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {mode ? t('common.archived') : t('common.active')}
-                </button>
-              ))}
-            </div>
-          )}
-          {canBatchDelete && (
-            <Button
-              type="button"
-              variant={selectionMode ? 'destructive' : 'outline'}
-              size="icon"
-              className={cn(
-                'h-9 w-9 shrink-0 transition-colors',
-                selectionMode
-                  ? 'bg-destructive text-destructive-foreground'
-                  : 'text-muted-foreground hover:text-destructive hover:border-destructive/40'
-              )}
-              title={t('common.selectToDelete')}
-              onClick={() => {
-                setSelectionMode((prev) => !prev);
-                if (selectionMode) setSelectedIds(new Set());
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
+                title={t('common.selectToDelete')}
+                onClick={() => {
+                  setSelectionMode((prev) => !prev);
+                  if (selectionMode) setSelectedIds(new Set());
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
         {toolbar && (
           <div className="flex flex-wrap items-center gap-2 shrink-0 ms-auto [&_button]:h-9 [&_a]:h-9 [&_select]:h-9 [&_input]:h-9 [&_button]:text-xs [&_button]:sm:text-sm">
