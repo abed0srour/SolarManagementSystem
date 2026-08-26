@@ -539,6 +539,10 @@
     "waMessage": "Hello, thank you for contacting us! Here is your quotation #{number}.\nTotal: {total}{validUntil, select, none {} other {\nValid Until: {validUntil}}}\nWe look forward to working with you!"
   },
   "orders": {
+    "profit": "Profit",
+    "goodsRevenue": "Goods revenue",
+    "costOfGoods": "Cost of goods",
+    "profitUnknownCost": "{count, plural, one {# line has} other {# lines have}} no product behind it, so its cost is not counted — actual profit is lower.",
     "salesTitle": "Sales Orders",
     "purchaseTitle": "Purchase Orders",
     "newSalesOrder": "New sales order",

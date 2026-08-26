@@ -9,6 +9,7 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
 import { calcDocTotals, calcLine, round2 } from '../common/calc';
 import { buildCompositeItems, writeSubItems } from '../common/composite-items';
+import { calcOrderProfit } from '../common/order-profit';
 import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
 
 @Injectable()
@@ -120,7 +121,9 @@ export class SalesOrdersService {
             product: { select: { sku: true, name: true, trackSerials: true, costPrice: true, salePrice: true } },
             subItems: {
               orderBy: { id: 'asc' },
-              include: { product: { select: { sku: true, name: true } } },
+              // costPrice comes along because a bundle's cost is the sum of its
+              // components' -- the header itself has no product to cost.
+              include: { product: { select: { sku: true, name: true, costPrice: true } } },
             },
           },
         },
@@ -147,6 +150,7 @@ export class SalesOrdersService {
       ...this.cancelInfo(so),
       refundedByProduct: Object.fromEntries(returnedItems.map((r) => [r.productId, r._sum.quantity ?? 0])),
       refundedTotal: Number(refundsAgg._sum.totalAmount ?? 0),
+      profit: calcOrderProfit(so),
     };
   }
 

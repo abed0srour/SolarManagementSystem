@@ -278,6 +278,25 @@ export default function SalesOrderDetailPage() {
               )}
               <div className="flex justify-between"><span className="text-muted-foreground">{t('orders.paid')}</span><span className="tabular-nums">{fmtMoney(so.paidAmount ?? 0)}</span></div>
               <div className="flex justify-between font-semibold"><span>{t('orders.remaining')}</span><span className="tabular-nums">{fmtMoney(so.outstanding ?? 0)}</span></div>
+
+              {so.profit && (
+                <div className="mt-3 space-y-1 rounded-md border bg-muted/30 p-2.5">
+                  <div className="flex justify-between text-xs"><span className="text-muted-foreground">{t('orders.goodsRevenue')}</span><span className="tabular-nums">{fmtMoney(so.profit.revenue)}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-muted-foreground">{t('orders.costOfGoods')}</span><span className="tabular-nums">−{fmtMoney(so.profit.cost)}</span></div>
+                  <div className="flex justify-between border-t pt-1 font-semibold">
+                    <span>{t('orders.profit')}</span>
+                    <span className={`tabular-nums ${Number(so.profit.profit) < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>
+                      {fmtMoney(so.profit.profit)}
+                      <span className="ms-1.5 text-xs font-normal text-muted-foreground">{Number(so.profit.marginPct).toFixed(1)}%</span>
+                    </span>
+                  </div>
+                  {so.profit.hasUnknownCost && (
+                    <p className="pt-1 text-xs text-amber-600 dark:text-amber-400">
+                      {t('orders.profitUnknownCost', { count: so.profit.unknownCostLines })}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
