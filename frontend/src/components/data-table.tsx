@@ -1,7 +1,7 @@
 'use client';
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronLeft, ChevronRight, Inbox, Trash2 } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, ChevronLeft, ChevronRight, Inbox, Trash2, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, errMsg } from '../lib/api';
 import { invalidateCache } from '../lib/cache';
@@ -106,7 +106,7 @@ export default function DataTable({
       : { rows: (r.data.items ?? []) as any[], total: (r.data.total ?? 0) as number };
   }, [endpoint, query]);
 
-  const { data, loading, validating, refresh } = useLocalStorageCache(cacheKey, fetcher);
+  const { data, error, loading, validating, refresh } = useLocalStorageCache(cacheKey, fetcher);
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
 
@@ -326,6 +326,19 @@ export default function DataTable({
 
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
+      {/* A request that failed with nothing cached has no rows to show, so say
+          so rather than leaving an empty table that looks like "no results". */}
+      {!!error && rows.length === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-destructive/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            <TriangleAlert className="h-4 w-4 shrink-0" />
+            <span>{errMsg(error)}</span>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => void refresh()} disabled={validating}>
+            {t('errors.retry')}
+          </Button>
+        </div>
+      )}
       <div className="no-print flex flex-wrap items-center justify-between gap-2.5 border-b p-3">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           {searchable && (

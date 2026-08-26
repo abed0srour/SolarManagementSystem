@@ -142,7 +142,11 @@ export function useLocalStorageCache<T>(
   return {
     data,
     error,
-    loading: data === undefined && enabled && Boolean(key),
+    // A failed first fetch is finished, not still going. Without the `error`
+    // term this stays true forever whenever a request fails with nothing
+    // cached to fall back on, and every caller renders a spinner that never
+    // resolves instead of surfacing the error it was handed.
+    loading: data === undefined && error === null && enabled && Boolean(key),
     validating,
     stale,
     refresh: revalidate,
