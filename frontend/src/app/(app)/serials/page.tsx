@@ -24,7 +24,11 @@ export default function SerialsPage() {
   const t = useTranslations();
   const [refreshKey, setRefreshKey] = useState(0);
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [statusFilter, setStatusFilter] = useState('');
+  // Units on the shelf are what someone opening this page is nearly always
+  // after. Sold and returned units outnumber them over time and would bury the
+  // ones still worth acting on, so the list starts filtered and the operator
+  // widens it deliberately.
+  const [statusFilter, setStatusFilter] = useState('IN_STOCK');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [product, setProduct] = useState<any>(null);
   const [containerProduct, setContainerProduct] = useState<any>(null);
