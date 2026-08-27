@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SunMedium, Eye, EyeOff, ShieldAlert, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ShieldAlert, ArrowLeft } from 'lucide-react';
+import BrandMark from '../../components/brand-mark';
 import { toast } from 'sonner';
 import { supabaseBrowser } from '../../lib/supabase/client';
 import { claimsFromToken, homeRouteFor } from '../../lib/claims';
@@ -26,13 +27,6 @@ export default function ResetPasswordPage() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  /**
-   * A recovery link signs the visitor in with a temporary session and fires
-   * PASSWORD_RECOVERY. Listening for the event rather than reading the URL is
-   * what makes this robust: Supabase has moved the token between the hash
-   * fragment and a `?code=` query over the years, and the event is emitted in
-   * both cases once the client has finished processing it.
-   */
   /**
    * Say why the link failed, rather than only that it did.
    *
@@ -148,7 +142,7 @@ export default function ResetPasswordPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <div className="mb-1 flex items-center gap-2">
-            <SunMedium className="h-7 w-7 text-amber-500" />
+            <BrandMark size={28} />
             <CardTitle className="text-xl">{t('auth.resetPasswordTitle')}</CardTitle>
           </div>
           <CardDescription>

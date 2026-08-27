@@ -2,7 +2,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { SunMedium, ArrowLeft, MailCheck } from 'lucide-react';
+import { ArrowLeft, MailCheck } from 'lucide-react';
+import BrandMark from '../../components/brand-mark';
 import { supabaseBrowser } from '../../lib/supabase/client';
 import { Button, buttonVariants } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
@@ -46,7 +47,7 @@ export default function ForgotPasswordPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <div className="mb-1 flex items-center gap-2">
-            <SunMedium className="h-7 w-7 text-amber-500" />
+            <BrandMark size={28} />
             <CardTitle className="text-xl">{t('auth.forgotPasswordTitle')}</CardTitle>
           </div>
           <CardDescription>

@@ -315,7 +315,7 @@ export class BackupService implements OnModuleInit {
     }
     zip.file(
       'README.txt',
-      `Solar Store CSV export — ${stamp}\n\n` +
+      `Fagot Systems CSV export — ${stamp}\n\n` +
         `One CSV per table. This is a restorable backup archive;\n` +
         `use Settings > Backup to restore this archive.\n`,
     );

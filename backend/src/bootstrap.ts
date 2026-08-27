@@ -55,7 +55,7 @@ export async function createApp(): Promise<NestExpressApplication> {
   }
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Solar Store Management API')
+    .setTitle('Fagot Systems API')
     .setDescription('REST API for the solar equipment retail store management system')
     .setVersion('1.0')
     .addBearerAuth()

@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SunMedium, Languages, Eye, EyeOff, ShieldAlert, Check } from 'lucide-react';
+import { Languages, Eye, EyeOff, ShieldAlert, Check } from 'lucide-react';
+import BrandMark from '../../components/brand-mark';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { supabaseBrowser } from '../../lib/supabase/client';
@@ -116,9 +117,7 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-2.5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 ring-1 ring-inset ring-amber-400/30">
-            <SunMedium className="h-6 w-6 text-amber-400" />
-          </span>
+          <BrandMark size={40} />
           <span className="text-lg font-semibold tracking-tight">{t('app.title')}</span>
         </div>
 
@@ -153,9 +152,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           {/* The mark repeats here for the phone layout, where the panel is hidden. */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 ring-1 ring-inset ring-amber-500/25">
-              <SunMedium className="h-6 w-6 text-amber-500" />
-            </span>
+            <BrandMark size={40} />
             <span className="text-lg font-semibold tracking-tight">{t('app.title')}</span>
           </div>
 

@@ -246,7 +246,7 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label={t('settings.companyName')}>
-                  <Input required placeholder="e.g. Solar Store SAL" value={company.name ?? ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
+                  <Input required placeholder="e.g. Fagot Systems SAL" value={company.name ?? ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
                 </Field>
                 <Field label={t('settings.tagline')}>
                   <Input placeholder="e.g. Clean Energy Solutions" value={company.tagline ?? ''} onChange={(e) => setCompany({ ...company, tagline: e.target.value })} />

@@ -134,7 +134,7 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
           prints on the A4 invoice and receipt PDFs, which go to real printers.
         */}
         <div className="space-y-0.5 text-center">
-          <div className="text-[15px] font-bold uppercase tracking-[0.15em]">{company.name || 'Solar Store'}</div>
+          <div className="text-[15px] font-bold uppercase tracking-[0.15em]">{company.name || 'Fagot Systems'}</div>
           {company.tagline && <div className="text-[10px] text-black/70">{company.tagline}</div>}
           {company.address && <div className="whitespace-pre-wrap text-[10px] leading-snug">{company.address}</div>}
           {company.phone && <div className="text-[10px]" dir="ltr">Tel: {company.phone}</div>}

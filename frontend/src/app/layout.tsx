@@ -8,7 +8,7 @@ import { ACCENT_INIT_SCRIPT } from '../lib/accents';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Solar Store Management',
+  title: 'Fagot Systems',
   description: 'Management system for a solar equipment retail store',
 };
 
