@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { del, head, list, put } from '@vercel/blob';
 import { existsSync, mkdirSync } from 'fs';
 import { readFile, stat, unlink, writeFile } from 'fs/promises';
@@ -68,9 +68,12 @@ export class StorageService {
     // surfaces as a bare "Internal server error", which says nothing about the
     // one thing that would fix it.
     if (process.env.VERCEL) {
-      throw new Error(
+      // Must be an HttpException: the global filter turns anything else into a
+      // bare "Internal server error" and drops the message, which is the whole
+      // point of raising it here rather than letting fs fail with EROFS.
+      throw new ServiceUnavailableException(
         `Cannot store "${key}": this deployment has no writable disk and no blob store is attached. ` +
-          `Add a Vercel Blob store to the project — it sets BLOB_READ_WRITE_TOKEN, which is what switches storage over.`,
+          `Add a Vercel Blob store to the backend project — it sets BLOB_READ_WRITE_TOKEN, which is what switches storage over.`,
       );
     }
     const path = this.localPath(key);
