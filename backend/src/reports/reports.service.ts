@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { round2 } from '../common/calc';
 import { expandRevenueLines } from '../common/revenue';
+import { calcOrderProfit } from '../common/order-profit';
 
 @Injectable()
 export class ReportsService {
@@ -39,6 +40,7 @@ export class ReportsService {
       returnedItems,
       newClientsCount,
       recentInvoices,
+      profitOrders,
     ] = await Promise.all([
       this.prisma.invoice.aggregate({ where: saleWhere, _sum: { total: true, paidAmount: true } }),
       this.prisma.invoice.aggregate({
@@ -100,6 +102,32 @@ export class ReportsService {
         orderBy: { issueDate: 'desc' },
         take: 50,
       }),
+      // Profit is summed from the orders themselves rather than derived here.
+      // PENDING is excluded because nothing has left the shelf yet, CANCELLED
+      // because it never will.
+      this.prisma.salesOrder.findMany({
+        where: {
+          deletedAt: null,
+          orderDate: period,
+          status: { notIn: ['PENDING', 'CANCELLED'] },
+        },
+        select: {
+          discountType: true,
+          discountValue: true,
+          items: {
+            where: { parentItemId: null },
+            select: {
+              quantity: true,
+              lineTotal: true,
+              isComposite: true,
+              product: { select: { costPrice: true } },
+              subItems: {
+                select: { quantity: true, lineTotal: true, product: { select: { costPrice: true } } },
+              },
+            },
+          },
+        },
+      }),
     ]);
 
     // Sales by day (for chart)
@@ -116,7 +144,6 @@ export class ReportsService {
     // Sales by category
     const byCategory = new Map<string, number>();
     const byProduct = new Map<string, { name: string; qty: number; revenue: number }>();
-    let cogs = 0;
     // A bundle's charged price is split across its components, so category and
     // product revenue add back up to the invoice totals the KPIs report.
     for (const line of expandRevenueLines(saleItems)) {
@@ -127,7 +154,6 @@ export class ReportsService {
       cur.qty += line.quantity;
       cur.revenue = round2(cur.revenue + line.revenue);
       byProduct.set(key, cur);
-      cogs += Number(line.product.costPrice) * line.quantity;
     }
     // Lines with no product at all (ad-hoc text, deposit invoices) carry revenue
     // that belongs to no SKU. It is in the headline revenue but has no category.
@@ -144,7 +170,26 @@ export class ReportsService {
     const refunds = Number(refundsAgg._sum.totalAmount ?? 0);
     const returnedCogs = returnedItems.reduce((s, ri) => s + Number(ri.product.costPrice) * ri.quantity, 0);
     const netRevenue = round2(revenue - refunds);
-    const grossProfit = round2(netRevenue - (cogs - returnedCogs));
+
+    /**
+     * Gross profit, summed from what each order actually made.
+     *
+     * Deriving it here from invoice lines overstated it. Revenue is taken from
+     * the invoice header, which counts every line, while cost was summed only
+     * over lines that resolve to a product — so a deposit line, an ad-hoc typed
+     * line, or an invoice whose product links were lost contributed revenue
+     * with no cost against it and read as pure profit.
+     *
+     * Each order already knows its own margin, and that calculation walks every
+     * line including a bundle's components, so summing them cannot drift from
+     * the orders the way a parallel derivation did.
+     *
+     * Refunds are applied the same way as before: the money handed back leaves
+     * profit, and a resellable return's cost leaves with it because the goods
+     * went back on the shelf. A damaged return stays a sunk cost.
+     */
+    const orderProfit = round2(profitOrders.reduce((sum, order) => sum + calcOrderProfit(order).profit, 0));
+    const grossProfit = round2(orderProfit - refunds + returnedCogs);
 
     // Low stock count
     const lowStockCount = products.filter(
@@ -195,16 +240,27 @@ export class ReportsService {
     const prior = { gte: new Date(period.gte.getTime() - span - 1), lte: new Date(period.gte.getTime() - 1) };
     const priorSaleWhere = { type: 'SALE' as const, status: { not: 'CANCELLED' as const }, issueDate: prior };
 
-    const [priorAgg, priorInvoiceCount, priorExpenses, priorItems, orderStatusGroups, priorNewClientsCount] = await Promise.all([
+    const [priorAgg, priorInvoiceCount, priorExpenses, priorProfitOrders, orderStatusGroups, priorNewClientsCount] = await Promise.all([
       this.prisma.invoice.aggregate({ where: priorSaleWhere, _sum: { total: true, paidAmount: true } }),
       this.prisma.invoice.count({ where: priorSaleWhere }),
       this.prisma.expense.aggregate({ where: { deletedAt: null, expenseDate: prior }, _sum: { amount: true } }),
-      this.prisma.invoiceItem.findMany({
-        relationLoadStrategy: 'join',
-        where: { invoice: priorSaleWhere, parentItemId: null },
-        include: {
-          product: { select: { costPrice: true } },
-          subItems: { select: { quantity: true, lineTotal: true, product: { select: { costPrice: true } } } },
+      // Same basis as the current period, or the comparison would measure two
+      // different definitions against each other.
+      this.prisma.salesOrder.findMany({
+        where: { deletedAt: null, orderDate: prior, status: { notIn: ['PENDING', 'CANCELLED'] } },
+        select: {
+          discountType: true,
+          discountValue: true,
+          items: {
+            where: { parentItemId: null },
+            select: {
+              quantity: true,
+              lineTotal: true,
+              isComposite: true,
+              product: { select: { costPrice: true } },
+              subItems: { select: { quantity: true, lineTotal: true, product: { select: { costPrice: true } } } },
+            },
+          },
         },
       }),
       this.prisma.salesOrder.groupBy({
@@ -215,13 +271,10 @@ export class ReportsService {
       this.prisma.client.count({ where: { deletedAt: null, createdAt: prior } }),
     ]);
 
-    const priorCogs = expandRevenueLines(priorItems).reduce(
-      (s, l) => s + Number(l.product.costPrice) * l.quantity,
-      0,
-    );
+    const priorGrossFromOrders = round2(priorProfitOrders.reduce((sum, o) => sum + calcOrderProfit(o).profit, 0));
     const priorRevenue = Number(priorAgg._sum.total ?? 0);
     const priorExpenseTotal = Number(priorExpenses._sum.amount ?? 0);
-    const priorGross = round2(priorRevenue - priorCogs);
+    const priorGross = priorGrossFromOrders;
 
     /** Percentage change, or null when there is no baseline to compare against. */
     const delta = (now: number, before: number): number | null =>
