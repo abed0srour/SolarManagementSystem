@@ -620,7 +620,10 @@
     "serialsRemaining": "{count, plural, one {# still to record} other {# still to record}}",
     "bundleContents": "Bundle contents",
     "noSerialsRecorded": "No serial numbers recorded against this order yet.",
-    "productNotSerialTracked": "This product is not tracked by serial number."
+    "productNotSerialTracked": "This product is not tracked by serial number.",
+    "reissueInvoice": "Re-issue invoice",
+    "invoiceReissued": "Invoice re-issued to match the order",
+    "invoiceOutOfDate": "This order's invoice was raised for {invoiced} but the order now totals {order}. Reports are built from invoices, so they still show the old figure."
   },
   "invoices": {
     "title": "Invoices",

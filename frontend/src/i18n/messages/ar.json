@@ -620,7 +620,10 @@
     "serialsRemaining": "{count, plural, one {بقي # للتسجيل} other {بقي # للتسجيل}}",
     "bundleContents": "محتويات الحزمة",
     "noSerialsRecorded": "لم تُسجَّل أرقام تسلسلية لهذا الطلب بعد.",
-    "productNotSerialTracked": "هذا المنتج غير متتبَّع بالرقم التسلسلي."
+    "productNotSerialTracked": "هذا المنتج غير متتبَّع بالرقم التسلسلي.",
+    "reissueInvoice": "إعادة إصدار الفاتورة",
+    "invoiceReissued": "أُعيد إصدار الفاتورة لتطابق الطلب",
+    "invoiceOutOfDate": "صدرت فاتورة هذا الطلب بمبلغ {invoiced} بينما أصبح إجمالي الطلب {order}. التقارير مبنية على الفواتير، لذلك ما زالت تعرض الرقم القديم."
   },
   "invoices": {
     "title": "الفواتير",

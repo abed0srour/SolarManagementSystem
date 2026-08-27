@@ -132,6 +132,16 @@ export default function SalesOrderDetailPage() {
     }
   };
 
+  const doReissueInvoice = async () => {
+    try {
+      await api.post(`/sales-orders/${so.id}/reissue-invoice`);
+      toast.success(t('orders.invoiceReissued'));
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   const doDeliver = async () => {
     try {
       const deliveries = Object.entries(deliverQty)
@@ -222,6 +232,25 @@ export default function SalesOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {/*
+        The invoice describes a different sale from the order. Every dashboard
+        figure is built from invoices, so this is the state where the reports
+        are quietly wrong and only this screen can tell.
+      */}
+      {so.invoiceOutOfDate && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <div className="text-sm text-amber-700 dark:text-amber-400">
+            {t('orders.invoiceOutOfDate', {
+              invoiced: fmtMoney(so.invoicedTotal),
+              order: fmtMoney(so.total),
+            })}
+          </div>
+          <Button size="sm" variant="outline" onClick={doReissueInvoice}>
+            {t('orders.reissueInvoice')}
+          </Button>
+        </div>
+      )}
 
       {/*
         When cancelling is off the table for a reason the status does not already

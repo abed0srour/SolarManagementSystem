@@ -13,6 +13,25 @@ import { calcOrderProfit } from '../common/order-profit';
 import { describeSerialMismatches, serialMismatches } from './serial-requirements';
 import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
 
+/**
+ * Whether an order's active invoices still add up to what the order says.
+ *
+ * They can drift apart: an invoice records the order as it stood when raised,
+ * and an order edited afterwards leaves it describing a sale that no longer
+ * exists. It matters because every figure on the dashboard is computed from
+ * invoices, so a drifted invoice quietly misreports revenue and receivables
+ * while the order screen looks perfectly correct.
+ */
+function invoiceAgreement(order: { total: any; invoices?: { status: string; total: any }[] }) {
+  const active = (order.invoices ?? []).filter((i) => i.status !== 'CANCELLED');
+  if (!active.length) return { invoicedTotal: 0, invoiceOutOfDate: false };
+  const invoicedTotal = round2(active.reduce((sum, i) => sum + Number(i.total), 0));
+  return {
+    invoicedTotal,
+    invoiceOutOfDate: Math.abs(invoicedTotal - Number(order.total)) > 0.01,
+  };
+}
+
 @Injectable()
 export class SalesOrdersService {
   constructor(
@@ -166,6 +185,10 @@ export class SalesOrdersService {
       refundedTotal: Number(refundsAgg._sum.totalAmount ?? 0),
       profit: calcOrderProfit(so),
       serialsByProduct,
+      // An invoice is a snapshot, so it can end up describing a sale the order
+      // no longer describes. The dashboard is built from invoices, so when
+      // these disagree the reports are wrong and nothing else says so.
+      ...invoiceAgreement(so),
     };
   }
 
@@ -529,6 +552,30 @@ export class SalesOrdersService {
     // exists. Replacing the invoice is what makes the change real everywhere.
     if (built) await this.reissueInvoices(userId, id);
     return so;
+  }
+
+  /**
+   * Re-issue an order's invoice on request.
+   *
+   * Editing an order re-issues automatically, but only a PENDING order can be
+   * edited — so an order changed before that rule existed, or one whose invoice
+   * drifted for any other reason, has no way to put itself right. This is that
+   * way, and it is deliberately explicit: rewriting an issued invoice is the
+   * operator's call, not something to do behind them.
+   */
+  async reissueInvoice(userId: string, id: string) {
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id },
+      include: { invoices: { where: { deletedAt: null }, select: { status: true, total: true, paidAmount: true } } },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status === 'CANCELLED')
+      throw new BadRequestException('This order was cancelled — its invoices belong to the cancellation, not to a new sale.');
+    if (!so.invoices.some((i) => i.status !== 'CANCELLED'))
+      throw new BadRequestException('This order has no active invoice to replace.');
+
+    await this.reissueInvoices(userId, id);
+    return this.findOne(id);
   }
 
   /**

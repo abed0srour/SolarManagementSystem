@@ -215,6 +215,16 @@ export class SalesOrdersController {
   }
 
   /**
+   * Replace this order's invoice with one matching what the order now says.
+   * For orders edited before editing re-issued automatically, whose invoice —
+   * and therefore every report built from it — still describes the old sale.
+   */
+  @Post(':id/reissue-invoice')
+  reissueInvoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.reissueInvoice(user.id, id);
+  }
+
+  /**
    * Record which units went out on an order already confirmed. Moves no stock —
    * that happened at confirmation — it names the units that were not named then.
    */
