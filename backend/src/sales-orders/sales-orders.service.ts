@@ -523,7 +523,67 @@ export class SalesOrdersService {
       return updated;
     });
     await this.audit.log(userId, 'UPDATE', 'SalesOrder', id);
+    // An invoice is a snapshot of the order as it stood when raised. Editing the
+    // order after one exists leaves the two describing different sales, and the
+    // dashboard reads invoices, so it keeps reporting the sale that no longer
+    // exists. Replacing the invoice is what makes the change real everywhere.
+    if (built) await this.reissueInvoices(userId, id);
     return so;
+  }
+
+  /**
+   * Replace an edited order's invoices with one that matches what it now says.
+   *
+   * The old invoices are cancelled rather than deleted: they were issued, a
+   * customer may hold a copy, and the trail of what was billed and then
+   * replaced is worth more than a tidy table. Their payments move across to the
+   * new invoice, so the money already taken still counts against the order.
+   *
+   * Deposit invoices are folded into the replacement along with the rest. The
+   * result stays coherent -- the customer owes the new total and has paid
+   * whatever they have paid -- though it does collapse a staged billing plan
+   * into a single invoice, which is the honest limit of doing this
+   * automatically.
+   */
+  private async reissueInvoices(userId: string, salesOrderId: string) {
+    const active = await this.prisma.invoice.findMany({
+      where: { salesOrderId, deletedAt: null, status: { not: 'CANCELLED' } },
+      select: { id: true, number: true },
+    });
+    if (!active.length) return;
+
+    const payments = await this.prisma.payment.findMany({
+      where: { invoiceId: { in: active.map((i) => i.id) }, deletedAt: null },
+      select: { id: true },
+    });
+
+    // Cancel first: fromSalesOrder measures what is already invoiced and would
+    // otherwise raise the replacement for nothing.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.invoice.updateMany({
+        where: { id: { in: active.map((i) => i.id) } },
+        data: { status: 'CANCELLED' },
+      });
+    });
+
+    const replacement = await this.invoices.fromSalesOrder(userId, salesOrderId, {});
+
+    await this.prisma.$transaction(async (tx) => {
+      if (payments.length) {
+        await tx.payment.updateMany({
+          where: { id: { in: payments.map((p) => p.id) } },
+          data: { invoiceId: replacement.id },
+        });
+      }
+      for (const invoice of active) await this.invoices.refreshPaymentStatus(tx, invoice.id);
+      await this.invoices.refreshPaymentStatus(tx, replacement.id);
+    });
+
+    await this.audit.log(userId, 'REISSUE_INVOICE', 'SalesOrder', salesOrderId, {
+      replaced: active.map((i) => i.number),
+      replacement: replacement.number,
+      paymentsMoved: payments.length,
+    });
   }
 
   /**
