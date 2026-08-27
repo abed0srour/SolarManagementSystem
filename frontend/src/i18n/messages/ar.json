@@ -617,7 +617,10 @@
     "invalidLinesError": "يرجى إدخال كميات وأسعار صحيحة لجميع العناصر",
     "assignSerials": "تعيين الأرقام التسلسلية",
     "assignSerialsHint": "خرجت بضاعة هذا الطلب من المخزون عند تأكيده. تسجيل الأرقام هنا يحدّد أي الوحدات خرجت — ولا يغيّر أي كمية.",
-    "serialsRemaining": "{count, plural, one {بقي # للتسجيل} other {بقي # للتسجيل}}"
+    "serialsRemaining": "{count, plural, one {بقي # للتسجيل} other {بقي # للتسجيل}}",
+    "bundleContents": "محتويات الحزمة",
+    "noSerialsRecorded": "لم تُسجَّل أرقام تسلسلية لهذا الطلب بعد.",
+    "productNotSerialTracked": "هذا المنتج غير متتبَّع بالرقم التسلسلي."
   },
   "invoices": {
     "title": "الفواتير",

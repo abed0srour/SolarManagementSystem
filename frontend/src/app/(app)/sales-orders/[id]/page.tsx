@@ -39,6 +39,7 @@ export default function SalesOrderDetailPage() {
   const [so, setSo] = useState<any>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [itemDetail, setItemDetail] = useState<any>(null);
   const [serialInputs, setSerialInputs] = useState<Record<string, string[]>>({});
   const [deliverOpen, setDeliverOpen] = useState(false);
   const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
@@ -303,7 +304,7 @@ export default function SalesOrderDetailPage() {
                 {so.items.map((i: any) => {
                   const refundedQty = so.refundedByProduct?.[i.productId] ?? 0;
                   return (
-                    <TableRow key={i.id}>
+                    <TableRow key={i.id} className="cursor-pointer" onClick={() => setItemDetail(i)}>
                       <TableCell>
                         <div className="font-medium">{i.product?.name}</div>
                         <div className="font-mono text-xs text-muted-foreground">{i.product?.sku}</div>
@@ -363,6 +364,89 @@ export default function SalesOrderDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/*
+        One line's detail, including the units that went out against it. Serials
+        are recorded per product rather than per line, so a product appearing on
+        two lines shows the same set on both — the order bought them together.
+      */}
+      <Dialog open={!!itemDetail} onOpenChange={(v) => !v && setItemDetail(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{itemDetail?.product?.name ?? itemDetail?.description ?? t('common.items')}</DialogTitle>
+          </DialogHeader>
+          {itemDetail && (
+            <div className="space-y-4">
+              {itemDetail.product?.sku && (
+                <div className="font-mono text-xs text-muted-foreground" dir="ltr">{itemDetail.product.sku}</div>
+              )}
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <span className="text-muted-foreground">{t('common.quantity')}</span>
+                <span className="text-end tabular-nums">{itemDetail.quantity}{itemDetail.unit ? ` ${itemDetail.unit}` : ''}</span>
+
+                <span className="text-muted-foreground">{t('common.unitPrice')}</span>
+                <span className="text-end tabular-nums">{fmtMoney(itemDetail.unitPrice)}</span>
+
+                <span className="text-muted-foreground">{t('common.discount')}</span>
+                <span className="text-end tabular-nums">{discountLabel(itemDetail.discountType, itemDetail.discountValue)}</span>
+
+                <span className="text-muted-foreground">{t('common.lineTotal')}</span>
+                <span className="text-end font-semibold tabular-nums">{fmtMoney(itemDetail.lineTotal)}</span>
+
+                <span className="text-muted-foreground">{t('orders.delivered')}</span>
+                <span className="text-end tabular-nums">{itemDetail.deliveredQty}/{itemDetail.quantity}</span>
+
+                {(so.refundedByProduct?.[itemDetail.productId] ?? 0) > 0 && (
+                  <>
+                    <span className="text-muted-foreground">{t('refunds.refunded')}</span>
+                    <span className="text-end tabular-nums text-amber-600 dark:text-amber-400">
+                      {so.refundedByProduct[itemDetail.productId]}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {itemDetail.subItems?.length > 0 && (
+                <div>
+                  <div className="mb-1.5 text-sm font-medium">{t('orders.bundleContents')}</div>
+                  <ul className="divide-y rounded-md border text-sm">
+                    {itemDetail.subItems.map((s: any) => (
+                      <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <span className="truncate">{s.product?.name ?? s.description}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">× {s.quantity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div>
+                <div className="mb-1.5 text-sm font-medium">{t('inventory.serialNumber')}</div>
+                {(so.serialsByProduct?.[itemDetail.productId] ?? []).length > 0 ? (
+                  <ul className="divide-y rounded-md border">
+                    {so.serialsByProduct[itemDetail.productId].map((serial: string, index: number) => (
+                      <li key={serial} className="flex items-center gap-3 px-3 py-1.5">
+                        <span className="w-6 shrink-0 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
+                        <span dir="ltr" className="font-mono text-xs">{serial}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                    {itemDetail.product?.trackSerials
+                      ? t('orders.noSerialsRecorded')
+                      : t('orders.productNotSerialTracked')}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setItemDetail(null)}>{t('common.close')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/*
         Recording serials after the fact. Stock already moved at confirmation,

@@ -617,7 +617,10 @@
     "invalidLinesError": "Please enter valid quantities and prices for all items",
     "assignSerials": "Assign serial numbers",
     "assignSerialsHint": "Stock for this order already left the shelf when it was confirmed. Recording the serials here names which units went out — it does not change any quantity.",
-    "serialsRemaining": "{count, plural, one {# still to record} other {# still to record}}"
+    "serialsRemaining": "{count, plural, one {# still to record} other {# still to record}}",
+    "bundleContents": "Bundle contents",
+    "noSerialsRecorded": "No serial numbers recorded against this order yet.",
+    "productNotSerialTracked": "This product is not tracked by serial number."
   },
   "invoices": {
     "title": "Invoices",
