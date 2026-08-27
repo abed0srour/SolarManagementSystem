@@ -614,7 +614,10 @@
     "addAtLeastOneProduct": "يرجى إضافة منتج واحد على الأقل",
     "invalidQuantity": "يرجى إدخال كمية صحيحة للمنتج {product}",
     "invalidUnitCost": "يرجى إدخال سعر تكلفة صحيح للمنتج {product}",
-    "invalidLinesError": "يرجى إدخال كميات وأسعار صحيحة لجميع العناصر"
+    "invalidLinesError": "يرجى إدخال كميات وأسعار صحيحة لجميع العناصر",
+    "assignSerials": "تعيين الأرقام التسلسلية",
+    "assignSerialsHint": "خرجت بضاعة هذا الطلب من المخزون عند تأكيده. تسجيل الأرقام هنا يحدّد أي الوحدات خرجت — ولا يغيّر أي كمية.",
+    "serialsRemaining": "{count, plural, one {بقي # للتسجيل} other {بقي # للتسجيل}}"
   },
   "invoices": {
     "title": "الفواتير",

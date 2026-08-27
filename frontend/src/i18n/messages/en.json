@@ -614,7 +614,10 @@
     "addAtLeastOneProduct": "Please add at least one product",
     "invalidQuantity": "Please enter a valid quantity for {product}",
     "invalidUnitCost": "Please enter a valid unit cost for {product}",
-    "invalidLinesError": "Please enter valid quantities and prices for all items"
+    "invalidLinesError": "Please enter valid quantities and prices for all items",
+    "assignSerials": "Assign serial numbers",
+    "assignSerialsHint": "Stock for this order already left the shelf when it was confirmed. Recording the serials here names which units went out — it does not change any quantity.",
+    "serialsRemaining": "{count, plural, one {# still to record} other {# still to record}}"
   },
   "invoices": {
     "title": "Invoices",

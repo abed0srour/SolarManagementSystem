@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   FileDown,
   Printer,
+  QrCode,
   Truck,
   Undo2,
   User,
@@ -37,6 +38,7 @@ export default function SalesOrderDetailPage() {
   const router = useRouter();
   const [so, setSo] = useState<any>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [serialInputs, setSerialInputs] = useState<Record<string, string[]>>({});
   const [deliverOpen, setDeliverOpen] = useState(false);
   const [deliverQty, setDeliverQty] = useState<Record<string, number>>({});
@@ -92,6 +94,43 @@ export default function SalesOrderDetailPage() {
     }
   };
 
+  /**
+   * Lines on an already-confirmed order that are still short of serials.
+   *
+   * Stock for these left the shelf at confirmation, so what is missing is the
+   * record of which units went — not the movement itself.
+   */
+  const unrecorded = ((so?.items ?? []) as any[])
+    .filter(
+      (i) =>
+        i.productId &&
+        !i.isComposite &&
+        !i.product?.isService &&
+        i.product?.trackSerials &&
+        i.product?.requireSerialOnSale !== false,
+    )
+    .map((i) => ({
+      item: i,
+      assigned: (so.serialsByProduct?.[i.productId] ?? []) as string[],
+      remaining: Number(i.quantity) - (so.serialsByProduct?.[i.productId]?.length ?? 0),
+    }))
+    .filter((row) => row.remaining > 0);
+
+  const doAssign = async () => {
+    try {
+      const serialAssignments = Object.entries(serialInputs)
+        .filter(([, v]) => v.filter(Boolean).length > 0)
+        .map(([productId, serialNumbers]) => ({ productId, serialNumbers: serialNumbers.filter(Boolean) }));
+      if (!serialAssignments.length) return;
+      await api.post(`/sales-orders/${so.id}/serials`, { serialAssignments });
+      toast.success(t('common.saved'));
+      setAssignOpen(false);
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   const doDeliver = async () => {
     try {
       const deliveries = Object.entries(deliverQty)
@@ -133,6 +172,11 @@ export default function SalesOrderDetailPage() {
           {so.status === 'PENDING' && (
             <Button size="sm" onClick={() => { setSerialInputs({}); setConfirmOpen(true); }}>
               <CheckCircle2 /> {t('orders.confirmOrder')}
+            </Button>
+          )}
+          {so.status !== 'PENDING' && so.status !== 'CANCELLED' && unrecorded.length > 0 && (
+            <Button size="sm" variant="outline" className="text-amber-600" onClick={() => { setSerialInputs({}); setAssignOpen(true); }}>
+              <QrCode /> {t('orders.assignSerials')}
             </Button>
           )}
           {['CONFIRMED', 'PARTIALLY_DELIVERED'].includes(so.status) && (
@@ -319,6 +363,44 @@ export default function SalesOrderDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/*
+        Recording serials after the fact. Stock already moved at confirmation,
+        so this names units without touching any quantity.
+      */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent wide>
+          <DialogHeader><DialogTitle>{t('orders.assignSerials')} — {so.number}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">{t('orders.assignSerialsHint')}</p>
+          <div className="space-y-4">
+            {unrecorded.map(({ item, assigned, remaining }) => (
+              <div key={item.id}>
+                <div className="mb-1.5 text-sm font-medium">
+                  {item.product?.name}{' '}
+                  <span className="text-muted-foreground">
+                    — {t('orders.serialsRemaining', { count: remaining })}
+                  </span>
+                </div>
+                {assigned.length > 0 && (
+                  <p className="mb-1.5 font-mono text-xs text-muted-foreground" dir="ltr">
+                    {assigned.join(', ')}
+                  </p>
+                )}
+                <SerialSelector
+                  productId={item.productId}
+                  required={remaining}
+                  value={serialInputs[item.productId] ?? []}
+                  onChange={(serials) => setSerialInputs({ ...serialInputs, [item.productId]: serials })}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={doAssign}>{t('common.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm with serials */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

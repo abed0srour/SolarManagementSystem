@@ -137,14 +137,27 @@ export class SalesOrdersService {
     // Non-rejected refunds against this order's invoices, so the UI can show
     // refunded quantities per item and the order's net-after-refunds total.
     const refundWhere = { deletedAt: null, status: { not: 'REJECTED' as const }, invoice: { salesOrderId: id } };
-    const [returnedItems, refundsAgg] = await Promise.all([
+    const [returnedItems, refundsAgg, assignedUnits] = await Promise.all([
       this.prisma.returnItem.groupBy({
         by: ['productId'],
         where: { refund: refundWhere },
         _sum: { quantity: true },
       }),
       this.prisma.refund.aggregate({ where: refundWhere, _sum: { totalAmount: true } }),
+      // Which physical units went out on this order, so the view can show what
+      // is recorded and what is still owed a serial.
+      this.prisma.productUnit.findMany({
+        where: { salesOrderId: id },
+        select: { productId: true, serialNumber: true },
+        orderBy: { serialNumber: 'asc' },
+      }),
     ]);
+
+    const serialsByProduct: Record<string, string[]> = {};
+    for (const unit of assignedUnits) {
+      (serialsByProduct[unit.productId] ??= []).push(unit.serialNumber);
+    }
+
     return {
       ...so,
       ...this.paymentInfo(so),
@@ -152,7 +165,82 @@ export class SalesOrdersService {
       refundedByProduct: Object.fromEntries(returnedItems.map((r) => [r.productId, r._sum.quantity ?? 0])),
       refundedTotal: Number(refundsAgg._sum.totalAmount ?? 0),
       profit: calcOrderProfit(so),
+      serialsByProduct,
     };
+  }
+
+  /**
+   * Record which units went out on an order that is already confirmed.
+   *
+   * Stock left the shelf at confirmation, so this deliberately moves no
+   * quantity -- it fills in the units that should have been named at the time.
+   * Before serials were enforced at confirm, an order could go out without
+   * them, leaving the shelf count and the recorded units disagreeing and no
+   * answer to "which one did this customer get". This is how that is repaired,
+   * and marking the unit sold is what brings the two counts back together.
+   */
+  async assignSerials(
+    userId: string,
+    id: string,
+    assignments: { productId: string; serialNumbers: string[] }[],
+  ) {
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id },
+      include: { items: { select: { productId: true, quantity: true, isComposite: true } } },
+    });
+    if (!so) throw new NotFoundException('Sales order not found');
+    if (so.status === 'PENDING')
+      throw new BadRequestException('This order has not been confirmed yet — assign its serials when confirming it.');
+    if (so.status === 'CANCELLED')
+      throw new BadRequestException('This order was cancelled, so nothing left the shelf against it.');
+
+    const ordered = new Map<string, number>();
+    for (const item of so.items) {
+      if (!item.productId || item.isComposite) continue;
+      ordered.set(item.productId, (ordered.get(item.productId) ?? 0) + Number(item.quantity));
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const assignment of assignments) {
+        const serials = [...new Set(assignment.serialNumbers.map((s) => s.trim()).filter(Boolean))];
+        if (!serials.length) continue;
+
+        const quantity = ordered.get(assignment.productId);
+        if (quantity === undefined)
+          throw new BadRequestException('That product is not on this order.');
+
+        const already = await tx.productUnit.count({
+          where: { salesOrderId: id, productId: assignment.productId },
+        });
+        if (already + serials.length > quantity) {
+          throw new BadRequestException(
+            `This order is for ${quantity} of that product and ${already} ${already === 1 ? 'is' : 'are'} already recorded, ` +
+              `so ${quantity - already} more can be assigned — ${serials.length} were given.`,
+          );
+        }
+
+        const units = await tx.productUnit.findMany({
+          where: { serialNumber: { in: serials }, productId: assignment.productId, status: 'IN_STOCK' },
+          select: { id: true, serialNumber: true },
+        });
+        if (units.length !== serials.length) {
+          const found = new Set(units.map((u) => u.serialNumber));
+          const missing = serials.filter((s) => !found.has(s));
+          throw new BadRequestException(
+            `Not in stock for this product: ${missing.join(', ')}. ` +
+              `A serial already sold, returned or belonging to another product cannot be assigned here.`,
+          );
+        }
+
+        await tx.productUnit.updateMany({
+          where: { id: { in: units.map((u) => u.id) } },
+          data: { status: 'SOLD', salesOrderId: id },
+        });
+      }
+    });
+
+    await this.audit.log(userId, 'ASSIGN_SERIALS', 'SalesOrder', id, { number: so.number, assignments });
+    return this.findOne(id);
   }
 
   /**

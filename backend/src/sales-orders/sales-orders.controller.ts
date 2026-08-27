@@ -214,6 +214,15 @@ export class SalesOrdersController {
     return this.service.confirm(user.id, id, dto.serialAssignments);
   }
 
+  /**
+   * Record which units went out on an order already confirmed. Moves no stock —
+   * that happened at confirmation — it names the units that were not named then.
+   */
+  @Post(':id/serials')
+  assignSerials(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ConfirmDto) {
+    return this.service.assignSerials(user.id, id, dto.serialAssignments ?? []);
+  }
+
   @Post(':id/deliver')
   deliver(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DeliverDto) {
     return this.service.deliver(user.id, id, dto.deliveries);
