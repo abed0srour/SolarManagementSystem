@@ -63,6 +63,16 @@ export class StorageService {
       });
       return { url: res.url, size: body.length, uploadedAt: new Date() };
     }
+    // A serverless deployment has no writable disk outside /tmp, which does not
+    // survive the invocation. Writing anyway fails deep inside fs with EROFS and
+    // surfaces as a bare "Internal server error", which says nothing about the
+    // one thing that would fix it.
+    if (process.env.VERCEL) {
+      throw new Error(
+        `Cannot store "${key}": this deployment has no writable disk and no blob store is attached. ` +
+          `Add a Vercel Blob store to the project — it sets BLOB_READ_WRITE_TOKEN, which is what switches storage over.`,
+      );
+    }
     const path = this.localPath(key);
     mkdirSync(dirname(path), { recursive: true });
     await writeFile(path, body);

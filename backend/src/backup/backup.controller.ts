@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Post, Put, Res, UploadedFil
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Max, Min, ValidateIf } from 'class-validator';
 import { BackupService } from './backup.service';
 import { AuthUser, CurrentUser } from '../auth/user.decorator';
 
@@ -11,11 +11,13 @@ class ScheduleDto {
   @IsBoolean()
   enabled?: boolean;
 
+  /** null means every day. @IsOptional() lets it through, @IsInt guards a value. */
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsInt()
   @Min(0)
   @Max(6)
-  dayOfWeek?: number;
+  dayOfWeek?: number | null;
 
   @IsOptional()
   @IsInt()

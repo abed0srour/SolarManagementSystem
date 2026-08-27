@@ -815,7 +815,8 @@
     "backupTables": "Tables",
     "backupRows": "Rows",
     "backupSize": "Size",
-    "taxNumber": "Tax / VAT number"
+    "taxNumber": "Tax / VAT number",
+    "everyDay": "Every day"
   },
   "audit": {
     "title": "Audit Log",

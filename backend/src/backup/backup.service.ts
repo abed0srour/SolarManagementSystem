@@ -123,12 +123,13 @@ function parseCsv(content: string): Record<string, any>[] {
 
 interface BackupSchedule {
   enabled: boolean;
-  dayOfWeek: number; // 0 (Sunday) – 6 (Saturday)
+  /** 0 (Sunday) – 6 (Saturday), or null to run every day. */
+  dayOfWeek: number | null;
   hour: number; // 0-23, server local time
   minute: number; // 0-59
 }
 
-const DEFAULT_SCHEDULE: BackupSchedule = { enabled: true, dayOfWeek: 0, hour: 3, minute: 0 };
+const DEFAULT_SCHEDULE: BackupSchedule = { enabled: true, dayOfWeek: null, hour: 18, minute: 0 };
 
 /**
  * Never exported, and — far more importantly — never deleted by a restore.
@@ -443,7 +444,8 @@ export class BackupService implements OnModuleInit {
   async isScheduledForNow(now = new Date()): Promise<boolean> {
     const schedule = await this.getSchedule();
     if (!schedule.enabled) return false;
-    if (now.getDay() !== schedule.dayOfWeek) return false;
+    // null means every day; a number pins it to that weekday.
+    if (schedule.dayOfWeek !== null && now.getDay() !== schedule.dayOfWeek) return false;
     const last = await this.prisma.backupLog.findFirst({
       where: { type: 'BACKUP', status: 'SUCCESS' },
       orderBy: { createdAt: 'desc' },
@@ -462,11 +464,14 @@ export class BackupService implements OnModuleInit {
     const current = await this.getSchedule();
     const next: BackupSchedule = {
       enabled: dto.enabled ?? current.enabled,
-      dayOfWeek: dto.dayOfWeek ?? current.dayOfWeek,
+      // `??` would be wrong here: null is a real value meaning "every day", and
+      // would otherwise be read as "not supplied" and silently ignored.
+      dayOfWeek: dto.dayOfWeek !== undefined ? dto.dayOfWeek : current.dayOfWeek,
       hour: dto.hour ?? current.hour,
       minute: dto.minute ?? current.minute,
     };
-    if (next.dayOfWeek < 0 || next.dayOfWeek > 6) throw new BadRequestException('dayOfWeek must be 0-6');
+    if (next.dayOfWeek !== null && (next.dayOfWeek < 0 || next.dayOfWeek > 6))
+      throw new BadRequestException('dayOfWeek must be 0-6, or null for every day');
     if (next.hour < 0 || next.hour > 23) throw new BadRequestException('hour must be 0-23');
     if (next.minute < 0 || next.minute > 59) throw new BadRequestException('minute must be 0-59');
 

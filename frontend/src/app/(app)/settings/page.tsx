@@ -34,7 +34,7 @@ export default function SettingsPage() {
   const [sequences, setSequences] = useState<any[]>([]);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
   const [backup, setBackup] = useState<any>(null);
-  const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: 0, hour: 3, minute: 0 });
+  const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: null, hour: 18, minute: 0 });
   const [backupBusy, setBackupBusy] = useState(false);
   const [csvBusy, setCsvBusy] = useState(false);
   const [csvDaily, setCsvDaily] = useState(true);
@@ -576,7 +576,16 @@ export default function SettingsPage() {
                 </label>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label={t('settings.backupDay')}>
-                    <Select disabled={!schedule.enabled} value={schedule.dayOfWeek} onChange={(e) => setSchedule({ ...schedule, dayOfWeek: Number(e.target.value) })}>
+                    <Select
+                      disabled={!schedule.enabled}
+                      // '' carries "every day", which the API expresses as null —
+                      // a weekday number would pin it to one day a week.
+                      value={schedule.dayOfWeek === null || schedule.dayOfWeek === undefined ? '' : schedule.dayOfWeek}
+                      onChange={(e) =>
+                        setSchedule({ ...schedule, dayOfWeek: e.target.value === '' ? null : Number(e.target.value) })
+                      }
+                    >
+                      <option value="">{t('settings.everyDay')}</option>
                       {[0, 1, 2, 3, 4, 5, 6].map((d) => (
                         <option key={d} value={d}>{t(`settings.weekday.${d}`)}</option>
                       ))}

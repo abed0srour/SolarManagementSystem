@@ -815,7 +815,8 @@
     "backupTables": "الجداول",
     "backupRows": "الصفوف",
     "backupSize": "الحجم",
-    "taxNumber": "الرقم الضريبي"
+    "taxNumber": "الرقم الضريبي",
+    "everyDay": "كل يوم"
   },
   "audit": {
     "title": "سجل التدقيق",
