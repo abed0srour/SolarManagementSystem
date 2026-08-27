@@ -19,6 +19,8 @@ export default function ResetPasswordPage() {
   const t = useTranslations();
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('checking');
+  /** What Supabase said went wrong, when it said anything at all. */
+  const [reason, setReason] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [show, setShow] = useState(false);
@@ -31,6 +33,34 @@ export default function ResetPasswordPage() {
    * fragment and a `?code=` query over the years, and the event is emitted in
    * both cases once the client has finished processing it.
    */
+  /**
+   * Say why the link failed, rather than only that it did.
+   *
+   * Supabase reports a rejection on the way back: in the query string for the
+   * code flow, in the hash fragment for the implicit one. "Already used" and
+   * "expired" and "redirect not allowed" all arrive here as distinct messages
+   * and need different responses from whoever is reading the screen, so
+   * flattening them into one sentence throws away the only useful part.
+   *
+   * When nothing was reported, what matters instead is which shape of token
+   * arrived -- or that none did -- so that is noted too.
+   */
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const pick = (key: string) => query.get(key) ?? hash.get(key);
+
+    const description = pick('error_description');
+    const code = pick('error_code') ?? pick('error');
+    if (description || code) {
+      setReason([description?.replace(/\+/g, ' '), code && `(${code})`].filter(Boolean).join(' '));
+      return;
+    }
+
+    const carried = ['access_token', 'code', 'token_hash', 'token'].filter((k) => pick(k));
+    setReason(carried.length ? `Link carried: ${carried.join(', ')}` : 'Link carried no token at all');
+  }, []);
+
   useEffect(() => {
     const supabase = supabaseBrowser();
 
@@ -95,6 +125,11 @@ export default function ResetPasswordPage() {
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{t('auth.resetLinkInvalid')}</span>
               </div>
+              {reason && (
+                <p className="break-words rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+                  {reason}
+                </p>
+              )}
               <Link href="/forgot-password" className={cn(buttonVariants(), 'w-full')}>
                 {t('auth.requestNewLink')}
               </Link>
