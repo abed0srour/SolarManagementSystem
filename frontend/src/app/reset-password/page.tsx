@@ -63,18 +63,57 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const supabase = supabaseBrowser();
+    let cancelled = false;
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') setPhase('ready');
     });
 
-    // Covers the case where the client processed the link before this listener
-    // was attached, which is the common one on a fast connection.
-    supabase.auth.getSession().then(({ data }) => {
-      setPhase((current) => (current === 'checking' ? (data.session ? 'ready' : 'invalid') : current));
-    });
+    void (async () => {
+      /**
+       * Exchange the link's tokens for a session explicitly.
+       *
+       * Relying on the client to notice them was the bug: `createBrowserClient`
+       * defaults to the PKCE flow, which looks for a `?code=` alongside a
+       * verifier saved in the browser that began the request. An invite or
+       * recovery mail is generated on the server for someone who has never
+       * visited, so neither exists, and the `#access_token` it does carry was
+       * left unread -- the page then reported a valid link as expired.
+       *
+       * Handing the tokens to `setSession` skips that detection entirely and
+       * works whichever flow the client is configured for.
+       */
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = hash.get('access_token');
+      const refreshToken = hash.get('refresh_token');
 
-    return () => sub.subscription.unsubscribe();
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (cancelled) return;
+        if (!error) {
+          // Strip the tokens from the address bar once spent, so a reload or a
+          // copied URL cannot replay them.
+          window.history.replaceState(null, '', window.location.pathname);
+          setPhase('ready');
+          return;
+        }
+        setReason(error.message);
+      }
+
+      // No tokens in the URL: either the client already consumed them, or the
+      // visitor arrived here with a session of their own to change.
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setPhase((current) => (current === 'checking' ? (data.session ? 'ready' : 'invalid') : current));
+    })();
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const submit = async (e: React.FormEvent) => {
