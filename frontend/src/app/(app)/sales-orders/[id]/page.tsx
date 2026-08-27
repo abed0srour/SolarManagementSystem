@@ -60,6 +60,24 @@ export default function SalesOrderDetailPage() {
   const discountLabel = (type: string | null, value: any) =>
     !type ? '—' : type === 'PERCENT' ? `${Number(value)}%` : fmtMoney(value);
 
+  /**
+   * Items still short of the serials the order needs.
+   *
+   * The server refuses a confirm that leaves any of these outstanding, because
+   * confirming moves stock whether or not the units were recorded. Checking the
+   * same rule here means the operator is told before they press the button
+   * rather than after.
+   */
+  const missingSerials = ((so?.items ?? []) as any[]).filter(
+    (i) =>
+      i.productId &&
+      !i.isComposite &&
+      !i.product?.isService &&
+      i.product?.trackSerials &&
+      i.product?.requireSerialOnSale !== false &&
+      (serialInputs[i.productId]?.filter(Boolean).length ?? 0) !== Number(i.quantity),
+  );
+
   const doConfirm = async () => {
     try {
       const serialAssignments = Object.entries(serialInputs)
@@ -323,9 +341,14 @@ export default function SalesOrderDetailPage() {
               </div>
             ))}
           </div>
+          {missingSerials.length > 0 && (
+            <p className="px-1 text-xs text-amber-600 dark:text-amber-400">
+              {t('orders.serialsIncomplete', { count: missingSerials.length })}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={doConfirm}>{t('common.confirm')}</Button>
+            <Button onClick={doConfirm} disabled={missingSerials.length > 0}>{t('common.confirm')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

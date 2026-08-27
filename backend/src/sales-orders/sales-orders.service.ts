@@ -10,6 +10,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { calcDocTotals, calcLine, round2 } from '../common/calc';
 import { buildCompositeItems, writeSubItems } from '../common/composite-items';
 import { calcOrderProfit } from '../common/order-profit';
+import { describeSerialMismatches, serialMismatches } from './serial-requirements';
 import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
 
 @Injectable()
@@ -444,10 +445,26 @@ export class SalesOrdersService {
   async confirm(userId: string, id: string, serialAssignments?: { productId: string; serialNumbers: string[] }[]) {
     const so = await this.prisma.salesOrder.findFirst({ relationLoadStrategy: 'join',
       where: { id },
-      include: { items: { include: { product: { select: { isService: true } } } }, client: true },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: { name: true, isService: true, trackSerials: true, requireSerialOnSale: true },
+            },
+          },
+        },
+        client: true,
+      },
     });
     if (!so) throw new NotFoundException('Sales order not found');
     if (so.status !== 'PENDING') throw new BadRequestException(`Order is already ${so.status}`);
+
+    // Refuse before any stock moves. Confirming deducts the quantity whether or
+    // not serials were supplied, so an order waved through here leaves the
+    // shelf count disagreeing with the units recorded against it, and nobody
+    // able to say afterwards which unit the customer actually received.
+    const mismatches = serialMismatches(so.items, serialAssignments);
+    if (mismatches.length) throw new BadRequestException(describeSerialMismatches(mismatches));
 
     // Credit limit check (warning enforced server-side)
     if (Number(so.client.creditLimit) > 0) {

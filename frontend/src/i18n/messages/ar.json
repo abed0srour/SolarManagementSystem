@@ -541,6 +541,7 @@
     "waMessage": "مرحبًا، شكرًا لتواصلكم معنا! إليك عرض السعر رقم {number}.\nالإجمالي: {total}{validUntil, select, none {} other {\nصالح حتى: {validUntil}}}\nنتطلع للتعامل معكم!"
   },
   "orders": {
+    "serialsIncomplete": "{count, plural, one {بند واحد ما زال بحاجة إلى أرقامه التسلسلية} other {# بنود ما زالت بحاجة إلى أرقامها التسلسلية}} قبل تأكيد الطلب.",
     "profit": "الربح",
     "goodsRevenue": "إيراد البضاعة",
     "costOfGoods": "تكلفة البضاعة",

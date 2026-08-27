@@ -541,6 +541,7 @@
     "waMessage": "Hello, thank you for contacting us! Here is your quotation #{number}.\nTotal: {total}{validUntil, select, none {} other {\nValid Until: {validUntil}}}\nWe look forward to working with you!"
   },
   "orders": {
+    "serialsIncomplete": "{count, plural, one {# item still needs its serial numbers} other {# items still need their serial numbers}} before this order can be confirmed.",
     "profit": "Profit",
     "goodsRevenue": "Goods revenue",
     "costOfGoods": "Cost of goods",
