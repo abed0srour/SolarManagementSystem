@@ -106,6 +106,24 @@ export class SupabaseAdminService {
     return data.user;
   }
 
+  /**
+   * Send someone a fresh link to set their password.
+   *
+   * Not a second `inviteUserByEmail`: that call refuses an address which
+   * already has an account, which is every case where the mail needs sending
+   * again. A recovery mail lands on the same /reset-password screen and has the
+   * same effect for someone who never set a password in the first place, and it
+   * works whether or not the original invite was ever opened.
+   *
+   * The project's own rate limit still applies -- Supabase refuses a second
+   * mail to the same address inside the configured interval, and that refusal
+   * is surfaced rather than swallowed so the caller can say why.
+   */
+  async sendPasswordSetupEmail(email: string, redirectTo: string): Promise<void> {
+    const { error } = await this.admin().auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+    if (error) throw new BadRequestException(this.readable(error.message));
+  }
+
   async updateAppMetadata(userId: string, input: ProvisionUserInput): Promise<void> {
     const { error } = await this.admin().auth.admin.updateUserById(userId, {
       app_metadata: this.appMetadata(input),

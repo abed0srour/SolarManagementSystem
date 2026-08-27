@@ -1406,6 +1406,8 @@
     "removeMember": "Remove account",
     "removeMemberWarning": "Permanently deletes the sign-in for {email}. Records they created are kept and stay attributed to them.",
     "resetPassword": "Reset password",
+    "resendInvite": "Resend invitation",
+    "inviteResent": "Invitation sent again",
     "revenue": "Revenue",
     "searchStores": "Search stores…",
     "sendInviteInstead": "Email an invite instead of setting a password",

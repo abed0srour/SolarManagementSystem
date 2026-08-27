@@ -1406,6 +1406,8 @@
     "removeMember": "حذف الحساب",
     "removeMemberWarning": "يحذف تسجيل الدخول لـ {email} نهائياً. تبقى السجلات التي أنشأها منسوبة إليه.",
     "resetPassword": "إعادة تعيين كلمة المرور",
+    "resendInvite": "إعادة إرسال الدعوة",
+    "inviteResent": "تم إرسال الدعوة مجدداً",
     "revenue": "الإيرادات",
     "searchStores": "ابحث عن متجر…",
     "sendInviteInstead": "أرسل دعوة بالبريد بدل تعيين كلمة مرور",

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
-  Building2, ArrowLeft, PauseCircle, PlayCircle, Archive, KeyRound, UserX, UserCheck, Trash2, Save,
+  Building2, ArrowLeft, PauseCircle, PlayCircle, Archive, KeyRound, Send, UserX, UserCheck, Trash2, Save,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, errMsg, fmtDate, fmtMoney } from '../../../../lib/api';
@@ -286,6 +286,20 @@ export default function TenantDetailPage() {
                         }}
                       >
                         <KeyRound className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        title={t('superadmin.resendInvite')}
+                        onClick={() =>
+                          act(
+                            () => api.post(`/superadmin/tenants/${id}/members/${member.id}/invite`),
+                            t('superadmin.inviteResent'),
+                          )
+                        }
+                      >
+                        <Send className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="outline"

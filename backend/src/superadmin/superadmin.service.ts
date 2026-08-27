@@ -392,6 +392,26 @@ export class SuperadminService {
     return { success: true };
   }
 
+  /**
+   * Send a member their set-password link again.
+   *
+   * The first invite is easy to lose -- it lands in spam, the address was
+   * mistyped, or the single-use token was spent by a link scanner before anyone
+   * read the mail. Without this the only remedy was deleting the account and
+   * recreating the store, which is a heavy price for a lost email.
+   */
+  async resendMemberInvite(actorId: string, tenantId: string, userId: string) {
+    await this.assertMember(tenantId, userId);
+    const profile = await runUnscoped(() =>
+      this.prisma.profile.findUnique({ where: { id: userId }, select: { email: true } }),
+    );
+    if (!profile?.email) throw new NotFoundException('That account has no email address on file to send to.');
+
+    await this.supabase.sendPasswordSetupEmail(profile.email, inviteRedirectUrl());
+    await this.audit.log(actorId, 'RESEND_INVITE', 'Profile', userId, { tenantId, email: profile.email });
+    return { success: true, email: profile.email };
+  }
+
   async setMemberActive(actorId: string, tenantId: string, userId: string, isActive: boolean) {
     await this.assertMember(tenantId, userId);
     await runUnscoped(() => this.prisma.profile.update({ where: { id: userId }, data: { isActive } }));

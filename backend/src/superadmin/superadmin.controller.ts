@@ -124,6 +124,12 @@ export class SuperadminController {
     return this.service.resetMemberPassword(user.id, id, userId, dto.password);
   }
 
+  /** Send the member their set-password link again. */
+  @Post('tenants/:id/members/:userId/invite')
+  resendInvite(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('userId') userId: string) {
+    return this.service.resendMemberInvite(user.id, id, userId);
+  }
+
   @Patch('tenants/:id/members/:userId/active')
   setMemberActive(
     @CurrentUser() user: AuthUser,
