@@ -9,7 +9,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Fagot Systems',
-  description: 'Management system for a solar equipment retail store',
+  description: 'Inventory, sales, invoicing and service management for retail businesses',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

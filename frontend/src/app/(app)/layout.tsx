@@ -147,18 +147,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Branding (store name, tagline, logo) comes from the admin settings.
     // Painted from cache first so the header never flashes empty, then
     // revalidated in the background.
+    // The store's name and logo belong in the header, not in the browser tab.
+    // Overwriting the tab left every window claiming to be whichever store was
+    // signed in, with that store's logo standing in for the product's own, so
+    // the tab said nothing about which application it was.
     const applyBranding = (c: any) => {
       setCompany(c);
-      if (c.logoUrl) {
-        let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-        if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          document.head.appendChild(link);
-        }
-        link.href = c.logoUrl;
-      }
-      if (c.name) document.title = c.name;
     };
     const cachedSettings = readCache<any>('settings');
     if (cachedSettings) applyBranding(cachedSettings.data?.company ?? {});
