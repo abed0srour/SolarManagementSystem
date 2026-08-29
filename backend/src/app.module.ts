@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { ProductHistoryModule } from './product-history/product-history.module';
 import { ClientsModule } from './clients/clients.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { QuotationsModule } from './quotations/quotations.module';
@@ -49,6 +50,7 @@ import { SuperadminModule } from './superadmin/superadmin.module';
     CategoriesModule,
     ProductsModule,
     InventoryModule,
+    ProductHistoryModule,
     ClientsModule,
     SuppliersModule,
     QuotationsModule,
