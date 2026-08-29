@@ -72,6 +72,7 @@ model Tenant {
   warehouses           Warehouse[]
   stockLevels          StockLevel[]
   productUnits         ProductUnit[]
+  productUnitEvents    ProductUnitEvent[]
   stockMovements       StockMovement[]
   clients              Client[]
   clientAddresses      ClientAddress[]
@@ -212,6 +213,7 @@ model User {
   installations      Installation[]
   expenses           Expense[]
   supplierReturns    SupplierReturn[]
+  productUnitEvents  ProductUnitEvent[]
 
   @@index([tenantId])
 }
@@ -386,18 +388,18 @@ enum DynamicAttributeType {
 }
 
 model ProductAttribute {
-  id              String               @id @default(uuid())
+  id String @id @default(uuid())
 
   /// Owning tenant. Every read and write is scoped to it.
   tenantId        String               @default("")
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   productId       String
   product         Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  name            String               // e.g. "Color", "Size", "Dimensions", "Capacity"
+  name            String // e.g. "Color", "Size", "Dimensions", "Capacity"
   type            DynamicAttributeType @default(STRING) // STRING, INTEGER, DECIMAL, FLOAT, BOOLEAN
-  unit            String?              // e.g. "mm", "kW", "V", "Ah"
+  unit            String? // e.g. "mm", "kW", "V", "Ah"
   isFreeForm      Boolean              @default(false)
-  permittedValues Json?                // array of permitted values, e.g. ["Red", "Blue"] or [10, 20] or [true, false]
+  permittedValues Json? // array of permitted values, e.g. ["Red", "Blue"] or [10, 20] or [true, false]
   sortOrder       Int                  @default(0)
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
@@ -441,13 +443,13 @@ model Product {
   deletedAt                 DateTime?
 
   // Variant & Parent-Child support
-  parentProductId           String?
-  parent                    Product?            @relation("ProductVariants", fields: [parentProductId], references: [id], onDelete: Cascade)
-  variants                  Product[]           @relation("ProductVariants")
-  isVariant                 Boolean             @default(false)
-  hasVariants               Boolean             @default(false)
-  variantAttributes         Json                @default("{}")
-  customAttributes          ProductAttribute[]
+  parentProductId   String?
+  parent            Product?           @relation("ProductVariants", fields: [parentProductId], references: [id], onDelete: Cascade)
+  variants          Product[]          @relation("ProductVariants")
+  isVariant         Boolean            @default(false)
+  hasVariants       Boolean            @default(false)
+  variantAttributes Json               @default("{}")
+  customAttributes  ProductAttribute[]
 
   priceHistory       PriceHistory[]
   stockLevels        StockLevel[]
@@ -585,6 +587,7 @@ model ProductUnit {
   createdAt                  DateTime       @default(now())
 
   warrantyClaims WarrantyClaim[]
+  events         ProductUnitEvent[]
 
   @@unique([tenantId, serialNumber])
   @@index([productId, status])
@@ -1684,5 +1687,43 @@ model AttendanceEntry {
 
   @@unique([workerId, date])
   @@index([date])
+  @@index([tenantId])
+}
+
+/// One recorded change in a serialized unit's life.
+///
+/// The unit row itself only ever holds the unit's *current* state, so the
+/// moment it moves from IN_STOCK to DAMAGED the reason, the date and the person
+/// are gone. That is exactly what is needed to answer "this inverter failed —
+/// who supplied it, when did we take it in, and what has happened to it since".
+/// The supplier is not copied here: it is reachable through the unit's purchase
+/// order, and duplicating it would let the two disagree.
+model ProductUnitEvent {
+  id String @id @default(uuid())
+
+  /// Owning tenant. Every read and write is scoped to it.
+  tenantId String @default("")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  unitId String
+  unit   ProductUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  /// Null on the first event, where the unit had no prior state.
+  fromStatus UnitStatus?
+  toStatus   UnitStatus
+  note       String?
+
+  /// What caused the change — "PurchaseOrder", "SalesOrder", "Refund" — and its
+  /// id, so the event can be traced back to the document that drove it.
+  refType String?
+  refId   String?
+
+  /// Null when a scheduler or an import made the change rather than a person.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([unitId, createdAt])
   @@index([tenantId])
 }
