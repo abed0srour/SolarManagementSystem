@@ -9,7 +9,7 @@ import {
   Users, FileText, ShoppingCart, Receipt, CreditCard, RotateCcw, Truck, PackagePlus,
   ShieldCheck, Wrench, Settings, History, Bell, LogOut, Menu, X, Moon, Sun, Languages,
   ChevronRight, ChevronDown, User, HardHat, Activity, Calculator, Wallet, RefreshCw, Palette, PackageCheck, QrCode, Undo2, PackageSearch,
-  Check, CheckCheck, Trash2, ShoppingBag, ShieldAlert, UsersRound, DollarSign,
+  Check, CheckCheck, Trash2, ShoppingBag, ShieldAlert, UsersRound, DollarSign, ScrollText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -39,6 +39,7 @@ const NAV: { group: string; items: { key: string; href: string; icon: React.Elem
       { key: 'categories', href: '/categories', icon: FolderTree },
       { key: 'inventory', href: '/inventory', icon: WarehouseIcon },
       { key: 'serials', href: '/serials', icon: QrCode },
+      { key: 'productHistory', href: '/product-history', icon: ScrollText },
     ],
   },
   {

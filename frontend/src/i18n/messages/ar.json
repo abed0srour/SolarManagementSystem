@@ -39,7 +39,8 @@
     "scan": "مسح الرمز",
     "serials": "الأرقام التسلسلية",
     "purchaseReturns": "مرتجعات الموردين",
-    "productBuyers": "من اشترى ماذا"
+    "productBuyers": "من اشترى ماذا",
+    "productHistory": "سجل المنتج"
   },
   "subtitles": {
     "dashboard": "نظرة عامة على العمل — المبيعات والمخزون والنقد في لمحة.",
@@ -64,7 +65,8 @@
     "profile": "حسابك والأمان وسجل تسجيل الدخول.",
     "serials": "كل وحدة تحمل رقماً تسلسلياً — ابحث عنها وصحّحها وأعد تعيينها.",
     "purchaseReturns": "البضائع المُعادة إلى الموردين والمبالغ المستردة.",
-    "productBuyers": "اختر منتجاً وشاهد كل عميل اشتراه."
+    "productBuyers": "اختر منتجاً وشاهد كل عميل اشتراه.",
+    "productHistory": "تتبّع المنتج عبر مورّديه، والوحدة عبر دورة حياتها."
   },
   "auth": {
     "accountDeactivated": "تم تعطيل هذا الحساب. تواصل مع مسؤول المتجر.",
@@ -1449,5 +1451,36 @@
     "unlimited": "بلا حد",
     "usage": "الاستخدام",
     "usersCount": "المستخدمون"
+  },
+  "productHistory": {
+    "title": "سجل المنتج",
+    "purchaseHistory": "سجل الشراء",
+    "serialLookup": "بحث الأرقام التسلسلية",
+    "pickProduct": "اختر منتجاً لمعرفة من زوّده وكم كلّف.",
+    "neverPurchased": "لم يُشترَ هذا المنتج ضمن أي طلب مؤكد.",
+    "orders": "الطلبات",
+    "unitsBought": "الوحدات المشتراة",
+    "totalSpend": "إجمالي الإنفاق",
+    "averageUnitCost": "متوسط تكلفة الوحدة",
+    "bySupplier": "حسب المورد",
+    "received": "المستلَم",
+    "returned": "المرتجَع",
+    "costRange": "نطاق التكلفة",
+    "lastOrder": "آخر طلب",
+    "priceTrend": "تغيّر السعر",
+    "everyPurchase": "كل عمليات الشراء",
+    "unitCost": "تكلفة الوحدة",
+    "invoices": "الفواتير",
+    "firstPurchase": "أول عملية شراء",
+    "unchanged": "بلا تغيير",
+    "serialPlaceholder": "امسح أو اكتب رقماً تسلسلياً",
+    "faultyOnly": "التالف أو المرتجع أو المُعاد إلى المورد فقط",
+    "unitsFound": "{count, plural, =0 {لا وحدات} one {وحدة واحدة} other {# وحدات}}",
+    "supplierUnknown": "غير مسجَّل",
+    "lifecycle": "السجل",
+    "noEvents": "لا يوجد شيء مسجَّل بعد. تُكتب الأحداث منذ أول تغيير لحالة الوحدة من هنا.",
+    "changeStatus": "تغيير الحالة",
+    "pickStatus": "اختر حالة جديدة…",
+    "notePlaceholder": "سبب التغيير — وهو لا يقل أهمية عن الحالة نفسها"
   }
 }

@@ -39,7 +39,8 @@
     "scan": "Scan QR",
     "serials": "Serial Numbers",
     "purchaseReturns": "Supplier Returns",
-    "productBuyers": "Who Bought What"
+    "productBuyers": "Who Bought What",
+    "productHistory": "Product History"
   },
   "subtitles": {
     "dashboard": "Business overview — sales, stock and cash at a glance.",
@@ -64,7 +65,8 @@
     "profile": "Your account, security and sign-in history.",
     "serials": "Every serial-numbered unit — search, correct and re-assign them.",
     "purchaseReturns": "Goods sent back to suppliers and the money refunded.",
-    "productBuyers": "Pick a product and see every customer who bought it."
+    "productBuyers": "Pick a product and see every customer who bought it.",
+    "productHistory": "Trace a product through its suppliers, and a unit through its life."
   },
   "auth": {
     "accountDeactivated": "This account has been deactivated. Contact your store administrator.",
@@ -1449,5 +1451,36 @@
     "unlimited": "Unlimited",
     "usage": "Usage",
     "usersCount": "Users"
+  },
+  "productHistory": {
+    "title": "Product History",
+    "purchaseHistory": "Purchase history",
+    "serialLookup": "Serial lookup",
+    "pickProduct": "Pick a product to see who has supplied it and what it has cost.",
+    "neverPurchased": "This product has never been purchased on a confirmed order.",
+    "orders": "Orders",
+    "unitsBought": "Units bought",
+    "totalSpend": "Total spend",
+    "averageUnitCost": "Average unit cost",
+    "bySupplier": "By supplier",
+    "received": "Received",
+    "returned": "Returned",
+    "costRange": "Cost range",
+    "lastOrder": "Last order",
+    "priceTrend": "Price movement",
+    "everyPurchase": "Every purchase",
+    "unitCost": "Unit cost",
+    "invoices": "Invoices",
+    "firstPurchase": "First purchase",
+    "unchanged": "No change",
+    "serialPlaceholder": "Scan or type a serial number",
+    "faultyOnly": "Only damaged, returned, or sent back to a supplier",
+    "unitsFound": "{count, plural, =0 {No units} one {# unit} other {# units}}",
+    "supplierUnknown": "Not recorded",
+    "lifecycle": "History",
+    "noEvents": "Nothing recorded yet. Events are written from the moment a unit's status is changed here.",
+    "changeStatus": "Change status",
+    "pickStatus": "Choose a new status…",
+    "notePlaceholder": "Why it changed — the part worth as much as the status itself"
   }
 }
