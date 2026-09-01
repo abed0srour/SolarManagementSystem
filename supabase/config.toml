@@ -67,6 +67,10 @@ content_path = "./supabase/templates/invite.html"
 subject = "Reset Your Password — Solar Management System"
 content_path = "./supabase/templates/recovery.html"
 
+[auth.email.template.email_change]
+subject = "Confirm Your New Email Address — Solar Management System"
+content_path = "./supabase/templates/email-change.html"
+
 # Puts `role`, `tenant_id`, `app_role` and `permissions` into every access token.
 [auth.hook.custom_access_token]
 enabled = true
