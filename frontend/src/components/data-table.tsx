@@ -415,8 +415,12 @@ export default function DataTable({
           </Button>
         </div>
       )}
-      <div className="no-print flex flex-nowrap items-center justify-between gap-2.5 overflow-x-auto scrollbar-hide border-b p-3">
-        <div className="flex flex-nowrap items-center gap-2 min-w-0">
+      <div className="no-print flex flex-nowrap items-center justify-between gap-2.5 border-b p-3">
+        {/* Scrolls on its own when narrow, so the primary action(s) on the
+            right (e.g. "New product") never get pushed off-screen with no
+            visible way back to them — only the less-critical search/filter/
+            view controls give up space. */}
+        <div className="flex flex-nowrap items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-hide">
           {searchable && (
             <div className="relative w-40 sm:w-48 md:w-56 lg:w-64 shrink-0">
               <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
