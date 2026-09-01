@@ -1468,6 +1468,8 @@
     "costRange": "نطاق التكلفة",
     "lastOrder": "آخر طلب",
     "priceTrend": "تغيّر السعر",
+    "costPriceHistory": "كيف تحدَّدت تكلفة المنتج",
+    "noCostChanges": "لا يوجد أي تغيير مسجَّل على تكلفة المنتج بعد.",
     "everyPurchase": "كل عمليات الشراء",
     "unitCost": "تكلفة الوحدة",
     "invoices": "الفواتير",

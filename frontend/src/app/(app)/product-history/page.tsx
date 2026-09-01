@@ -8,7 +8,7 @@ import StatusChip from '../../../components/status-chip';
 import EntityLink from '../../../components/entity-link';
 import Field from '../../../components/form-field';
 import { ProductPicker, SupplierPicker } from '../../../components/entity-picker';
-import { api, errMsg, fmtDate, fmtMoney } from '../../../lib/api';
+import { api, errMsg, fmtDate, fmtDateTime, fmtMoney } from '../../../lib/api';
 import { cn } from '../../../lib/utils';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -50,6 +50,8 @@ function PurchaseHistory() {
   const [product, setProduct] = useState<any>(null);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [costHistory, setCostHistory] = useState<any[] | null>(null);
+  const [costHistoryLoading, setCostHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (!product) {
@@ -65,6 +67,26 @@ function PurchaseHistory() {
         setData(null);
       })
       .finally(() => setLoading(false));
+  }, [product]);
+
+  // Fetched separately from the purchase history: this is the audit trail of
+  // the product's actual weighted-average costPrice changing (see
+  // applyWeightedAverageCost), not the raw unit cost on each purchase order —
+  // kept independent so a hiccup here never blows away the purchase data above.
+  useEffect(() => {
+    if (!product) {
+      setCostHistory(null);
+      return;
+    }
+    setCostHistoryLoading(true);
+    api
+      .get(`/products/${product.id}/price-history`)
+      .then((r) => setCostHistory(r.data))
+      .catch((e) => {
+        toast.error(errMsg(e));
+        setCostHistory(null);
+      })
+      .finally(() => setCostHistoryLoading(false));
   }, [product]);
 
   return (
@@ -95,6 +117,46 @@ function PurchaseHistory() {
             <Kpi label={t('productHistory.totalSpend')} value={fmtMoney(data.totals.spend)} />
             <Kpi label={t('productHistory.averageUnitCost')} value={fmtMoney(data.totals.averageUnitCost)} />
           </div>
+
+          <Card>
+            <CardHeader><CardTitle>{t('productHistory.costPriceHistory')}</CardTitle></CardHeader>
+            <CardContent>
+              {costHistoryLoading ? (
+                <Skeleton className="h-24" />
+              ) : !costHistory?.length ? (
+                <p className="text-sm text-muted-foreground">{t('productHistory.noCostChanges')}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('common.date')}</TableHead>
+                        <TableHead>{t('products.costPrice')} ({t('products.oldToNew')})</TableHead>
+                        <TableHead>{t('products.salePrice')} ({t('products.oldToNew')})</TableHead>
+                        <TableHead>{t('products.reason')}</TableHead>
+                        <TableHead>{t('products.changedBy')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {costHistory.map((h: any) => (
+                        <TableRow key={h.id}>
+                          <TableCell className="whitespace-nowrap text-xs">{fmtDateTime(h.createdAt)}</TableCell>
+                          <TableCell className="tabular-nums">
+                            {h.oldCostPrice != null ? fmtMoney(h.oldCostPrice) : '—'} → {h.newCostPrice != null ? fmtMoney(h.newCostPrice) : '—'}
+                          </TableCell>
+                          <TableCell className="tabular-nums">
+                            {h.oldSalePrice != null ? fmtMoney(h.oldSalePrice) : '—'} → {h.newSalePrice != null ? fmtMoney(h.newSalePrice) : '—'}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate" title={h.reason ?? undefined}>{h.reason ?? '—'}</TableCell>
+                          <TableCell>{h.changedBy?.name ?? '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {data.purchases.length === 0 ? (
             <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

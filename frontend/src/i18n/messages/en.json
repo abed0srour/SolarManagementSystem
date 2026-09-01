@@ -1468,6 +1468,8 @@
     "costRange": "Cost range",
     "lastOrder": "Last order",
     "priceTrend": "Price movement",
+    "costPriceHistory": "How the cost price was set",
+    "noCostChanges": "No cost price changes recorded yet.",
     "everyPurchase": "Every purchase",
     "unitCost": "Unit cost",
     "invoices": "Invoices",
