@@ -36,6 +36,7 @@ const ROUTE_MODULE: Record<string, PermissionModule> = {
   categories: 'catalog',
   inventory: 'inventory',
   warehouse: 'inventory',
+  'product-history': 'inventory',
   clients: 'sales',
   quotations: 'sales',
   'sales-orders': 'sales',
