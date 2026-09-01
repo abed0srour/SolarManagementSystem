@@ -415,10 +415,10 @@ export default function DataTable({
           </Button>
         </div>
       )}
-      <div className="no-print flex flex-wrap items-center justify-between gap-2.5 border-b p-3">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+      <div className="no-print flex flex-nowrap items-center justify-between gap-2.5 overflow-x-auto scrollbar-hide border-b p-3">
+        <div className="flex flex-nowrap items-center gap-2 min-w-0">
           {searchable && (
-            <div className="relative w-full sm:w-48 md:w-56 lg:w-64 shrink-0">
+            <div className="relative w-40 sm:w-48 md:w-56 lg:w-64 shrink-0">
               <Search className="absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="ps-8 w-full h-9 text-xs sm:text-sm"
@@ -431,7 +431,7 @@ export default function DataTable({
               />
             </div>
           )}
-          {filters && <div className="flex flex-wrap items-center gap-2 shrink-0 [&_select]:h-9 [&_input]:h-9 [&_button]:h-9">{filters}</div>}
+          {filters && <div className="flex flex-nowrap items-center gap-2 shrink-0 [&_select]:h-9 [&_input]:h-9 [&_button]:h-9">{filters}</div>}
           {/* The view controls — which rows, which columns, and picking rows to
               delete — travel as one unit. Left to wrap individually they split
               across lines and read as unrelated buttons. */}
@@ -522,7 +522,7 @@ export default function DataTable({
           </div>
         </div>
         {toolbar && (
-          <div className="flex flex-wrap items-center gap-2 shrink-0 ms-auto [&_button]:h-9 [&_a]:h-9 [&_select]:h-9 [&_input]:h-9 [&_button]:text-xs [&_button]:sm:text-sm">
+          <div className="flex flex-nowrap items-center gap-2 shrink-0 ms-auto ps-2 [&_button]:h-9 [&_a]:h-9 [&_select]:h-9 [&_input]:h-9 [&_button]:text-xs [&_button]:sm:text-sm">
             {toolbar}
           </div>
         )}

@@ -127,3 +127,13 @@
     display: none !important;
   }
 }
+
+/* Lets a toolbar row scroll horizontally instead of wrapping onto a second
+   line when it has more controls than fit, without showing a scrollbar. */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

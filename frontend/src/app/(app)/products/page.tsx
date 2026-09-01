@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   Plus, History, Upload, Archive, Pencil, FileUp, Eye, Image as ImageIcon,
   Barcode, Warehouse, ShieldCheck, Tag, Sparkles, Check, X, Layers, UsersRound,
-  ExternalLink, DollarSign, ArrowRight, GitFork,
+  ExternalLink, DollarSign, ArrowRight, GitFork, MoreHorizontal,
 } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, fmtDateTime } from '../../../lib/api';
 import { csvBool, csvNumber, parseCsv } from '../../../lib/csv';
@@ -21,6 +21,12 @@ import { Badge } from '../../../components/ui/badge';
 import { Select } from '../../../components/ui/select';
 import { Textarea } from '../../../components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 
 export default function ProductsPage() {
@@ -185,39 +191,37 @@ export default function ProductsPage() {
           </Select>
         }
         toolbar={
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            {/* Toggle Image Column */}
-            <Button
-              variant="outline"
-              className={cn('flex-1 sm:flex-initial gap-1.5', showImages && 'bg-primary/10 border-primary/40 text-primary')}
-              onClick={toggleShowImages}
-              title={showImages ? 'Hide image column' : 'Show image column'}
-            >
-              <ImageIcon className="h-4 w-4" />
-              <span>{showImages ? t('products.hideImages') : t('products.showImages')}</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="flex-1 sm:flex-initial"
-              onClick={() => { setImportOpen(true); setImportCsv(''); setImportResult(null); }}
-            >
-              <FileUp /> {t('products.importProducts')}
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1 sm:flex-initial"
-              onClick={() => { setBulkOpen(true); setBulkCsv(''); }}
-            >
-              <Upload /> {t('products.bulkPrices')}
-            </Button>
-            <Button
-              className="flex-1 sm:flex-initial"
-              onClick={() => router.push('/products/new')}
-            >
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={cn('h-9 w-9 shrink-0', showImages && 'bg-primary/10 border-primary/40 text-primary')}
+                  title={t('common.actions')}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={toggleShowImages}>
+                  <ImageIcon className="h-4 w-4" />
+                  {showImages ? t('products.hideImages') : t('products.showImages')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { setImportOpen(true); setImportCsv(''); setImportResult(null); }}>
+                  <FileUp className="h-4 w-4" />
+                  {t('products.importProducts')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { setBulkOpen(true); setBulkCsv(''); }}>
+                  <Upload className="h-4 w-4" />
+                  {t('products.bulkPrices')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button onClick={() => router.push('/products/new')}>
               <Plus /> {t('products.newProduct')}
             </Button>
-          </div>
+          </>
         }
         columns={[
           ...(showImages
