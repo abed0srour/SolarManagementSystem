@@ -52,7 +52,7 @@ const ROUTE_MODULE: Record<string, PermissionModule> = {
   monitoring: 'operations',
   'service-jobs': 'operations',
   warranty: 'operations',
-  maintenance: 'operations',
+  'maintenance-contracts': 'operations',
   'solar-calculator': 'operations',
   workers: 'workers',
   reports: 'reports',
