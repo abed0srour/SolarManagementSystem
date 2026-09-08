@@ -39,18 +39,30 @@ export class SuppliersService {
       this.prisma.supplier.count({ where }),
     ]);
 
-    // What we still owe each supplier = unpaid remainder of their purchase orders
+    // Purchase totals per supplier: what they've bought, paid, and still owe.
+    // Returned goods come off the bill, same as an individual PO's own
+    // remainingAmount (see PurchaseOrdersService.remainingAmount) — a fully
+    // returned order is settled even if nothing was ever paid on it.
     const ids = items.map((s) => s.id);
-    const payables = await this.prisma.purchaseOrder.groupBy({
+    const sums = await this.prisma.purchaseOrder.groupBy({
       by: ['supplierId'],
       where: { supplierId: { in: ids }, status: { not: 'CANCELLED' }, deletedAt: null },
-      _sum: { total: true, paidAmount: true },
+      _sum: { total: true, paidAmount: true, returnedAmount: true },
     });
-    const payableMap = new Map(
-      payables.map((g) => [g.supplierId, Math.max(0, Number(g._sum.total ?? 0) - Number(g._sum.paidAmount ?? 0))]),
+    const sumsMap = new Map(
+      sums.map((g) => {
+        const totalPurchased = Number(g._sum.total ?? 0);
+        const totalPaid = Number(g._sum.paidAmount ?? 0);
+        const totalReturned = Number(g._sum.returnedAmount ?? 0);
+        return [
+          g.supplierId,
+          { totalPurchased, totalPaid, outstandingPayable: Math.max(0, totalPurchased - totalReturned - totalPaid) },
+        ];
+      }),
     );
+    const empty = { totalPurchased: 0, totalPaid: 0, outstandingPayable: 0 };
     return {
-      items: items.map((s) => ({ ...s, outstandingPayable: payableMap.get(s.id) ?? 0 })),
+      items: items.map((s) => ({ ...s, ...(sumsMap.get(s.id) ?? empty) })),
       total,
       page,
       pageSize,
@@ -69,13 +81,22 @@ export class SuppliersService {
       },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
-    const outstanding = await this.prisma.invoice.aggregate({
-      where: { supplierId: id, type: 'PURCHASE', status: { notIn: ['CANCELLED', 'PAID'] } },
-      _sum: { total: true, paidAmount: true },
+    // Aggregated over every purchase order, not just the 20 shown in the
+    // history tab, and on the same basis as the list (`findAll` above) and
+    // each order's own remainingAmount, so the headline figures agree
+    // wherever a supplier's numbers show up.
+    const sums = await this.prisma.purchaseOrder.aggregate({
+      where: { supplierId: id, status: { not: 'CANCELLED' }, deletedAt: null },
+      _sum: { total: true, paidAmount: true, returnedAmount: true },
     });
+    const totalPurchased = Number(sums._sum.total ?? 0);
+    const totalPaid = Number(sums._sum.paidAmount ?? 0);
+    const totalReturned = Number(sums._sum.returnedAmount ?? 0);
     return {
       ...supplier,
-      outstandingPayable: Number(outstanding._sum.total ?? 0) - Number(outstanding._sum.paidAmount ?? 0),
+      totalPurchased,
+      totalPaid,
+      outstandingPayable: Math.max(0, totalPurchased - totalReturned - totalPaid),
     };
   }
 

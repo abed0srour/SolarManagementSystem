@@ -89,7 +89,15 @@ export default function SupplierDetailPage() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <Card><CardContent className="p-4">
+          <div className="text-xs text-muted-foreground">{t('common.total')}</div>
+          <div className="text-2xl font-bold tabular-nums">{fmtMoney(supplier.totalPurchased ?? 0)}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4">
+          <div className="text-xs text-muted-foreground">{t('orders.paid')}</div>
+          <div className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{fmtMoney(supplier.totalPaid ?? 0)}</div>
+        </CardContent></Card>
         <Card><CardContent className="p-4">
           <div className="text-xs text-muted-foreground">{t('suppliers.payable')}</div>
           <div className={`text-2xl font-bold tabular-nums ${Number(supplier.outstandingPayable) > 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>

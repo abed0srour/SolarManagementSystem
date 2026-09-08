@@ -98,6 +98,14 @@ export default function SuppliersPage() {
           { key: 'phone', label: t('common.phone') },
           { key: 'address', label: t('suppliers.location'), render: (r) => r.address ?? '—' },
           {
+            key: 'totalPurchased', label: t('common.total'), className: 'text-end',
+            render: (r) => <span className="tabular-nums">{fmtMoney(r.totalPurchased ?? 0)}</span>,
+          },
+          {
+            key: 'totalPaid', label: t('orders.paid'), className: 'text-end',
+            render: (r) => <span className="tabular-nums text-green-600 dark:text-green-400">{fmtMoney(r.totalPaid ?? 0)}</span>,
+          },
+          {
             key: 'outstandingPayable', label: t('orders.remaining'), className: 'text-end',
             render: (r) => <span className={`tabular-nums ${r.outstandingPayable > 0 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>{fmtMoney(r.outstandingPayable)}</span>,
           },
