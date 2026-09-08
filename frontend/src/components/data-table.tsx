@@ -100,10 +100,27 @@ export default function DataTable({
   archived = false, onArchivedChange, canBatchDelete = true, onBatchDelete,
 }: Props) {
   const t = useTranslations();
-  const [page, setPage] = useState(1);
+  /*
+   * "Edit" on most tables navigates to a separate route (`/x/[id]/edit`) and
+   * pushes back to the list on save. That unmounts this component, so plain
+   * useState would silently reset to page 1 with an empty search box every
+   * time — sessionStorage survives the round trip, a fresh tab starts clean.
+   */
+  const readStored = (key: 'page' | 'search'): string | undefined => {
+    if (typeof window === 'undefined') return undefined;
+    try {
+      return sessionStorage.getItem(`dataTable:${endpoint}:${key}`) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const [page, setPage] = useState<number>(() => {
+    const n = Number(readStored('page'));
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  });
   const [pageSize, setPageSize] = useState(10);
-  const [search, setSearch] = useState(initialSearch ?? '');
-  const [debounced, setDebounced] = useState(initialSearch ?? '');
+  const [search, setSearch] = useState(() => initialSearch ?? readStored('search') ?? '');
+  const [debounced, setDebounced] = useState(() => initialSearch ?? readStored('search') ?? '');
   const [sortBy, setSortBy] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectionMode, setSelectionMode] = useState(false);
@@ -115,6 +132,14 @@ export default function DataTable({
     const timer = setTimeout(() => setDebounced(search), 350);
     return () => clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(`dataTable:${endpoint}:page`, String(page)); } catch {}
+  }, [endpoint, page]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(`dataTable:${endpoint}:search`, search); } catch {}
+  }, [endpoint, search]);
 
   const query = useMemo(
     () => ({
@@ -133,8 +158,14 @@ export default function DataTable({
   );
 
   // Switching view resets paging — page 4 of the active list rarely exists in
-  // the archive.
+  // the archive. Skipped on mount so a page restored from sessionStorage
+  // isn't immediately wiped out by this effect's own first run.
+  const archivedFirstRender = useRef(true);
   useEffect(() => {
+    if (archivedFirstRender.current) {
+      archivedFirstRender.current = false;
+      return;
+    }
     setPage(1);
   }, [archived]);
 
