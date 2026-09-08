@@ -25,7 +25,8 @@ export default function BarcodeScanner({
   /** Unwrap supplier label records into the bare serial before reporting. */
   extract = true,
 }: {
-  onDecode: (value: string) => void;
+  /** `format` is the ZXing symbology name (e.g. "CODE_128", "QR_CODE"). */
+  onDecode: (value: string, format?: string) => void;
   height?: string;
   className?: string;
   extract?: boolean;
@@ -96,7 +97,8 @@ export default function BarcodeScanner({
           if (!result) return; // an empty frame is the normal case
           const raw = result.getText().trim();
           if (!raw) return;
-          onDecodeRef.current(extract ? extractSerial(raw) : raw);
+          const format = BarcodeFormat[result.getBarcodeFormat()];
+          onDecodeRef.current(extract ? extractSerial(raw) : raw, format);
         },
       );
       controlsRef.current = controls;

@@ -10,7 +10,9 @@ import {
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
 import { getClaims } from '../../../lib/auth';
+import { extractSerial } from '../../../lib/serial';
 import AccountSettings from '../../../components/account-settings';
+import BarcodeScanner from '../../../components/barcode-scanner';
 import { clearCache, invalidateCache, refreshAllCaches } from '../../../lib/cache';
 import Field from '../../../components/form-field';
 import DataTable from '../../../components/data-table';
@@ -24,6 +26,7 @@ import { FormattedNumberInput } from '../../../components/ui/formatted-number-in
 import { Select } from '../../../components/ui/select';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 
@@ -49,6 +52,8 @@ export default function SettingsPage() {
   const [finance, setFinance] = useState<any>({});
   const [sequences, setSequences] = useState<any[]>([]);
   const [serialFormat, setSerialFormat] = useState<any>({});
+  const [testScanOpen, setTestScanOpen] = useState(false);
+  const [scanResult, setScanResult] = useState<{ raw: string; format?: string; extracted: string } | null>(null);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
   const [backup, setBackup] = useState<any>(null);
   const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: null, hour: 18, minute: 0 });
@@ -509,11 +514,63 @@ export default function SettingsPage() {
                   "SN#00123-A7" → <b className="text-primary">"{previewSerialFormat('SN#00123-A7', serialFormat) || '—'}"</b>
                 </div>
               </div>
-              <div className="flex justify-end border-t pt-4">
+              <div className="flex justify-end gap-2 border-t pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setScanResult(null);
+                    setTestScanOpen(true);
+                  }}
+                >
+                  <ScanBarcode /> {t('settings.testScan')}
+                </Button>
                 <Button onClick={() => saveSetting('serialFormat', serialFormat)}>{t('common.save')}</Button>
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={testScanOpen} onOpenChange={setTestScanOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('settings.testScan')}</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">{t('settings.testScanHint')}</p>
+              <BarcodeScanner
+                extract={false}
+                onDecode={(raw, format) => setScanResult({ raw, format, extracted: extractSerial(raw) })}
+              />
+              {scanResult && (
+                <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">{t('settings.detectedFormat')}</span>
+                    <b className="font-mono">{scanResult.format ?? '—'}</b>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="shrink-0 text-muted-foreground">{t('settings.rawValue')}</span>
+                    <b dir="ltr" className="break-all text-end font-mono">{scanResult.raw}</b>
+                  </div>
+                  {scanResult.extracted !== scanResult.raw && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="shrink-0 text-muted-foreground">{t('settings.extractedValue')}</span>
+                      <b dir="ltr" className="break-all text-end font-mono">{scanResult.extracted}</b>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 border-t pt-2">
+                    <span className="shrink-0 text-muted-foreground">{t('settings.finalSavedValue')}</span>
+                    <b dir="ltr" className="break-all text-end font-mono text-primary">
+                      {previewSerialFormat(scanResult.extracted, serialFormat) || '—'}
+                    </b>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                {scanResult && (
+                  <Button variant="outline" onClick={() => setScanResult(null)}>{t('settings.testScanAgain')}</Button>
+                )}
+                <Button variant="outline" onClick={() => setTestScanOpen(false)}>{t('common.close')}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* ---- Security ---- */}
