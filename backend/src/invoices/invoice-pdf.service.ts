@@ -470,7 +470,7 @@ export class InvoicePdfService {
       logoBottom = 806 - h;
       page.drawImage(logo, { x: 50, y: logoBottom, width: w, height: h });
     } else {
-      page.drawText(company.name ?? 'Business Store', { x: 50, y: 760, size: 24, font: bold, color: theme.primary });
+      page.drawText(company.name ?? 'Business Store', { x: 50, y: titleY, size: 24, font: bold, color: theme.primary });
     }
 
     right(title, titleY, 24, bold, theme.dark);
