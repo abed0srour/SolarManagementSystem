@@ -2,15 +2,17 @@
 import { MovementType, Prisma, UnitStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { SettingsService } from '../settings/settings.service';
 import { applyWeightedAverageCost } from '../common/costing';
 import { SafeDeleteResult, UsageReport, isUnused, usedBy } from '../common/safe-delete';
-import { fitsContainer, normaliseSerial, normaliseSerials, repeatedSerials, serialRoom } from './serial-container';
+import { applySerialFormat, fitsContainer, normaliseSerial, normaliseSerials, repeatedSerials, serialRoom } from './serial-container';
 
 @Injectable()
 export class StockService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
 
   /**
@@ -342,8 +344,17 @@ export class StockService {
   }
 
   async lookupSerial(serial: string) {
+    // A scan hands back the raw label text; apply the same shape rule used at
+    // write time so it resolves to what was actually stored. The raw, trimmed
+    // value is tried too, so serials written before a rule existed still
+    // resolve — the rule only has to match going forward, not retroactively.
+    const trimmed = serial.trim();
+    const rule = await this.settings.getSerialFormat();
+    const formatted = applySerialFormat(trimmed, rule);
+    const candidates = formatted === trimmed ? [trimmed] : [formatted, trimmed];
+
     const unit = await this.prisma.productUnit.findFirst({ relationLoadStrategy: 'join',
-      where: { serialNumber: serial },
+      where: { serialNumber: { in: candidates } },
       include: {
         product: true,
         warehouse: true,
@@ -366,7 +377,8 @@ export class StockService {
       manufactureDate?: Date;
     },
   ) {
-    const serialNumbers = normaliseSerials(params.serialNumbers);
+    const rule = await this.settings.getSerialFormat(tx);
+    const serialNumbers = normaliseSerials(params.serialNumbers, rule);
     // One batched insert — inserting row by row over a remote pooler is slow
     // enough to blow the transaction timeout on large receipts.
     await tx.productUnit.createMany({
@@ -394,7 +406,7 @@ export class StockService {
     // captured at goods receipt, and stay unique across every unit.
     let serialNumber: string | undefined;
     if (data.serialNumber !== undefined) {
-      serialNumber = normaliseSerial(data.serialNumber);
+      serialNumber = normaliseSerial(data.serialNumber, await this.settings.getSerialFormat());
       if (serialNumber !== existing.serialNumber) {
         const clash = await this.prisma.productUnit.findFirst({ where: { serialNumber } });
         if (clash) throw new BadRequestException(`Serial number "${serialNumber}" is already used by another unit`);
@@ -538,7 +550,7 @@ export class StockService {
         `"${product.name}" is not tracked by serial number. Turn on serial tracking for it first.`,
       );
 
-    const serials = normaliseSerials(dto.serialNumbers);
+    const serials = normaliseSerials(dto.serialNumbers, await this.settings.getSerialFormat());
     if (!serials.length) throw new BadRequestException('No serial numbers supplied');
 
     const repeated = repeatedSerials(serials);

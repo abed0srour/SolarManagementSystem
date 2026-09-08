@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   Building2, Coins, Hash, ShieldCheck, KeyRound, Mail, MailCheck, Upload, History, Settings as SettingsIcon,
   DatabaseBackup, Download, RotateCcw, PlayCircle, CheckCircle2, XCircle, HardDrive, FileSpreadsheet, UsersRound, Trash2,
-  UploadCloud, FileArchive, X, Loader2,
+  UploadCloud, FileArchive, X, Loader2, ScanBarcode,
 } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { api, errMsg, fmtDateTime, downloadFile } from '../../../lib/api';
@@ -27,11 +27,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 
+/** Mirrors the backend's `applySerialFormat` so the admin sees the effect live. */
+function previewSerialFormat(raw: string, rule: any): string {
+  let value = raw;
+  if (rule.removePrefix && value.startsWith(rule.removePrefix)) value = value.slice(rule.removePrefix.length);
+  if (rule.removeSuffix && value.endsWith(rule.removeSuffix)) value = value.slice(0, value.length - rule.removeSuffix.length);
+  if (rule.stripChars) {
+    const drop = new Set(rule.stripChars as string);
+    value = Array.from(value).filter((c) => !drop.has(c)).join('');
+  }
+  const keepLastN = Number(rule.keepLastN);
+  if (keepLastN > 0 && value.length > keepLastN) value = value.slice(-keepLastN);
+  if (rule.case === 'UPPER') value = value.toUpperCase();
+  else if (rule.case === 'LOWER') value = value.toLowerCase();
+  return value;
+}
+
 export default function SettingsPage() {
   const t = useTranslations();
   const [company, setCompany] = useState<any>({});
   const [finance, setFinance] = useState<any>({});
   const [sequences, setSequences] = useState<any[]>([]);
+  const [serialFormat, setSerialFormat] = useState<any>({});
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '', busy: false });
   const [backup, setBackup] = useState<any>(null);
   const [schedule, setSchedule] = useState<any>({ enabled: true, dayOfWeek: null, hour: 18, minute: 0 });
@@ -59,6 +76,7 @@ export default function SettingsPage() {
     api.get('/settings').then((r) => {
       setCompany(r.data.company ?? {});
       setFinance(r.data.finance ?? {});
+      setSerialFormat(r.data.serialFormat ?? {});
     });
     api.get('/settings/sequences').then((r) => setSequences(r.data));
   };
@@ -229,6 +247,7 @@ export default function SettingsPage() {
           <TabsTrigger value="company"><Building2 className="me-1.5 h-4 w-4" />{t('settings.company')}</TabsTrigger>
           <TabsTrigger value="finance"><Coins className="me-1.5 h-4 w-4" />{t('settings.finance')}</TabsTrigger>
           <TabsTrigger value="sequences"><Hash className="me-1.5 h-4 w-4" />{t('settings.sequences')}</TabsTrigger>
+          <TabsTrigger value="serialFormat"><ScanBarcode className="me-1.5 h-4 w-4" />{t('settings.serialFormat')}</TabsTrigger>
           <TabsTrigger value="security"><ShieldCheck className="me-1.5 h-4 w-4" />{t('settings.security')}</TabsTrigger>
           <TabsTrigger value="backup"><DatabaseBackup className="me-1.5 h-4 w-4" />{t('settings.backup')}</TabsTrigger>
           {canManageUsers && (
@@ -451,6 +470,48 @@ export default function SettingsPage() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---- Serial number format ---- */}
+        <TabsContent value="serialFormat">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ScanBarcode className="h-4 w-4 text-primary" />{t('settings.serialFormat')}</CardTitle>
+              <CardDescription>{t('settings.serialFormatHint')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label={t('settings.removePrefix')}>
+                  <Input dir="ltr" className="font-mono" placeholder="e.g. SN-" value={serialFormat.removePrefix ?? ''} onChange={(e) => setSerialFormat({ ...serialFormat, removePrefix: e.target.value })} />
+                </Field>
+                <Field label={t('settings.removeSuffix')}>
+                  <Input dir="ltr" className="font-mono" placeholder="e.g. -EOL" value={serialFormat.removeSuffix ?? ''} onChange={(e) => setSerialFormat({ ...serialFormat, removeSuffix: e.target.value })} />
+                </Field>
+                <Field label={t('settings.stripChars')} hint={t('settings.stripCharsHint')}>
+                  <Input dir="ltr" className="font-mono" placeholder="e.g. #- " value={serialFormat.stripChars ?? ''} onChange={(e) => setSerialFormat({ ...serialFormat, stripChars: e.target.value })} />
+                </Field>
+                <Field label={t('settings.keepLastChars')}>
+                  <Input type="number" min={0} placeholder="e.g. 12" value={serialFormat.keepLastN ?? ''} onChange={(e) => setSerialFormat({ ...serialFormat, keepLastN: e.target.value === '' ? '' : Number(e.target.value) })} />
+                </Field>
+                <Field label={t('settings.caseTransform')}>
+                  <Select value={serialFormat.case ?? 'AS_IS'} onChange={(e) => setSerialFormat({ ...serialFormat, case: e.target.value })}>
+                    <option value="AS_IS">{t('settings.caseAsIs')}</option>
+                    <option value="UPPER">{t('settings.caseUpper')}</option>
+                    <option value="LOWER">{t('settings.caseLower')}</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="mb-1 text-xs text-muted-foreground">{t('settings.serialFormatPreview')}</div>
+                <div dir="ltr" className="font-mono">
+                  "SN#00123-A7" → <b className="text-primary">"{previewSerialFormat('SN#00123-A7', serialFormat) || '—'}"</b>
+                </div>
+              </div>
+              <div className="flex justify-end border-t pt-4">
+                <Button onClick={() => saveSetting('serialFormat', serialFormat)}>{t('common.save')}</Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
