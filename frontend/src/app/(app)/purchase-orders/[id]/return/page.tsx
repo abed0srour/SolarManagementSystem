@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Undo2, CheckSquare, ListPlus, Plus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../../../lib/api';
+import { invalidateCache } from '../../../../../lib/cache';
 import StatusChip from '../../../../../components/status-chip';
 import SerialPicker from '../../../../../components/serial-picker';
 import Field from '../../../../../components/form-field';
@@ -115,6 +116,10 @@ export default function PurchaseOrderReturnPage() {
         notes: form.notes || undefined,
         refundDate: form.refundDate || undefined,
       });
+      // Stock, the PO's returnedQty/paidAmount, and the returns list all
+      // changed server-side — without this, the Inventory and Purchase
+      // Orders pages keep showing pre-return figures from their cache.
+      invalidateCache('inventory', 'purchase-orders', 'purchase-returns', 'payments');
       toast.success(t('common.saved'));
       router.push('/purchase-returns');
     } catch (e) {
