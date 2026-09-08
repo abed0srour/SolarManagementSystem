@@ -40,27 +40,28 @@ export class SuppliersService {
     ]);
 
     // Purchase totals per supplier: what they've bought, paid, and still owe.
-    // Returned goods come off the bill, same as an individual PO's own
-    // remainingAmount (see PurchaseOrdersService.remainingAmount) — a fully
-    // returned order is settled even if nothing was ever paid on it.
+    // Each order clamps its own remaining balance to zero (a return can settle
+    // an order that was already paid, see PurchaseOrdersService.remainingAmount)
+    // — summed *after* that clamp, so one order's post-payment return can't
+    // silently cancel out a genuine balance owed on another order.
     const ids = items.map((s) => s.id);
-    const sums = await this.prisma.purchaseOrder.groupBy({
-      by: ['supplierId'],
+    const pos = await this.prisma.purchaseOrder.findMany({
       where: { supplierId: { in: ids }, status: { not: 'CANCELLED' }, deletedAt: null },
-      _sum: { total: true, paidAmount: true, returnedAmount: true },
+      select: { supplierId: true, total: true, paidAmount: true, returnedAmount: true },
     });
-    const sumsMap = new Map(
-      sums.map((g) => {
-        const totalPurchased = Number(g._sum.total ?? 0);
-        const totalPaid = Number(g._sum.paidAmount ?? 0);
-        const totalReturned = Number(g._sum.returnedAmount ?? 0);
-        return [
-          g.supplierId,
-          { totalPurchased, totalPaid, outstandingPayable: Math.max(0, totalPurchased - totalReturned - totalPaid) },
-        ];
-      }),
-    );
     const empty = { totalPurchased: 0, totalPaid: 0, outstandingPayable: 0 };
+    const sumsMap = new Map<string, typeof empty>();
+    for (const po of pos) {
+      const prev = sumsMap.get(po.supplierId) ?? { ...empty };
+      const total = Number(po.total);
+      const paid = Number(po.paidAmount);
+      const remaining = Math.max(0, total - Number(po.returnedAmount ?? 0) - paid);
+      sumsMap.set(po.supplierId, {
+        totalPurchased: prev.totalPurchased + total,
+        totalPaid: prev.totalPaid + paid,
+        outstandingPayable: prev.outstandingPayable + remaining,
+      });
+    }
     return {
       items: items.map((s) => ({ ...s, ...(sumsMap.get(s.id) ?? empty) })),
       total,
@@ -81,23 +82,24 @@ export class SuppliersService {
       },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
-    // Aggregated over every purchase order, not just the 20 shown in the
-    // history tab, and on the same basis as the list (`findAll` above) and
-    // each order's own remainingAmount, so the headline figures agree
-    // wherever a supplier's numbers show up.
-    const sums = await this.prisma.purchaseOrder.aggregate({
+    // Over every purchase order, not just the 20 shown in the history tab,
+    // and on the same per-order-clamped basis as the list (`findAll` above),
+    // so the headline figures agree wherever a supplier's numbers show up.
+    const pos = await this.prisma.purchaseOrder.findMany({
       where: { supplierId: id, status: { not: 'CANCELLED' }, deletedAt: null },
-      _sum: { total: true, paidAmount: true, returnedAmount: true },
+      select: { total: true, paidAmount: true, returnedAmount: true },
     });
-    const totalPurchased = Number(sums._sum.total ?? 0);
-    const totalPaid = Number(sums._sum.paidAmount ?? 0);
-    const totalReturned = Number(sums._sum.returnedAmount ?? 0);
-    return {
-      ...supplier,
-      totalPurchased,
-      totalPaid,
-      outstandingPayable: Math.max(0, totalPurchased - totalReturned - totalPaid),
-    };
+    let totalPurchased = 0;
+    let totalPaid = 0;
+    let outstandingPayable = 0;
+    for (const po of pos) {
+      const total = Number(po.total);
+      const paid = Number(po.paidAmount);
+      totalPurchased += total;
+      totalPaid += paid;
+      outstandingPayable += Math.max(0, total - Number(po.returnedAmount ?? 0) - paid);
+    }
+    return { ...supplier, totalPurchased, totalPaid, outstandingPayable };
   }
 
   async create(userId: string, data: any) {
