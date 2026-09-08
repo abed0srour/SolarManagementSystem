@@ -9,6 +9,7 @@ import { Plus, PackageCheck, Banknote, Undo2, XCircle, Trash2, RotateCcw } from 
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
@@ -96,7 +97,10 @@ export default function PurchaseOrdersPage() {
         }
         columns={[
           { key: 'number', label: t('quotations.number'), mobile: 'primary', className: 'w-28', render: (r) => <span className="font-mono text-sm font-semibold">{r.number}</span> },
-          { key: 'supplier', label: t('common.supplier'), render: (r) => r.supplier?.name },
+          {
+            key: 'supplier', label: t('common.supplier'),
+            render: (r) => <EntityLink href={linkTo.supplier(r.supplierId)}>{r.supplier?.name}</EntityLink>,
+          },
           { key: 'createdAt', label: t('common.date'), className: 'w-24 whitespace-nowrap', render: (r) => fmtDate(r.createdAt) },
           { key: 'total', label: t('common.total'), className: 'w-28 text-end', render: (r) => <span className="tabular-nums font-medium">{fmtMoney(r.total, r.currency)}</span> },
           {

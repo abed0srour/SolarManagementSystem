@@ -8,6 +8,7 @@ import { Plus, Archive } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
 import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
+import EntityLink, { linkTo } from '../../../components/entity-link';
 import ConfirmDialog from '../../../components/confirm-dialog';
 import Field from '../../../components/form-field';
 import { Button } from '../../../components/ui/button';
@@ -89,7 +90,10 @@ export default function SuppliersPage() {
           </Button>
         }
         columns={[
-          { key: 'name', label: t('common.name'), mobile: 'primary', sortable: true },
+          {
+            key: 'name', label: t('common.name'), mobile: 'primary', sortable: true,
+            render: (r) => <EntityLink href={linkTo.supplier(r.id)}>{r.name}</EntityLink>,
+          },
           { key: 'contactName', label: t('suppliers.contactName') },
           { key: 'phone', label: t('common.phone') },
           { key: 'address', label: t('suppliers.location'), render: (r) => r.address ?? '—' },

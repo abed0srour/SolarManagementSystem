@@ -54,4 +54,6 @@ export const linkTo = {
   invoice: (id?: string | null) => (id ? `/invoices/${id}` : null),
   installation: (id?: string | null) => (id ? `/installations/${id}` : null),
   product: (id?: string | null) => (id ? `/products/${id}/edit` : null),
+  supplier: (id?: string | null) => (id ? `/suppliers/${id}` : null),
+  purchaseOrder: (id?: string | null) => (id ? `/purchase-orders/${id}/edit` : null),
 };
