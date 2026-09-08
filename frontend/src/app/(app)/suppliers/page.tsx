@@ -4,7 +4,7 @@ import PageHeader from '../../../components/page-header';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, Archive } from 'lucide-react';
+import { Plus, Archive, Pencil } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../../../lib/api';
 import { invalidateCache } from '../../../lib/cache';
 import DataTable from '../../../components/data-table';
@@ -82,8 +82,6 @@ export default function SuppliersPage() {
         archived={archived}
         onArchivedChange={setArchived}
         refreshKey={refreshKey}
-        // Archived rows are read-only — restore before editing.
-        onRowClick={archived ? undefined : openEdit}
         toolbar={
           <Button onClick={openCreate}>
             <Plus /> {t('suppliers.newSupplier')}
@@ -113,13 +111,20 @@ export default function SuppliersPage() {
             key: 'actions', label: '',
             render: (r) =>
               archived ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={(e) => { e.stopPropagation(); restore(r); }}>
-                  <RotateCcw />
-                </Button>
+                <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" title={t('common.restore')} onClick={() => restore(r)}>
+                    <RotateCcw />
+                  </Button>
+                </div>
               ) : (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }}>
-                  <Archive />
-                </Button>
+                <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.edit')} onClick={() => openEdit(r)}>
+                    <Pencil />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 dark:text-red-400" title={t('common.archive')} onClick={() => setDeleteTarget(r)}>
+                    <Archive />
+                  </Button>
+                </div>
               ),
           },
         ]}
