@@ -170,6 +170,71 @@ export class StockService {
     return { success: true };
   }
 
+  /**
+   * Remove stock that is on the books but not physically present — shrinkage,
+   * breakage, a miscount finally caught. Deliberately decrease-only: adding
+   * stock back has its own trail (a purchase receipt, or a positive
+   * adjustment that can re-cost the average), so this refuses to double as a
+   * general two-way adjustment.
+   *
+   * For a serial-tracked product the caller must name exactly which units are
+   * gone, not just how many — otherwise the quantity would move while the
+   * serial container stays full, which is precisely the drift `serialDrift()`
+   * exists to catch. The named units are marked DAMAGED rather than deleted,
+   * so their warranty/sale history (if any) stays intact.
+   */
+  async writeOff(
+    userId: string,
+    dto: { productId: string; warehouseId: string; quantity: number; reason: string; serialNumbers?: string[] },
+  ) {
+    if (!dto.quantity || dto.quantity <= 0) throw new BadRequestException('Quantity must be positive');
+    if (!dto.reason?.trim()) throw new BadRequestException('A reason is required');
+
+    const product = await this.prisma.product.findFirst({ where: { id: dto.productId } });
+    if (!product) throw new NotFoundException('Product not found');
+
+    let units: { id: string; serialNumber: string }[] = [];
+    if (product.trackSerials) {
+      const serials = normaliseSerials(dto.serialNumbers ?? [], await this.settings.getSerialFormat());
+      if (serials.length !== dto.quantity)
+        throw new BadRequestException(`Select exactly ${dto.quantity} serial number${dto.quantity === 1 ? '' : 's'} to write off`);
+      units = await this.prisma.productUnit.findMany({
+        where: { serialNumber: { in: serials }, productId: dto.productId, warehouseId: dto.warehouseId, status: 'IN_STOCK' },
+        select: { id: true, serialNumber: true },
+      });
+      if (units.length !== serials.length) {
+        const found = new Set(units.map((u) => u.serialNumber));
+        const missing = serials.filter((s) => !found.has(s));
+        throw new BadRequestException(`Not in stock in that warehouse: ${missing.join(', ')}`);
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.adjustStock(tx, {
+        productId: dto.productId,
+        warehouseId: dto.warehouseId,
+        delta: -dto.quantity,
+        type: 'ADJUSTMENT',
+        userId,
+        reason: dto.reason,
+        refType: 'StockWriteOff',
+      });
+      for (const unit of units) {
+        await tx.productUnit.update({ where: { id: unit.id }, data: { status: 'DAMAGED' } });
+        await tx.productUnitEvent.create({
+          data: { unitId: unit.id, fromStatus: 'IN_STOCK', toStatus: 'DAMAGED', note: dto.reason, refType: 'StockWriteOff', userId },
+        });
+      }
+    });
+    await this.audit.log(userId, 'STOCK_WRITE_OFF', 'Product', dto.productId, {
+      warehouseId: dto.warehouseId,
+      quantity: dto.quantity,
+      reason: dto.reason,
+      serialNumbers: units.map((u) => u.serialNumber),
+    });
+    return { success: true };
+  }
+
   async transfer(
     userId: string,
     dto: { productId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number; reason?: string; serialNumbers?: string[] },

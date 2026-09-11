@@ -4,13 +4,15 @@ import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, ArrowLeftRight, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeftRight, SlidersHorizontal, PackageMinus, Trash2 } from 'lucide-react';
 import { api, errMsg, fmtDate, fmtDateTime } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import StatusChip from '../../../components/status-chip';
 import Field from '../../../components/form-field';
 import ConfirmDialog from '../../../components/confirm-dialog';
+import SerialSelector from '../../../components/serial-selector';
 import { ProductPicker, WarehousePicker } from '../../../components/entity-picker';
+import { Select } from '../../../components/ui/select';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { FormattedNumberInput } from '../../../components/ui/formatted-number-input';
@@ -28,6 +30,11 @@ export default function InventoryPage() {
   const [whOpen, setWhOpen] = useState(false);
   const [deleteWh, setDeleteWh] = useState<any>(null);
   const [form, setForm] = useState<any>({});
+  const [writeOffFor, setWriteOffFor] = useState<any>(null);
+  const [woWarehouseId, setWoWarehouseId] = useState('');
+  const [woQuantity, setWoQuantity] = useState('');
+  const [woSerials, setWoSerials] = useState<string[]>([]);
+  const [woReason, setWoReason] = useState('');
 
   const loadWh = () => api.get('/inventory/warehouses').then((r) => setWarehouses(r.data));
   useEffect(() => {
@@ -67,6 +74,41 @@ export default function InventoryPage() {
       });
       toast.success(t('common.saved'));
       setTransferOpen(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  const stockedLevels = (row: any) => (row?.stockLevels ?? []).filter((l: any) => Number(l.quantity) > 0);
+
+  const openWriteOff = (row: any) => {
+    const levels = stockedLevels(row);
+    setWriteOffFor(row);
+    setWoWarehouseId(levels.length === 1 ? levels[0].warehouseId : '');
+    setWoQuantity('');
+    setWoSerials([]);
+    setWoReason('');
+  };
+
+  const woLevel = stockedLevels(writeOffFor).find((l: any) => l.warehouseId === woWarehouseId);
+  const woMax = woLevel ? Number(woLevel.quantity) : 0;
+  const woQtyNum = Number(woQuantity) || 0;
+  const woCanSave =
+    !!writeOffFor && !!woWarehouseId && woQtyNum > 0 && woQtyNum <= woMax && woReason.trim().length > 0 &&
+    (!writeOffFor?.trackSerials || woSerials.length === woQtyNum);
+
+  const doWriteOff = async () => {
+    try {
+      await api.post('/inventory/write-off', {
+        productId: writeOffFor.id,
+        warehouseId: woWarehouseId,
+        quantity: woQtyNum,
+        reason: woReason,
+        serialNumbers: writeOffFor.trackSerials ? woSerials : undefined,
+      });
+      toast.success(t('common.saved'));
+      setWriteOffFor(null);
       setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(errMsg(e));
@@ -143,6 +185,22 @@ export default function InventoryPage() {
                 ),
               },
               { key: 'lowStockThreshold', label: t('products.lowStockThreshold'), className: 'text-end' },
+              {
+                key: 'actions', label: '',
+                render: (r) => (
+                  <div className="flex justify-end">
+                    {r.totalQty > 0 && (
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        title={t('inventory.writeOff')}
+                        onClick={(e) => { e.stopPropagation(); openWriteOff(r); }}
+                      >
+                        <PackageMinus />
+                      </Button>
+                    )}
+                  </div>
+                ),
+              },
             ]}
           />
         </TabsContent>
@@ -245,6 +303,60 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Write off dialog */}
+      <Dialog open={!!writeOffFor} onOpenChange={(v) => !v && setWriteOffFor(null)}>
+        <DialogContent wide={!!writeOffFor?.trackSerials}>
+          <DialogHeader><DialogTitle>{t('inventory.writeOff')}</DialogTitle></DialogHeader>
+          {writeOffFor && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">{t('inventory.writeOffHint')}</p>
+              <div className="text-sm">
+                <span className="font-medium">{writeOffFor.name}</span>{' '}
+                <span className="font-mono text-xs text-muted-foreground">{writeOffFor.sku}</span>
+              </div>
+              <Field label={t('common.warehouse')}>
+                <Select value={woWarehouseId} onChange={(e) => { setWoWarehouseId(e.target.value); setWoSerials([]); }}>
+                  <option value="">—</option>
+                  {stockedLevels(writeOffFor).map((l: any) => (
+                    <option key={l.warehouseId} value={l.warehouseId}>
+                      {l.warehouse?.name} — {t('inventory.available', { quantity: l.quantity })}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t('inventory.quantityToRemove')} hint={woWarehouseId ? t('inventory.available', { quantity: woMax }) : undefined}>
+                <Input
+                  type="number" step="0.001" min={0} max={woMax || undefined}
+                  placeholder="0"
+                  value={woQuantity}
+                  onChange={(e) => { setWoQuantity(e.target.value); setWoSerials([]); }}
+                  disabled={!woWarehouseId}
+                />
+              </Field>
+              {writeOffFor.trackSerials && woWarehouseId && woQtyNum > 0 && (
+                <div>
+                  <div className="mb-1.5 text-sm font-medium">{t('inventory.selectSerialsToRemove', { count: woQtyNum })}</div>
+                  <SerialSelector
+                    productId={writeOffFor.id}
+                    required={woQtyNum}
+                    value={woSerials}
+                    onChange={setWoSerials}
+                    params={{ warehouseId: woWarehouseId }}
+                  />
+                </div>
+              )}
+              <Field label={t('products.reason')}>
+                <Input placeholder="e.g. Physical count found 0 on the shelf" value={woReason} onChange={(e) => setWoReason(e.target.value)} />
+              </Field>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWriteOffFor(null)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={doWriteOff} disabled={!woCanSave}>{t('inventory.writeOff')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Transfer dialog */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
         <DialogContent>
@@ -258,7 +370,7 @@ export default function InventoryPage() {
             <Field label={t('common.quantity')}>
               <Input type="number" min={1} placeholder="1" value={form.quantity ?? ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
             </Field>
-            <Field label={t('orders.serialsHint')}>
+            <Field label={t('inventory.serialsOptional')}>
               <Input dir="ltr" placeholder="e.g. SN001, SN002" value={form.serials ?? ''} onChange={(e) => setForm({ ...form, serials: e.target.value })} />
             </Field>
             <Field label={t('products.reason')}>

@@ -528,7 +528,13 @@
     "low": "Low",
     "unitCost": "Unit cost (optional)",
     "unitCostHint": "Re-costs the product on the weighted average, like a goods receipt. Leave blank to keep the current average cost.",
-    "unitCostPlaceholder": "Same as current average"
+    "unitCostPlaceholder": "Same as current average",
+    "serialsOptional": "Serial numbers (optional)",
+    "writeOff": "Write off stock",
+    "writeOffHint": "Correct the count down when what's on the shelf doesn't match the system — shrinkage, breakage, a miscount. This can only remove stock; to add stock, receive a purchase order or use Adjust stock.",
+    "quantityToRemove": "Quantity to remove",
+    "available": "{quantity} available",
+    "selectSerialsToRemove": "Select which serial number{count, plural, one {} other {s}} to write off"
   },
   "quotations": {
     "title": "Quotations",

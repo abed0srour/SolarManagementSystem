@@ -30,6 +30,28 @@ class AdjustmentDto {
   unitCost?: number;
 }
 
+class WriteOffDto {
+  @IsString()
+  productId: string;
+
+  @IsString()
+  warehouseId: string;
+
+  @IsNumber()
+  @Min(0.001)
+  quantity: number;
+
+  @IsString()
+  @MinLength(2)
+  reason: string;
+
+  /** Required, and must have exactly `quantity` entries, for a serial-tracked product. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  serialNumbers?: string[];
+}
+
 class TransferDto {
   @IsString()
   productId: string;
@@ -114,6 +136,11 @@ export class InventoryController {
   @Post('adjust')
   adjust(@CurrentUser() user: AuthUser, @Body() dto: AdjustmentDto) {
     return this.stock.manualAdjustment(user.id, dto);
+  }
+
+  @Post('write-off')
+  writeOff(@CurrentUser() user: AuthUser, @Body() dto: WriteOffDto) {
+    return this.stock.writeOff(user.id, dto);
   }
 
   @Post('transfer')
