@@ -261,7 +261,7 @@ export default function SettingsPage() {
         </TabsList>
 
         {/* ---- Company ---- */}
-        <TabsContent value="company" className="mx-auto max-w-5xl">
+        <TabsContent value="company">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" />{t('settings.company')}</CardTitle>
@@ -409,7 +409,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Finance ---- */}
-        <TabsContent value="finance" className="mx-auto max-w-5xl">
+        <TabsContent value="finance">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Coins className="h-4 w-4 text-primary" />{t('settings.finance')}</CardTitle>
@@ -438,7 +438,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Numbering sequences ---- */}
-        <TabsContent value="sequences" className="mx-auto max-w-5xl">
+        <TabsContent value="sequences">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Hash className="h-4 w-4 text-primary" />{t('settings.sequences')}</CardTitle>
@@ -480,7 +480,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Serial number format ---- */}
-        <TabsContent value="serialFormat" className="mx-auto max-w-5xl">
+        <TabsContent value="serialFormat">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><ScanBarcode className="h-4 w-4 text-primary" />{t('settings.serialFormat')}</CardTitle>
@@ -574,7 +574,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ---- Security ---- */}
-        <TabsContent value="security" className="mx-auto max-w-5xl">
+        <TabsContent value="security">
           <div className="space-y-4">
             <AccountSettings />
 
@@ -609,7 +609,7 @@ export default function SettingsPage() {
           </TabsContent>
         )}
 
-        <TabsContent value="backup" className="mx-auto max-w-5xl">
+        <TabsContent value="backup">
           <div className="space-y-4">
             <Card>
               <CardHeader>
