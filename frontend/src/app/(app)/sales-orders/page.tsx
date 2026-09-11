@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, Trash2, RotateCcw, ScanLine, AlertTriangle } from 'lucide-react';
+import { Plus, CheckCircle2, Truck, XCircle, Undo2, Pencil, FileDown, MessageCircle, Banknote, CreditCard, Trash2, RotateCcw, ScanLine, AlertTriangle } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate, downloadFile } from '../../../lib/api';
 import { cn } from '../../../lib/utils';
 import { openWhatsApp, waMoney } from '../../../lib/whatsapp';
@@ -215,6 +215,12 @@ export default function SalesOrdersPage() {
                     <Banknote />
                   </Button>
                 )}
+                <Button
+                  variant="ghost" size="icon" className="h-8 w-8" title={t('orders.viewPayments')}
+                  onClick={(e) => { e.stopPropagation(); router.push(`/payments?salesOrderId=${r.id}&orderNumber=${encodeURIComponent(r.number)}`); }}
+                >
+                  <CreditCard />
+                </Button>
                 {['CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED'].includes(r.status) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" title={t('refunds.newRefund')} onClick={(e) => { e.stopPropagation(); router.push(`/sales-orders/${r.id}/refund`); }}>
                     <Undo2 />

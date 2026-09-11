@@ -226,6 +226,7 @@
     "none": "بدون",
     "notes": "ملاحظات",
     "of": "من",
+    "order": "الطلب",
     "page": "صفحة",
     "percent": "نسبة مئوية (%)",
     "phone": "الهاتف",
@@ -575,6 +576,7 @@
     "remaining": "المتبقي",
     "paymentStatus": "الدفع",
     "viewOrder": "عرض الطلب",
+    "viewPayments": "عرض الدفعات",
     "soldQty": "الكمية المباعة",
     "invoicePdf": "فاتورة PDF",
     "shareInvoice": "مشاركة عبر واتساب",
@@ -657,7 +659,8 @@
     "STORE_CREDIT": "رصيد المتجر",
     "dueSchedules": "الأقساط القادمة والمتأخرة",
     "invoice": "الفاتورة",
-    "paymentDate": "تاريخ الدفع"
+    "paymentDate": "تاريخ الدفع",
+    "filteredByOrder": "عرض الدفعات الخاصة بالطلب {number}"
   },
   "receipts": {
     "title": "الإيصالات",

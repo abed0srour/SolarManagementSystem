@@ -2,9 +2,10 @@
 import { CreditCard as PageIcon } from 'lucide-react';
 import PageHeader from '../../../components/page-header';
 import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -22,12 +23,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 export default function PaymentsPage() {
   const t = useTranslations();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({});
   const [directionFilter, setDirectionFilter] = useState('');
   const [dueSchedules, setDueSchedules] = useState<any[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+
+  // A "View payments" button on a sales/purchase order links here with the
+  // order's id (and its number, so the banner below needs no extra fetch).
+  const salesOrderId = searchParams.get('salesOrderId') ?? undefined;
+  const purchaseOrderId = searchParams.get('purchaseOrderId') ?? undefined;
+  const orderNumber = searchParams.get('orderNumber') ?? undefined;
+  const orderFilter = salesOrderId ? { salesOrderId } : purchaseOrderId ? { purchaseOrderId } : undefined;
 
   useEffect(() => {
     api.get('/payments/due-schedules').then((r) => setDueSchedules(r.data)).catch(() => {});
@@ -96,10 +106,19 @@ export default function PaymentsPage() {
         </Card>
       )}
 
+      {orderFilter && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <span>{t('payments.filteredByOrder', { number: orderNumber ?? '' })}</span>
+          <Button variant="ghost" size="sm" onClick={() => router.push('/payments')}>
+            <X /> {t('common.clear')}
+          </Button>
+        </div>
+      )}
+
       <DataTable
         endpoint="/payments"
         refreshKey={refreshKey}
-        extraParams={directionFilter ? { direction: directionFilter } : undefined}
+        extraParams={{ ...(directionFilter ? { direction: directionFilter } : {}), ...orderFilter }}
         filters={
           <Select className="w-full sm:w-36" value={directionFilter} onChange={(e) => setDirectionFilter(e.target.value)}>
             <option value="">{t('common.all')}</option>
@@ -131,13 +150,14 @@ export default function PaymentsPage() {
             /*
              * A payment settles an invoice, but the order is what staff and
              * customers name out loud, so it leads and the invoice sits under it.
+             * Purchase-order payments have no invoice — they link straight to the PO.
              */
-            key: 'order', label: t('nav.salesOrders'),
+            key: 'order', label: t('common.order'),
             render: (r) =>
-              r.invoice ? (
+              r.invoice?.salesOrder ? (
                 <div className="leading-tight">
-                  <EntityLink href={linkTo.salesOrder(r.invoice.salesOrder?.id)} mono>
-                    {r.invoice.salesOrder?.number}
+                  <EntityLink href={linkTo.salesOrder(r.invoice.salesOrder.id)} mono>
+                    {r.invoice.salesOrder.number}
                   </EntityLink>
                   <div>
                     <EntityLink href={linkTo.invoice(r.invoiceId)} mono className="text-[11px] text-muted-foreground hover:text-primary">
@@ -145,6 +165,14 @@ export default function PaymentsPage() {
                     </EntityLink>
                   </div>
                 </div>
+              ) : r.purchaseOrder ? (
+                <EntityLink href={linkTo.purchaseOrder(r.purchaseOrder.id)} mono>
+                  {r.purchaseOrder.number}
+                </EntityLink>
+              ) : r.invoice ? (
+                <EntityLink href={linkTo.invoice(r.invoiceId)} mono className="text-xs text-muted-foreground">
+                  {r.invoice.number}
+                </EntityLink>
               ) : (
                 <span className="text-muted-foreground">—</span>
               ),

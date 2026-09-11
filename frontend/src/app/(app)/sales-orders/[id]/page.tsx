@@ -8,6 +8,7 @@ import {
   Banknote,
   CalendarDays,
   CheckCircle2,
+  CreditCard,
   FileDown,
   Printer,
   QrCode,
@@ -202,6 +203,9 @@ export default function SalesOrderDetailPage() {
               <Banknote /> {t('orders.pay')}
             </Button>
           )}
+          <Button size="sm" variant="outline" onClick={() => router.push(`/payments?salesOrderId=${so.id}&orderNumber=${encodeURIComponent(so.number)}`)}>
+            <CreditCard /> {t('orders.viewPayments')}
+          </Button>
           {['CONFIRMED', 'PARTIALLY_DELIVERED', 'DELIVERED'].includes(so.status) && (
             <Button size="sm" variant="outline" className="text-amber-600" onClick={() => router.push(`/sales-orders/${so.id}/refund`)}>
               <Undo2 /> {t('refunds.newRefund')}

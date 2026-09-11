@@ -19,6 +19,8 @@ export class PaymentsService {
     clientId?: string;
     supplierId?: string;
     invoiceId?: string;
+    purchaseOrderId?: string;
+    salesOrderId?: string;
     search?: string;
     page?: number;
     pageSize?: number;
@@ -28,6 +30,9 @@ export class PaymentsService {
     if (query.clientId) where.clientId = query.clientId;
     if (query.supplierId) where.supplierId = query.supplierId;
     if (query.invoiceId) where.invoiceId = query.invoiceId;
+    if (query.purchaseOrderId) where.purchaseOrderId = query.purchaseOrderId;
+    // A sales order has no direct FK on Payment — it settles through the order's invoice.
+    if (query.salesOrderId) where.invoice = { salesOrderId: query.salesOrderId };
     if (query.search) {
       where.OR = [
         { number: { contains: query.search, mode: 'insensitive' } },
@@ -38,6 +43,7 @@ export class PaymentsService {
         // counter, which is the order or invoice number, not the payment number.
         { invoice: { number: { contains: query.search, mode: 'insensitive' } } },
         { invoice: { salesOrder: { number: { contains: query.search, mode: 'insensitive' } } } },
+        { purchaseOrder: { number: { contains: query.search, mode: 'insensitive' } } },
       ];
     }
     const page = Number(query.page) || 1;
@@ -48,6 +54,7 @@ export class PaymentsService {
         where,
         include: {
           invoice: { select: { number: true, salesOrder: { select: { id: true, number: true } } } },
+          purchaseOrder: { select: { id: true, number: true } },
           client: { select: { name: true, phone: true } },
           supplier: { select: { name: true, phone: true } },
           createdBy: { select: { name: true } },

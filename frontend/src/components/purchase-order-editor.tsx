@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Trash2, Truck, PackagePlus, XCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Plus, Trash2, Truck, PackagePlus, XCircle } from 'lucide-react';
 import { api, errMsg, fmtMoney } from '../lib/api';
 import StatusChip from './status-chip';
 import ConfirmDialog from './confirm-dialog';
@@ -153,6 +153,14 @@ export default function PurchaseOrderEditor({ editing }: { editing: any | null }
         </Button>
         <h1 className="text-xl font-bold md:text-2xl">{editing ? editing.number : t('orders.newPurchaseOrder')}</h1>
         {editing && <StatusChip status={editing.status} />}
+        {editing && (
+          <Button
+            size="sm" variant="outline" className="ms-auto"
+            onClick={() => router.push(`/payments?purchaseOrderId=${editing.id}&orderNumber=${encodeURIComponent(editing.number)}`)}
+          >
+            <CreditCard /> {t('orders.viewPayments')}
+          </Button>
+        )}
       </div>
 
       <Card>

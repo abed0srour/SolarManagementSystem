@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Plus, PackageCheck, Banknote, Undo2, XCircle, Trash2, RotateCcw } from 'lucide-react';
+import { Plus, PackageCheck, Banknote, CreditCard, Undo2, XCircle, Trash2, RotateCcw } from 'lucide-react';
 import { api, errMsg, fmtMoney, fmtDate } from '../../../lib/api';
 import DataTable from '../../../components/data-table';
 import ConfirmDialog from '../../../components/confirm-dialog';
@@ -130,6 +130,12 @@ export default function PurchaseOrdersPage() {
                     <Banknote />
                   </Button>
                 )}
+                <Button
+                  variant="ghost" size="icon" className="h-8 w-8" title={t('orders.viewPayments')}
+                  onClick={(e) => { e.stopPropagation(); router.push(`/payments?purchaseOrderId=${r.id}&orderNumber=${encodeURIComponent(r.number)}`); }}
+                >
+                  <CreditCard />
+                </Button>
                 {/* Only meaningful once something has actually been received. */}
                 {!archived && r.status !== 'CANCELLED' && (r.items ?? []).some((i: any) => i.receivedQty > i.returnedQty) && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 dark:text-amber-400" title={t('purchaseReturns.returnToSupplier')} onClick={(e) => { e.stopPropagation(); router.push(`/purchase-orders/${r.id}/return`); }}>
