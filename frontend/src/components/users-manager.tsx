@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 import { api, errMsg, fmtDate } from '../lib/api';
-import Field from './form-field';
+import Field, { AlignedFieldGrid } from './form-field';
 import ConfirmDialog from './confirm-dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -215,7 +215,7 @@ export default function UsersManager() {
             <DialogTitle>{form.isNew ? t('users.newUser') : `${t('common.edit')} — ${editing?.email}`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AlignedFieldGrid className="gap-3 sm:grid-cols-2">
               {form.isNew && (
                 <Field label={t('common.email')}>
                   <Input type="email" dir="ltr" placeholder="e.g. user@example.com" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -252,7 +252,7 @@ export default function UsersManager() {
                   </Select>
                 </Field>
               )}
-            </div>
+            </AlignedFieldGrid>
 
             <div>
               <div className="mb-2 text-sm font-medium">{t('users.permissions')}</div>
